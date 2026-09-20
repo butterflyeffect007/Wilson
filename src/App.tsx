@@ -52,10 +52,10 @@ export default function App() {
 
     try {
       // Placeholder response — wire to IntelligenceRouter later
-      await new Promise((r) => setTimeout(r, 900));
+      await new Promise((r) => setTimeout(r, 1200));
       const reply =
         "I'm here with you. This is the evolved Wilson interface. " +
-        "The core intelligence layer is ready to be connected. " +
+        "The living Orb from the original foundation is now active. " +
         "What would you like to explore?";
 
       setMessages((prev) => [
@@ -113,17 +113,15 @@ export default function App() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
           {isHome ? (
             <div className="h-full flex flex-col items-center justify-center pb-6 max-w-md mx-auto">
-              {/* Orb */}
+              {/* Authentic living Orb */}
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", stiffness: 120, damping: 18 }}
                 className="relative mb-6"
               >
-                <div className="relative w-44 h-44 sm:w-52 sm:h-52">
+                <div className="relative">
                   <WilsonOrb size="lg" />
-                  <div className="absolute inset-[-18%] rounded-full border border-violet-300/25 wilson-ring-slow" />
-                  <div className="absolute inset-[-32%] rounded-full border border-pink-200/20 wilson-ring-slower" />
                 </div>
               </motion.div>
 
@@ -230,7 +228,7 @@ export default function App() {
                   animate={{ opacity: 1, y: 0 }}
                   className="flex gap-3 items-start"
                 >
-                  <WilsonOrb size="sm" />
+                  <WilsonOrb size="sm" isThinking />
                   <div className="rounded-2xl msg-wilson px-4 py-3 flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
                     <span className="text-sm text-violet-700/60">Wilson is thinking...</span>
