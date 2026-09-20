@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --wilson-violet: 270 55% 58%;
+  --wilson-pink: 320 65% 65%;
+  --wilson-cyan: 187 70% 55%;
+  --wilson-pearl: 270 40% 97%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: linear-gradient(180deg, #f8f0ff 0%, #f3e8ff 40%, #e8f4ff 100%);
+  color: #2e1065;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+/* Soft field particles */
+.wilson-field-particles {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(196, 181, 253, 0.35) 0%, transparent 3px),
+    radial-gradient(circle at 75% 20%, rgba(249, 168, 212, 0.3) 0%, transparent 2.5px),
+    radial-gradient(circle at 40% 70%, rgba(165, 243, 252, 0.3) 0%, transparent 2px),
+    radial-gradient(circle at 85% 60%, rgba(196, 181, 253, 0.25) 0%, transparent 3px),
+    radial-gradient(circle at 10% 80%, rgba(249, 168, 212, 0.2) 0%, transparent 2px),
+    radial-gradient(circle at 60% 40%, rgba(165, 243, 252, 0.25) 0%, transparent 2.5px);
+  animation: field-drift 40s ease-in-out infinite alternate;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+@keyframes field-drift {
+  0% { transform: translate(0, 0); }
+  100% { transform: translate(8px, -12px); }
+}
+
+/* Orb */
+@keyframes orb-float {
+  0%, 100% { transform: translateY(-3px); }
+  50% { transform: translateY(5px); }
+}
+
+@keyframes orb-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+@keyframes ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.wilson-orb {
+  animation: orb-float 7s ease-in-out infinite;
+}
+
+.wilson-orb-glow {
+  animation: orb-pulse 4s ease-in-out infinite;
+}
+
+.wilson-ring-slow {
+  animation: ring-spin 28s linear infinite;
+}
+
+.wilson-ring-slower {
+  animation: ring-spin 40s linear infinite reverse;
+}
+
+/* Glass */
+.glass {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 4px 24px -4px rgba(139, 92, 246, 0.1);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 6px 28px -4px rgba(139, 92, 246, 0.14);
+}
+
+/* Message bubbles */
+.msg-wilson {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 4px 20px -4px rgba(139, 92, 246, 0.1);
+}
+
+.msg-user {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
