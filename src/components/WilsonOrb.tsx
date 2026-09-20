@@ -2,15 +2,19 @@ import React, { useEffect, useRef, useState } from "react";
 import { useWilsonAudio } from "@/hooks/useWilsonAudio";
 import { getListening, subscribeListening, subscribeRipple } from "@/lib/listeningBus";
 
-// Authentic fluid asset from original wilsonaibro
-const wilsonFluid =
+// Prefer local authentic asset; fall back to original repo raw URL if not present
+// Place wilson-fluid.png in src/assets/ for fully local operation.
+const LOCAL_FLUID = "/src/assets/wilson-fluid.png";
+const REMOTE_FLUID =
   "https://raw.githubusercontent.com/jennifercox726-ux/wilsonaibro/main/src/assets/wilson-fluid.png";
+
+// Use remote until local assets are committed; switch to import when files are present.
+const wilsonFluid = REMOTE_FLUID;
 
 export type WilsonVibe = "neutral" | "excited" | "calm" | "tired" | "dreaming";
 
 interface WilsonOrbProps {
   isThinking?: boolean;
-  /** Force the speaking animation regardless of audio bus */
   speaking?: boolean;
   size?: "sm" | "md" | "lg";
   vibe?: WilsonVibe;
@@ -22,7 +26,6 @@ const sizeMap = {
   lg: "w-44 h-44 sm:w-52 sm:h-52",
 };
 
-// Vibe → halo tint (HSL hue degrees)
 const vibeHue: Record<WilsonVibe, number> = {
   neutral: 290,
   excited: 320,
@@ -67,7 +70,6 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
       return () => document.body.classList.remove("wilson-speaking");
     }, [isSpeaking]);
 
-    // Cursor parallax (desktop only)
     useEffect(() => {
       if (typeof window === "undefined") return;
       if (!window.matchMedia("(pointer: fine)").matches) return;
