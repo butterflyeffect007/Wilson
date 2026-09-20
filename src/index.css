@@ -3,10 +3,13 @@
 @tailwind utilities;
 
 :root {
-  --wilson-violet: 270 55% 58%;
-  --wilson-pink: 320 65% 65%;
-  --wilson-cyan: 187 70% 55%;
-  --wilson-pearl: 270 40% 97%;
+  --wilson-vibe-hue: 290;
+  --wilson-amp-scale: 1;
+  --wilson-amp-glow: 0.4;
+  --wilson-amp-hue: 0deg;
+  --wilson-amp-aberration: 0px;
+  --wilson-parallax-x: 0px;
+  --wilson-parallax-y: 0px;
 }
 
 * {
@@ -22,7 +25,6 @@ body {
   min-height: 100dvh;
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
   background: linear-gradient(180deg, #f8f0ff 0%, #f3e8ff 40%, #e8f4ff 100%);
   color: #2e1065;
   overflow-x: hidden;
@@ -53,37 +55,108 @@ body {
   100% { transform: translate(8px, -12px); }
 }
 
-/* Orb */
-@keyframes orb-float {
-  0%, 100% { transform: translateY(-3px); }
-  50% { transform: translateY(5px); }
+/* ========== Authentic Wilson Orb (from original) ========== */
+@keyframes wilson-orb-float-kf {
+  0%, 100% { transform: translate3d(var(--wilson-parallax-x), calc(var(--wilson-parallax-y) - 3px), 0); }
+  50% { transform: translate3d(var(--wilson-parallax-x), calc(var(--wilson-parallax-y) + 5px), 0); }
 }
 
-@keyframes orb-pulse {
-  0%, 100% { opacity: 0.7; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.04); }
+@keyframes wilson-orb-sonar-kf {
+  from { transform: scale(0.6); opacity: 0.7; }
+  to { transform: scale(2.1); opacity: 0; }
 }
 
-@keyframes ring-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+@keyframes wilson-orb-ripple-kf {
+  from { transform: scale(0.5); opacity: 0.6; }
+  to { transform: scale(2.4); opacity: 0; }
 }
 
-.wilson-orb {
-  animation: orb-float 7s ease-in-out infinite;
+@keyframes wilson-orb-sparkle-kf {
+  0% { transform: rotate(var(--r, 0deg)) translateX(55%) scale(0.4); opacity: 0; }
+  40% { opacity: 1; }
+  100% { transform: rotate(var(--r, 0deg)) translateX(110%) scale(0.9); opacity: 0; }
 }
 
-.wilson-orb-glow {
-  animation: orb-pulse 4s ease-in-out infinite;
+@keyframes wilson-orb-shimmer-kf {
+  0% { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
+  40% { opacity: 0.7; }
+  100% { transform: translateX(120%) skewX(-18deg); opacity: 0; }
 }
 
-.wilson-ring-slow {
-  animation: ring-spin 28s linear infinite;
+.wilson-orb-shell {
+  isolation: isolate;
 }
 
-.wilson-ring-slower {
-  animation: ring-spin 40s linear infinite reverse;
+.wilson-orb-float {
+  animation: wilson-orb-float-kf 7s ease-in-out infinite;
+  will-change: transform;
 }
+
+.wilson-orb-sonar,
+.wilson-orb-ripple {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1.5px solid hsl(var(--wilson-vibe-hue) 80% 65% / 0.5);
+  pointer-events: none;
+}
+
+.wilson-orb-sonar {
+  animation: wilson-orb-sonar-kf 1000ms ease-out forwards;
+}
+
+.wilson-orb-ripple {
+  animation: wilson-orb-ripple-kf 1200ms ease-out forwards;
+}
+
+.wilson-orb-sparkles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wilson-orb-sparkle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3.5px;
+  height: 3.5px;
+  margin: -1.75px 0 0 -1.75px;
+  border-radius: 9999px;
+  background: hsl(var(--wilson-vibe-hue) 80% 75%);
+  box-shadow: 0 0 8px 2px hsl(var(--wilson-vibe-hue) 80% 70% / 0.7);
+  animation: wilson-orb-sparkle-kf 2.6s ease-out infinite;
+}
+
+.wilson-orb-shimmer {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  overflow: hidden;
+  pointer-events: none;
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.45) 50%, transparent 100%);
+  animation: wilson-orb-shimmer-kf 1.8s ease-in-out infinite;
+}
+
+.wilson-fluid {
+  border-radius: 9999px;
+  background-size: cover;
+  background-position: center;
+  transform: scale(var(--wilson-amp-scale));
+  filter: hue-rotate(calc(var(--wilson-amp-hue) + (var(--wilson-vibe-hue) - 290) * 1deg))
+    drop-shadow(0 0 calc(16px + var(--wilson-amp-glow) * 28px)
+      hsl(var(--wilson-vibe-hue) 70% 70% / var(--wilson-amp-glow)));
+  transition: transform 90ms linear, filter 120ms linear;
+  will-change: transform, filter;
+}
+
+.wilson-fluid--idle { opacity: 0.95; }
+.wilson-fluid--listening { opacity: 1; }
+.wilson-fluid--thinking { opacity: 1; }
+.wilson-fluid--speaking { opacity: 1; }
+
+.wilson-orb-shell--speaking .wilson-orb-float { animation-duration: 3.4s; }
+.wilson-orb-shell--thinking .wilson-orb-float { animation-duration: 5s; }
 
 /* Glass */
 .glass {
@@ -102,7 +175,6 @@ body {
   box-shadow: 0 6px 28px -4px rgba(139, 92, 246, 0.14);
 }
 
-/* Message bubbles */
 .msg-wilson {
   background: rgba(255, 255, 255, 0.65);
   backdrop-filter: blur(20px);
@@ -118,7 +190,12 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.55);
 }
 
-/* Reduced motion */
+/* Body brightens slightly while speaking */
+body.wilson-speaking {
+  filter: brightness(1.03) saturate(1.05);
+  transition: filter 600ms ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
