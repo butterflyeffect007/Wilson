@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Sparkles, Loader2, Lightbulb, Heart, PenTool, Mic } from "lucide-react";
+import { Send, Sparkles, Loader2, Mic } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 
 interface Message {
@@ -9,13 +9,6 @@ interface Message {
   content: string;
   timestamp: Date;
 }
-
-const modes = [
-  { id: "imagine", label: "Imagine", icon: Sparkles, prompt: "Let's explore possibilities and imagine something new together." },
-  { id: "solve", label: "Solve", icon: Lightbulb, prompt: "Help me solve a problem clearly and practically." },
-  { id: "reflect", label: "Reflect", icon: Heart, prompt: "I want to reflect and gain perspective on something." },
-  { id: "create", label: "Create", icon: PenTool, prompt: "Let's create something — writing, ideas, or a project." },
-] as const;
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -73,10 +66,6 @@ export default function App() {
     }
   };
 
-  const handleMode = (mode: (typeof modes)[number]) => {
-    sendMessage(mode.prompt);
-  };
-
   const isHome = messages.length === 0 && !loading;
 
   return (
@@ -87,6 +76,8 @@ export default function App() {
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[140%] h-[70%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(196,181,253,0.35),transparent_70%)] blur-3xl" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[80%] h-[60%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(165,243,252,0.25),transparent_70%)] blur-3xl" />
         <div className="absolute top-[30%] left-[-15%] w-[50%] h-[40%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(249,168,212,0.2),transparent_70%)] blur-3xl" />
+        <div className="absolute bottom-[10%] left-[20%] w-[40%] h-[30%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(167,243,208,0.15),transparent_70%)] blur-3xl" />
+        <div className="absolute top-[15%] right-[5%] w-[35%] h-[25%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(253,224,71,0.12),transparent_70%)] blur-3xl" />
         <div className="wilson-field-particles" />
       </div>
 
@@ -118,7 +109,7 @@ export default function App() {
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", stiffness: 120, damping: 18 }}
-                className="relative mb-6"
+                className="relative mb-8"
               >
                 <div className="relative">
                   <WilsonOrb size="lg" />
@@ -130,7 +121,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 }}
-                className="text-center space-y-1.5 mb-7"
+                className="text-center space-y-2 mb-8"
               >
                 <h2 className="text-2xl sm:text-[26px] font-semibold text-violet-950/90 tracking-tight">
                   {greeting}, {displayName}
@@ -146,7 +137,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.25 }}
-                className="w-full mb-5"
+                className="w-full"
               >
                 <button
                   onClick={() => inputRef.current?.focus()}
@@ -157,39 +148,6 @@ export default function App() {
                     What would you like to explore today?
                   </span>
                 </button>
-              </motion.div>
-
-              {/* Modes */}
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.35 }}
-                className="grid grid-cols-4 gap-2.5 w-full"
-              >
-                {modes.map((mode) => (
-                  <button
-                    key={mode.id}
-                    onClick={() => handleMode(mode)}
-                    className="flex flex-col items-center gap-1.5 rounded-2xl py-3 px-1 glass transition-all hover:bg-white/75 hover:scale-[1.03] active:scale-[0.98]"
-                  >
-                    <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                        mode.id === "imagine"
-                          ? "bg-violet-100 text-violet-500"
-                          : mode.id === "solve"
-                          ? "bg-amber-50 text-amber-500"
-                          : mode.id === "reflect"
-                          ? "bg-pink-50 text-pink-500"
-                          : "bg-cyan-50 text-cyan-500"
-                      }`}
-                    >
-                      <mode.icon className="w-4 h-4" />
-                    </div>
-                    <span className="text-[11px] font-semibold text-violet-900/70 tracking-wide">
-                      {mode.label}
-                    </span>
-                  </button>
-                ))}
               </motion.div>
             </div>
           ) : (

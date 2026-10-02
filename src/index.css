@@ -34,7 +34,7 @@ body {
   min-height: 100dvh;
 }
 
-/* Soft field particles */
+/* Soft field particles — full-spectrum opalescent direction */
 .wilson-field-particles {
   position: absolute;
   inset: 0;
@@ -44,7 +44,10 @@ body {
     radial-gradient(circle at 40% 70%, rgba(165, 243, 252, 0.3) 0%, transparent 2px),
     radial-gradient(circle at 85% 60%, rgba(196, 181, 253, 0.25) 0%, transparent 3px),
     radial-gradient(circle at 10% 80%, rgba(249, 168, 212, 0.2) 0%, transparent 2px),
-    radial-gradient(circle at 60% 40%, rgba(165, 243, 252, 0.25) 0%, transparent 2.5px);
+    radial-gradient(circle at 60% 40%, rgba(165, 243, 252, 0.25) 0%, transparent 2.5px),
+    radial-gradient(circle at 30% 50%, rgba(167, 243, 208, 0.22) 0%, transparent 2.5px),
+    radial-gradient(circle at 90% 35%, rgba(253, 224, 71, 0.18) 0%, transparent 2px),
+    radial-gradient(circle at 55% 85%, rgba(251, 146, 60, 0.15) 0%, transparent 2.5px);
   animation: field-drift 40s ease-in-out infinite alternate;
   opacity: 0.7;
   pointer-events: none;
