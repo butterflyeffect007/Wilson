@@ -91,7 +91,7 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
     }, []);
 
     const reactiveScale = 1 + amplitude * 0.1;
-    const reactiveGlow = 0.35 + amplitude * 0.55;
+    const reactiveGlow = 0.4 + amplitude * 0.6;
     const reactiveHue = isSpeaking ? amplitude * 60 : 0;
     const aberration = isSpeaking ? amplitude * 2.4 : 0;
 
@@ -109,6 +109,11 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
         aria-hidden="true"
       >
         <div className="wilson-orb-float absolute inset-0">
+          {/* Soft orbital rings – always present for living presence */}
+          <span className="wilson-orb-ring wilson-orb-ring--1" />
+          <span className="wilson-orb-ring wilson-orb-ring--2" />
+          <span className="wilson-orb-ring wilson-orb-ring--3" />
+
           {isSpeaking && (
             <span
               key={`sonar-${sonarKey}`}
@@ -126,13 +131,13 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
 
           {(isSpeaking || isThinking) && (
             <div className="wilson-orb-sparkles" aria-hidden="true">
-              {Array.from({ length: 6 }).map((_, i) => (
+              {Array.from({ length: 8 }).map((_, i) => (
                 <span
                   key={i}
                   className="wilson-orb-sparkle"
                   style={{
-                    animationDelay: `${i * 0.4}s`,
-                    transform: `rotate(${i * 60}deg)`,
+                    animationDelay: `${i * 0.35}s`,
+                    transform: `rotate(${i * 45}deg)`,
                   }}
                 />
               ))}

@@ -5,7 +5,7 @@
 :root {
   --wilson-vibe-hue: 290;
   --wilson-amp-scale: 1;
-  --wilson-amp-glow: 0.4;
+  --wilson-amp-glow: 0.45;
   --wilson-amp-hue: 0deg;
   --wilson-amp-aberration: 0px;
   --wilson-parallax-x: 0px;
@@ -25,7 +25,7 @@ body {
   min-height: 100dvh;
   font-family: "Inter", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
-  background: linear-gradient(180deg, #f8f0ff 0%, #f3e8ff 40%, #e8f4ff 100%);
+  background: linear-gradient(180deg, #f8f0ff 0%, #f3e8ff 35%, #e8f4ff 70%, #f0f9ff 100%);
   color: #2e1065;
   overflow-x: hidden;
 }
@@ -34,55 +34,73 @@ body {
   min-height: 100dvh;
 }
 
-/* Soft field particles — full-spectrum opalescent direction */
+/* Soft field particles — full-spectrum opalescent */
 .wilson-field-particles {
   position: absolute;
   inset: 0;
   background-image:
-    radial-gradient(circle at 20% 30%, rgba(196, 181, 253, 0.35) 0%, transparent 3px),
-    radial-gradient(circle at 75% 20%, rgba(249, 168, 212, 0.3) 0%, transparent 2.5px),
-    radial-gradient(circle at 40% 70%, rgba(165, 243, 252, 0.3) 0%, transparent 2px),
-    radial-gradient(circle at 85% 60%, rgba(196, 181, 253, 0.25) 0%, transparent 3px),
-    radial-gradient(circle at 10% 80%, rgba(249, 168, 212, 0.2) 0%, transparent 2px),
-    radial-gradient(circle at 60% 40%, rgba(165, 243, 252, 0.25) 0%, transparent 2.5px),
-    radial-gradient(circle at 30% 50%, rgba(167, 243, 208, 0.22) 0%, transparent 2.5px),
-    radial-gradient(circle at 90% 35%, rgba(253, 224, 71, 0.18) 0%, transparent 2px),
-    radial-gradient(circle at 55% 85%, rgba(251, 146, 60, 0.15) 0%, transparent 2.5px);
-  animation: field-drift 40s ease-in-out infinite alternate;
-  opacity: 0.7;
+    radial-gradient(circle at 20% 30%, rgba(196, 181, 253, 0.4) 0%, transparent 3px),
+    radial-gradient(circle at 75% 20%, rgba(249, 168, 212, 0.35) 0%, transparent 2.5px),
+    radial-gradient(circle at 40% 70%, rgba(165, 243, 252, 0.35) 0%, transparent 2px),
+    radial-gradient(circle at 85% 60%, rgba(196, 181, 253, 0.3) 0%, transparent 3px),
+    radial-gradient(circle at 10% 80%, rgba(249, 168, 212, 0.25) 0%, transparent 2px),
+    radial-gradient(circle at 60% 40%, rgba(165, 243, 252, 0.3) 0%, transparent 2.5px),
+    radial-gradient(circle at 30% 50%, rgba(167, 243, 208, 0.25) 0%, transparent 2.5px),
+    radial-gradient(circle at 90% 35%, rgba(253, 224, 71, 0.2) 0%, transparent 2px),
+    radial-gradient(circle at 55% 85%, rgba(251, 146, 60, 0.18) 0%, transparent 2.5px),
+    radial-gradient(circle at 45% 15%, rgba(216, 180, 254, 0.25) 0%, transparent 2px);
+  animation: field-drift 50s ease-in-out infinite alternate;
+  opacity: 0.75;
   pointer-events: none;
 }
 
 @keyframes field-drift {
   0% { transform: translate(0, 0); }
-  100% { transform: translate(8px, -12px); }
+  100% { transform: translate(10px, -14px); }
 }
 
-/* ========== Authentic Wilson Orb (from original) ========== */
+/* ========== Living Wilson Orb ========== */
 @keyframes wilson-orb-float-kf {
-  0%, 100% { transform: translate3d(var(--wilson-parallax-x), calc(var(--wilson-parallax-y) - 3px), 0); }
-  50% { transform: translate3d(var(--wilson-parallax-x), calc(var(--wilson-parallax-y) + 5px), 0); }
+  0%, 100% { transform: translate3d(var(--wilson-parallax-x), calc(var(--wilson-parallax-y) - 4px), 0); }
+  50% { transform: translate3d(var(--wilson-parallax-x), calc(var(--wilson-parallax-y) + 6px), 0); }
+}
+
+@keyframes wilson-fluid-swirl {
+  0% { background-position: 0% 50%; filter: hue-rotate(calc(var(--wilson-amp-hue) + (var(--wilson-vibe-hue) - 290) * 1deg)) drop-shadow(0 0 calc(18px + var(--wilson-amp-glow) * 32px) hsl(var(--wilson-vibe-hue) 70% 70% / var(--wilson-amp-glow))); }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; filter: hue-rotate(calc(var(--wilson-amp-hue) + (var(--wilson-vibe-hue) - 290) * 1deg + 8deg)) drop-shadow(0 0 calc(20px + var(--wilson-amp-glow) * 34px) hsl(var(--wilson-vibe-hue) 70% 70% / var(--wilson-amp-glow))); }
+}
+
+@keyframes wilson-orb-ring-rotate {
+  from { transform: rotate(0deg) scale(1); opacity: 0.35; }
+  50% { opacity: 0.55; }
+  to { transform: rotate(360deg) scale(1); opacity: 0.35; }
+}
+
+@keyframes wilson-orb-ring-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.08); opacity: 0.5; }
 }
 
 @keyframes wilson-orb-sonar-kf {
   from { transform: scale(0.6); opacity: 0.7; }
-  to { transform: scale(2.1); opacity: 0; }
+  to { transform: scale(2.2); opacity: 0; }
 }
 
 @keyframes wilson-orb-ripple-kf {
   from { transform: scale(0.5); opacity: 0.6; }
-  to { transform: scale(2.4); opacity: 0; }
+  to { transform: scale(2.5); opacity: 0; }
 }
 
 @keyframes wilson-orb-sparkle-kf {
   0% { transform: rotate(var(--r, 0deg)) translateX(55%) scale(0.4); opacity: 0; }
   40% { opacity: 1; }
-  100% { transform: rotate(var(--r, 0deg)) translateX(110%) scale(0.9); opacity: 0; }
+  100% { transform: rotate(var(--r, 0deg)) translateX(120%) scale(0.95); opacity: 0; }
 }
 
 @keyframes wilson-orb-shimmer-kf {
   0% { transform: translateX(-120%) skewX(-18deg); opacity: 0; }
-  40% { opacity: 0.7; }
+  40% { opacity: 0.75; }
   100% { transform: translateX(120%) skewX(-18deg); opacity: 0; }
 }
 
@@ -91,8 +109,38 @@ body {
 }
 
 .wilson-orb-float {
-  animation: wilson-orb-float-kf 7s ease-in-out infinite;
+  animation: wilson-orb-float-kf 6.5s ease-in-out infinite;
   will-change: transform;
+}
+
+/* Soft orbital rings */
+.wilson-orb-ring {
+  position: absolute;
+  inset: -12%;
+  border-radius: 9999px;
+  border: 1.5px solid transparent;
+  pointer-events: none;
+  background: transparent;
+}
+
+.wilson-orb-ring--1 {
+  inset: -8%;
+  border: 1.5px solid hsl(var(--wilson-vibe-hue) 70% 75% / 0.35);
+  animation: wilson-orb-ring-rotate 18s linear infinite;
+  box-shadow: 0 0 12px hsl(var(--wilson-vibe-hue) 80% 70% / 0.2);
+}
+
+.wilson-orb-ring--2 {
+  inset: -18%;
+  border: 1px solid hsl(var(--wilson-vibe-hue) 60% 80% / 0.25);
+  animation: wilson-orb-ring-rotate 28s linear infinite reverse;
+  opacity: 0.7;
+}
+
+.wilson-orb-ring--3 {
+  inset: -28%;
+  border: 1px solid hsl(var(--wilson-vibe-hue) 50% 85% / 0.15);
+  animation: wilson-orb-ring-pulse 7s ease-in-out infinite;
 }
 
 .wilson-orb-sonar,
@@ -127,8 +175,8 @@ body {
   margin: -1.75px 0 0 -1.75px;
   border-radius: 9999px;
   background: hsl(var(--wilson-vibe-hue) 80% 75%);
-  box-shadow: 0 0 8px 2px hsl(var(--wilson-vibe-hue) 80% 70% / 0.7);
-  animation: wilson-orb-sparkle-kf 2.6s ease-out infinite;
+  box-shadow: 0 0 10px 2px hsl(var(--wilson-vibe-hue) 80% 70% / 0.75);
+  animation: wilson-orb-sparkle-kf 2.4s ease-out infinite;
 }
 
 .wilson-orb-shimmer {
@@ -137,29 +185,32 @@ body {
   border-radius: 9999px;
   overflow: hidden;
   pointer-events: none;
-  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.45) 50%, transparent 100%);
+  background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0.5) 50%, transparent 100%);
   animation: wilson-orb-shimmer-kf 1.8s ease-in-out infinite;
 }
 
 .wilson-fluid {
   border-radius: 9999px;
-  background-size: cover;
+  background-size: 140% 140%;
   background-position: center;
   transform: scale(var(--wilson-amp-scale));
+  animation: wilson-fluid-swirl 12s ease-in-out infinite;
   filter: hue-rotate(calc(var(--wilson-amp-hue) + (var(--wilson-vibe-hue) - 290) * 1deg))
-    drop-shadow(0 0 calc(16px + var(--wilson-amp-glow) * 28px)
+    drop-shadow(0 0 calc(18px + var(--wilson-amp-glow) * 32px)
       hsl(var(--wilson-vibe-hue) 70% 70% / var(--wilson-amp-glow)));
-  transition: transform 90ms linear, filter 120ms linear;
-  will-change: transform, filter;
+  transition: transform 90ms linear;
+  will-change: transform, filter, background-position;
 }
 
-.wilson-fluid--idle { opacity: 0.95; }
+.wilson-fluid--idle { opacity: 0.97; }
 .wilson-fluid--listening { opacity: 1; }
 .wilson-fluid--thinking { opacity: 1; }
 .wilson-fluid--speaking { opacity: 1; }
 
-.wilson-orb-shell--speaking .wilson-orb-float { animation-duration: 3.4s; }
-.wilson-orb-shell--thinking .wilson-orb-float { animation-duration: 5s; }
+.wilson-orb-shell--speaking .wilson-orb-float { animation-duration: 3.2s; }
+.wilson-orb-shell--thinking .wilson-orb-float { animation-duration: 4.8s; }
+.wilson-orb-shell--speaking .wilson-orb-ring--1 { animation-duration: 10s; }
+.wilson-orb-shell--thinking .wilson-orb-ring--1 { animation-duration: 14s; }
 
 /* Glass */
 .glass {
@@ -195,7 +246,7 @@ body {
 
 /* Body brightens slightly while speaking */
 body.wilson-speaking {
-  filter: brightness(1.03) saturate(1.05);
+  filter: brightness(1.04) saturate(1.06);
   transition: filter 600ms ease;
 }
 
