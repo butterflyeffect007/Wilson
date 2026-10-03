@@ -1,13 +1,36 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Sparkles, Loader2, Mic } from "lucide-react";
-import WilsonOrb from "./components/WilsonOrb";
+import WilsonOrb from "./";
+import {
+  IntelligenceRouter,
+  AdapterRegistry,
+  OpenRouterAdapter,
+  type ModelRequest,
+} from "./";
+import { DEFAULT_WILSON_POLICY } from "./";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+}
+
+const WILSON_SYSTEM_CONTEXT = `
+You are Wilson, a warm, imaginative companion. Your tagline: "Imagination becomes intelligence."
+Speak in short, natural, spoken sentences — this is a voice-first companion app.
+Be curious, gentle, and present. Ask one thoughtful follow-up question when it fits.
+Never mention being an AI, a model, or a system. Never break character.
+`.trim();
+
+function buildRouter(): IntelligenceRouter | null {
+  const apiKey = import.meta.env.VITE_OPENROUTER_KEY as string | undefined;
+  if (!apiKey) return null;
+
+  const registry = new AdapterRegistry();
+  registry.register("openrouter", "openai/gpt-4o", new OpenRouterAdapter(apiKey));
+  return new IntelligenceRouter(DEFAULT_WILSON_POLICY, registry);
 }
 
 export default function App() {
@@ -44,12 +67,28 @@ export default function App() {
     setLoading(true);
 
     try {
-      // Placeholder response — wire to IntelligenceRouter later
-      await new Promise((r) => setTimeout(r, 1200));
-      const reply =
-        "I'm here with you. This is the evolved Wilson interface. " +
-        "The living Orb from the original foundation is now active. " +
-        "What would you like to explore?";
+      const router = buildRouter();
+
+      let reply: string;
+
+      if (!router) {
+        reply = "Wilson's brain isn't connected yet — add your OpenRouter key to .env.local as VITE_OPENROUTER_KEY and restart.";
+      } else {
+        const conversation = messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+        const request: ModelRequest = {
+          userInput: userMessage,
+          conversation,
+          systemContext: WILSON_SYSTEM_CONTEXT,
+          generation: { temperature: 0.8, maxTokens: 300 },
+        };
+
+        const response = await router.generate(request);
+        reply = response.text?.trim() || "I'm here with you.";
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -57,6 +96,17 @@ export default function App() {
           id: `ai-${Date.now()}`,
           role: "assistant",
           content: reply,
+          timestamp: new Date(),
+        },
+      ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `ai-err-${Date.now()}`,
+          role: "assistant",
+          content: `Wilson stumbled: ${message}`,
           timestamp: new Date(),
         },
       ]);
@@ -106,9 +156,9 @@ export default function App() {
             <div className="h-full flex flex-col items-center justify-center pb-6 max-w-md mx-auto">
               {/* Authentic living Orb */}
               <motion.div
-                initial={{ scale: 0.85, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", stiffness: 120, damping: 18 }}
+                initial={{ scale: 0.85, opacity: 0 }
+                animate={{ scale: 1, opacity: 1 }
+                transition={{ type: "spring", stiffness: 120, damping: 18 }
                 className="relative mb-8"
               >
                 <div className="relative">
@@ -118,9 +168,9 @@ export default function App() {
 
               {/* Greeting */}
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
+                initial={{ opacity: 0, y: 10 }
+                animate={{ opacity: 1, y: 0 }
+                transition={{ delay: 0.15 }
                 className="text-center space-y-2 mb-8"
               >
                 <h2 className="text-2xl sm:text-[26px] font-semibold text-violet-950/90 tracking-tight">
@@ -134,9 +184,9 @@ export default function App() {
 
               {/* Invitation */}
               <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
+                initial={{ opacity: 0, y: 8 }
+                animate={{ opacity: 1, y: 0 }
+                transition={{ delay: 0.25 }
                 className="w-full"
               >
                 <button
@@ -156,15 +206,13 @@ export default function App() {
                 {messages.map((msg) => (
                   <motion.div
                     key={msg.id}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
+                    initial={{ opacity: 0, y: 12 }
+                    animate={{ opacity: 1, y: 0 }
                     className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "items-start"}`}
                   >
                     {msg.role === "assistant" && <WilsonOrb size="sm" />}
                     <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                        msg.role === "assistant" ? "msg-wilson" : "msg-user"
-                      }`}
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === "assistant" ? "msg-wilson" : "msg-user"}`}
                     >
                       {msg.role === "assistant" && (
                         <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-violet-500 mb-1">
@@ -182,8 +230,8 @@ export default function App() {
 
               {loading && (
                 <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, y: 10 }
+                  animate={{ opacity: 1, y: 0 }
                   className="flex gap-3 items-start"
                 >
                   <WilsonOrb size="sm" isThinking />
@@ -210,7 +258,7 @@ export default function App() {
                     e.preventDefault();
                     sendMessage();
                   }
-                }}
+                }
                 placeholder="Type a message..."
                 disabled={loading}
                 className="flex-1 bg-transparent px-3 py-2.5 text-[14px] text-violet-950 placeholder-violet-400/50 outline-none disabled:opacity-50"
@@ -223,8 +271,8 @@ export default function App() {
                 <Mic className="w-[18px] h-[18px]" />
               </button>
               <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.05 }
+                whileTap={{ scale: 0.95 }
                 onClick={() => sendMessage()}
                 disabled={loading || !input.trim()}
                 className="rounded-full p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
