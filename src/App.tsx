@@ -190,8 +190,9 @@ export default function App() {
                 className="w-full"
               >
                 <button
+                  type="button"
                   onClick={() => inputRef.current?.focus()}
-                  className="w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 glass text-left transition-all hover:bg-white/70"
+                  className="w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 glass text-left transition-all hover:bg-white/70 touch-manipulation"
                 >
                   <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0" />
                   <span className="text-[14px] text-violet-800/50 font-medium">
@@ -246,7 +247,7 @@ export default function App() {
         </div>
 
         {/* Input */}
-        <div className="relative z-20 px-4 pb-5 pt-2">
+        <div className="relative z-30 px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="max-w-lg mx-auto">
             <div className="relative flex items-center gap-2 rounded-full glass-strong px-2 py-1.5">
               <input
@@ -261,21 +262,23 @@ export default function App() {
                 }}
                 placeholder="Type a message..."
                 disabled={loading}
-                className="flex-1 bg-transparent px-3 py-2.5 text-[14px] text-violet-950 placeholder-violet-400/50 outline-none disabled:opacity-50"
+                enterKeyHint="send"
+                className="flex-1 bg-transparent px-3 py-2.5 text-[16px] text-violet-950 placeholder-violet-400/50 outline-none disabled:opacity-50 touch-manipulation"
               />
               <button
                 type="button"
-                className="p-2 rounded-full text-violet-400/70 hover:text-violet-500 hover:bg-violet-50/80 transition-colors"
+                className="p-2 rounded-full text-violet-400/70 hover:text-violet-500 hover:bg-violet-50/80 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center touch-manipulation"
                 aria-label="Voice"
               >
                 <Mic className="w-[18px] h-[18px]" />
               </button>
               <motion.button
+                type="button"
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => sendMessage()}
                 disabled={loading || !input.trim()}
-                className="rounded-full p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
+                className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
                 aria-label="Send"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
