@@ -8,9 +8,9 @@
  * No provider selection policy here — that lives in WilsonPolicy.
  */
 
-import type { ModelAdapter, ModelCapabilities, ModelStatus } from "./";
-import type { ModelRequest } from "./";
-import type { ModelResponse } from "./";
+import type { ModelAdapter, ModelCapabilities, ModelStatus } from "./ModelAdapter";
+import type { ModelRequest } from "./ModelRequest";
+import type { ModelResponse } from "./ModelResponse";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
