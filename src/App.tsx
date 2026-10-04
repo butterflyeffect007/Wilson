@@ -29,7 +29,7 @@ function buildRouter(): IntelligenceRouter | null {
   if (!apiKey) return null;
 
   const registry = new AdapterRegistry();
-  registry.register("openrouter", "openai/gpt-4o", new OpenRouterAdapter(apiKey));
+  registry.register("openrouter", "openrouter/free", new OpenRouterAdapter(apiKey, "openrouter/free"));
   return new IntelligenceRouter(DEFAULT_WILSON_POLICY, registry);
 }
 
