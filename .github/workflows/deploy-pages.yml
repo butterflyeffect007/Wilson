@@ -22,6 +22,13 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Fetch authentic Wilson Orb fluid asset
+        run: |
+          mkdir -p src/assets
+          curl -fsSL -o src/assets/wilson-fluid.png \
+            "https://raw.githubusercontent.com/jennifercox726-ux/wilsonaibro/main/src/assets/wilson-fluid.png"
+          ls -la src/assets/wilson-fluid.png
+
       - name: Install
         run: npm install
 
