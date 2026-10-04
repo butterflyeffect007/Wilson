@@ -17,7 +17,7 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 export class OpenRouterAdapter implements ModelAdapter {
   constructor(
     private readonly apiKey: string,
-    private readonly defaultModel: string = "openai/gpt-4o",
+    private readonly defaultModel: string = "openrouter/free",
   ) {
     if (!apiKey) {
       throw new Error("OpenRouter API key is required");

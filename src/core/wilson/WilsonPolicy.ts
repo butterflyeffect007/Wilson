@@ -5,8 +5,7 @@
  * unavailable, the boundary reports the unavailable state; it does not
  * silently switch to another provider.
  *
- * The preferred engine mirrors the currently configured live path
- * (OpenRouter -> openai/gpt-4o) without redirecting that path.
+ * Default path: OpenRouter free models router (openrouter/free).
  */
 
 export interface WilsonPreferredEngine {
@@ -19,13 +18,12 @@ export interface WilsonPolicy {
 }
 
 /**
- * Default policy for Proposal #1.
- * Matches the existing OpenRouter integration's configured model.
+ * Default policy: free OpenRouter router (no paid model required).
  */
 export const DEFAULT_WILSON_POLICY: WilsonPolicy = {
   preferredEngine: {
     provider: "openrouter",
-    model: "openai/gpt-4o",
+    model: "openrouter/free",
   },
 };
 
