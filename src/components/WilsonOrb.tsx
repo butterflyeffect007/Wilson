@@ -2,14 +2,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { useWilsonAudio } from "@/hooks/useWilsonAudio";
 import { getListening, subscribeListening, subscribeRipple } from "@/lib/listeningBus";
 
-// Prefer local authentic asset; fall back to original repo raw URL if not present
-// Place wilson-fluid.png in src/assets/ for fully local operation.
-const LOCAL_FLUID = "/src/assets/wilson-fluid.png";
-const REMOTE_FLUID =
-  "https://raw.githubusercontent.com/jennifercox726-ux/wilsonaibro/main/src/assets/wilson-fluid.png";
+import wilsonFluidUrl from "@/assets/wilson-fluid.png";
 
-// Use remote until local assets are committed; switch to import when files are present.
-const wilsonFluid = REMOTE_FLUID;
+const wilsonFluid = wilsonFluidUrl;
 
 export type WilsonVibe = "neutral" | "excited" | "calm" | "tired" | "dreaming";
 
