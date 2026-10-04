@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Sparkles, Loader2, Mic } from "lucide-react";
-import WilsonOrb from "./";
+import WilsonOrb from "./components/WilsonOrb";
 import {
   IntelligenceRouter,
   AdapterRegistry,
   OpenRouterAdapter,
   type ModelRequest,
-} from "./";
-import { DEFAULT_WILSON_POLICY } from "./";
+} from "./intelligence";
+import { DEFAULT_WILSON_POLICY } from "./core/wilson/WilsonPolicy";
 
 interface Message {
   id: string;
@@ -156,9 +156,9 @@ export default function App() {
             <div className="h-full flex flex-col items-center justify-center pb-6 max-w-md mx-auto">
               {/* Authentic living Orb */}
               <motion.div
-                initial={{ scale: 0.85, opacity: 0 }
-                animate={{ scale: 1, opacity: 1 }
-                transition={{ type: "spring", stiffness: 120, damping: 18 }
+                initial={{ scale: 0.85, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: "spring", stiffness: 120, damping: 18 }}
                 className="relative mb-8"
               >
                 <div className="relative">
@@ -168,9 +168,9 @@ export default function App() {
 
               {/* Greeting */}
               <motion.div
-                initial={{ opacity: 0, y: 10 }
-                animate={{ opacity: 1, y: 0 }
-                transition={{ delay: 0.15 }
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.15 }}
                 className="text-center space-y-2 mb-8"
               >
                 <h2 className="text-2xl sm:text-[26px] font-semibold text-violet-950/90 tracking-tight">
@@ -184,9 +184,9 @@ export default function App() {
 
               {/* Invitation */}
               <motion.div
-                initial={{ opacity: 0, y: 8 }
-                animate={{ opacity: 1, y: 0 }
-                transition={{ delay: 0.25 }
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.25 }}
                 className="w-full"
               >
                 <button
@@ -206,8 +206,8 @@ export default function App() {
                 {messages.map((msg) => (
                   <motion.div
                     key={msg.id}
-                    initial={{ opacity: 0, y: 12 }
-                    animate={{ opacity: 1, y: 0 }
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
                     className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "items-start"}`}
                   >
                     {msg.role === "assistant" && <WilsonOrb size="sm" />}
@@ -230,8 +230,8 @@ export default function App() {
 
               {loading && (
                 <motion.div
-                  initial={{ opacity: 0, y: 10 }
-                  animate={{ opacity: 1, y: 0 }
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
                   className="flex gap-3 items-start"
                 >
                   <WilsonOrb size="sm" isThinking />
@@ -258,7 +258,7 @@ export default function App() {
                     e.preventDefault();
                     sendMessage();
                   }
-                }
+                }}
                 placeholder="Type a message..."
                 disabled={loading}
                 className="flex-1 bg-transparent px-3 py-2.5 text-[14px] text-violet-950 placeholder-violet-400/50 outline-none disabled:opacity-50"
@@ -271,8 +271,8 @@ export default function App() {
                 <Mic className="w-[18px] h-[18px]" />
               </button>
               <motion.button
-                whileHover={{ scale: 1.05 }
-                whileTap={{ scale: 0.95 }
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={() => sendMessage()}
                 disabled={loading || !input.trim()}
                 className="rounded-full p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
