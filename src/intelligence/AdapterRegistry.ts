@@ -6,7 +6,7 @@
  * returns the adapter or undefined if it isn't registered.
  */
 
-import type { ModelAdapter } from "./";
+import type { ModelAdapter } from "./ModelAdapter";
 
 export class AdapterRegistry {
   private adapters = new Map<string, ModelAdapter>();
