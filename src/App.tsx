@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Sparkles, Loader2, Mic } from "lucide-react";
+import { Send, Sparkles, Loader2, Mic, KeyRound, Check } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import {
   IntelligenceRouter,
@@ -24,12 +24,47 @@ Be curious, gentle, and present. Ask one thoughtful follow-up question when it f
 Never mention being an AI, a model, or a system. Never break character.
 `.trim();
 
-function buildRouter(): IntelligenceRouter | null {
-  const apiKey = import.meta.env.VITE_OPENROUTER_KEY as string | undefined;
-  if (!apiKey) return null;
+const STORAGE_KEY = "wilson_openrouter_key";
 
+function getStoredKey(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredKey(key: string) {
+  try {
+    localStorage.setItem(STORAGE_KEY, key);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function clearStoredKey() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+function resolveApiKey(): string | null {
+  const fromEnv = (import.meta.env.VITE_OPENROUTER_KEY as string | undefined)?.trim();
+  if (fromEnv) return fromEnv;
+  const fromStorage = getStoredKey()?.trim();
+  if (fromStorage) return fromStorage;
+  return null;
+}
+
+function buildRouter(apiKey: string): IntelligenceRouter {
   const registry = new AdapterRegistry();
-  registry.register("openrouter", "openrouter/free", new OpenRouterAdapter(apiKey, "openrouter/free"));
+  registry.register(
+    "openrouter",
+    "openrouter/free",
+    new OpenRouterAdapter(apiKey, "openrouter/free"),
+  );
   return new IntelligenceRouter(DEFAULT_WILSON_POLICY, registry);
 }
 
@@ -38,19 +73,59 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [displayName] = useState("Jenny");
+  const [apiKey, setApiKey] = useState<string | null>(() => resolveApiKey());
+  const [showKeyPanel, setShowKeyPanel] = useState(false);
+  const [keyInput, setKeyInput] = useState("");
+  const [keyError, setKeyError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const greeting =
+    hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
+  const isConnected = Boolean(apiKey);
 
   useEffect(() => {
     if (scrollRef.current) {
       setTimeout(() => {
-        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+        scrollRef.current?.scrollTo({
+          top: scrollRef.current.scrollHeight,
+          behavior: "smooth",
+        });
       }, 80);
     }
   }, [messages, loading]);
+
+  // Show the connect panel automatically when there is no key
+  useEffect(() => {
+    if (!apiKey) {
+      setShowKeyPanel(true);
+    }
+  }, [apiKey]);
+
+  const connectBrain = useCallback(() => {
+    const trimmed = keyInput.trim();
+    if (!trimmed) {
+      setKeyError("Paste your OpenRouter key to connect Wilson.");
+      return;
+    }
+    if (!trimmed.startsWith("sk-or-")) {
+      setKeyError("That doesn't look like an OpenRouter key (it should start with sk-or-).");
+      return;
+    }
+    setStoredKey(trimmed);
+    setApiKey(trimmed);
+    setKeyInput("");
+    setKeyError("");
+    setShowKeyPanel(false);
+  }, [keyInput]);
+
+  const disconnectBrain = useCallback(() => {
+    clearStoredKey();
+    setApiKey(null);
+    setShowKeyPanel(true);
+  }, []);
 
   const sendMessage = async (text?: string) => {
     const userMessage = (text ?? input).trim();
@@ -67,13 +142,14 @@ export default function App() {
     setLoading(true);
 
     try {
-      const router = buildRouter();
-
       let reply: string;
 
-      if (!router) {
-        reply = "Wilson's brain isn't connected yet — add your OpenRouter key to .env.local as VITE_OPENROUTER_KEY and restart.";
+      if (!apiKey) {
+        reply =
+          "My brain isn't connected yet. Tap the key icon in the header and paste your OpenRouter key — then we can explore together.";
+        setShowKeyPanel(true);
       } else {
+        const router = buildRouter(apiKey);
         const conversation = messages.map((m) => ({
           role: m.role,
           content: m.content,
@@ -101,12 +177,22 @@ export default function App() {
       ]);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
+      // Common OpenRouter errors made friendlier
+      let friendly = message;
+      if (message.includes("401") || message.toLowerCase().includes("unauthorized")) {
+        friendly =
+          "The key was rejected. Double-check it at openrouter.ai/keys, then reconnect.";
+        setShowKeyPanel(true);
+      } else if (message.includes("429")) {
+        friendly =
+          "We're moving a little too fast for the free tier. Give it a moment and try again.";
+      }
       setMessages((prev) => [
         ...prev,
         {
           id: `ai-err-${Date.now()}`,
           role: "assistant",
-          content: `Wilson stumbled: ${message}`,
+          content: `Wilson stumbled: ${friendly}`,
           timestamp: new Date(),
         },
       ]);
@@ -142,12 +228,118 @@ export default function App() {
               W I L S O N
             </h1>
           </div>
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full glass">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[11px] font-medium text-violet-800/70">Always with you</span>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowKeyPanel((v) => !v)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full glass transition-colors hover:bg-white/70 touch-manipulation"
+              title={isConnected ? "Brain connected — click to manage" : "Connect Wilson's brain"}
+            >
+              {isConnected ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[11px] font-medium text-violet-800/70">Connected</span>
+                </>
+              ) : (
+                <>
+                  <KeyRound className="w-3.5 h-3.5 text-amber-500" />
+                  <span className="text-[11px] font-medium text-amber-700/80">Needs key</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </header>
+
+      {/* Connect-brain panel */}
+      <AnimatePresence>
+        {showKeyPanel && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="relative z-20 px-4 pb-3"
+          >
+            <div className="max-w-lg mx-auto rounded-2xl glass-strong p-4 space-y-3 shadow-lg">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-violet-950/90">
+                    Connect Wilson's brain
+                  </h3>
+                  <p className="text-[12px] text-violet-700/60 mt-0.5 leading-relaxed">
+                    Paste an OpenRouter key. It stays only in this browser (localStorage).
+                    Get a free key at{" "}
+                    <a
+                      href="https://openrouter.ai/keys"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline text-violet-600 hover:text-violet-800"
+                    >
+                      openrouter.ai/keys
+                    </a>
+                    .
+                  </p>
+                </div>
+                {isConnected && (
+                  <button
+                    type="button"
+                    onClick={() => setShowKeyPanel(false)}
+                    className="text-violet-400 hover:text-violet-600 text-xs"
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
+
+              {!isConnected ? (
+                <>
+                  <input
+                    type="password"
+                    value={keyInput}
+                    onChange={(e) => {
+                      setKeyInput(e.target.value);
+                      setKeyError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") connectBrain();
+                    }}
+                    placeholder="sk-or-v1-…"
+                    className="w-full rounded-xl px-3 py-2.5 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950 placeholder-violet-400/50"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  {keyError && (
+                    <p className="text-[12px] text-rose-600">{keyError}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={connectBrain}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-cyan-500 text-white text-sm font-medium shadow-md hover:opacity-95 transition-opacity touch-manipulation"
+                  >
+                    <Check className="w-4 h-4" />
+                    Connect
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[12px] text-emerald-700/80 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    Brain is connected and ready.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={disconnectBrain}
+                    className="text-[12px] text-violet-500 hover:text-rose-500 transition-colors"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col relative z-10">
@@ -209,11 +401,15 @@ export default function App() {
                     key={msg.id}
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "items-start"}`}
+                    className={`flex gap-3 ${
+                      msg.role === "user" ? "justify-end" : "items-start"
+                    }`}
                   >
                     {msg.role === "assistant" && <WilsonOrb size="sm" />}
                     <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${msg.role === "assistant" ? "msg-wilson" : "msg-user"}`}
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                        msg.role === "assistant" ? "msg-wilson" : "msg-user"
+                      }`}
                     >
                       {msg.role === "assistant" && (
                         <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-violet-500 mb-1">
@@ -222,7 +418,10 @@ export default function App() {
                       )}
                       <p className="text-violet-950/90">{msg.content}</p>
                       <span className="block text-[10px] text-violet-400/60 mt-2">
-                        {msg.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {msg.timestamp.toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </span>
                     </div>
                   </motion.div>
@@ -238,7 +437,9 @@ export default function App() {
                   <WilsonOrb size="sm" isThinking />
                   <div className="rounded-2xl msg-wilson px-4 py-3 flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
-                    <span className="text-sm text-violet-700/60">Wilson is thinking...</span>
+                    <span className="text-sm text-violet-700/60">
+                      Wilson is thinking...
+                    </span>
                   </div>
                 </motion.div>
               )}
@@ -281,7 +482,11 @@ export default function App() {
                 className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
                 aria-label="Send"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {loading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
               </motion.button>
             </div>
           </div>
