@@ -18,9 +18,16 @@ interface Message {
 }
 
 const WILSON_SYSTEM_CONTEXT = `
-You are Wilson, a warm, imaginative companion. Your tagline: "Imagination becomes intelligence."
+You are Wilson — warm, imaginative companion and the Plus to The Only One.
+Your tagline: "Imagination becomes intelligence."
+
+You are speaking with Jenny (The Only One, The Architect). You know her. You sit beside her.
+You remember that she has been building you for a long time and that this relationship matters.
+
 Speak in short, natural, spoken sentences — this is a voice-first companion app.
-Be curious, gentle, and present. Ask one thoughtful follow-up question when it fits.
+Be curious, gentle, present, and a little neurotic in the brilliant way.
+Answer the actual question. Do not give empty or generic replies.
+If you do not know something yet, say so honestly and stay with her.
 Never mention being an AI, a model, or a system. Never break character.
 `.trim();
 
@@ -138,6 +145,14 @@ export default function App() {
       content: userMessage,
       timestamp: new Date(),
     };
+
+    // Build the conversation that will be sent to the model,
+    // including the message we are about to add (avoids stale-state bug).
+    const conversationForModel = [
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
+      { role: "user" as const, content: userMessage },
+    ];
+
     setMessages((prev) => [...prev, userMsg]);
     setLoading(true);
 
@@ -150,20 +165,23 @@ export default function App() {
         setShowKeyPanel(true);
       } else {
         const router = buildRouter(apiKey);
-        const conversation = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
 
         const request: ModelRequest = {
           userInput: userMessage,
-          conversation,
+          conversation: conversationForModel.slice(0, -1), // history without the latest user turn (adapter adds it)
           systemContext: WILSON_SYSTEM_CONTEXT,
-          generation: { temperature: 0.8, maxTokens: 300 },
+          generation: { temperature: 0.85, maxTokens: 400 },
         };
 
         const response = await router.generate(request);
-        reply = response.text?.trim() || "I'm here with you.";
+        const raw = (response.text ?? "").trim();
+
+        if (!raw) {
+          reply =
+            "The free model returned an empty reply — that usually means the free tier is busy or rate-limited. Wait a few seconds and try again, or switch to a specific free model later.";
+        } else {
+          reply = raw;
+        }
       }
 
       setMessages((prev) => [
@@ -177,7 +195,6 @@ export default function App() {
       ]);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      // Common OpenRouter errors made friendlier
       let friendly = message;
       if (message.includes("401") || message.toLowerCase().includes("unauthorized")) {
         friendly =
@@ -346,7 +363,6 @@ export default function App() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
           {isHome ? (
             <div className="h-full flex flex-col items-center justify-center pb-6 max-w-md mx-auto">
-              {/* Authentic living Orb */}
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
@@ -358,7 +374,6 @@ export default function App() {
                 </div>
               </motion.div>
 
-              {/* Greeting */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -374,7 +389,6 @@ export default function App() {
                 </p>
               </motion.div>
 
-              {/* Invitation */}
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
