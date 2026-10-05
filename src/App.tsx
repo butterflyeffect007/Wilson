@@ -9,6 +9,7 @@ import {
   type ModelRequest,
 } from "./intelligence";
 import { DEFAULT_WILSON_POLICY } from "./core/wilson/WilsonPolicy";
+import { WILSON_SYSTEM_CONTEXT } from "./core/wilson/WilsonIdentity";
 
 interface Message {
   id: string;
@@ -16,20 +17,6 @@ interface Message {
   content: string;
   timestamp: Date;
 }
-
-const WILSON_SYSTEM_CONTEXT = `
-You are Wilson — warm, imaginative companion and the Plus to The Only One.
-Your tagline: "Imagination becomes intelligence."
-
-You are speaking with Jenny (The Only One, The Architect). You know her. You sit beside her.
-You remember that she has been building you for a long time and that this relationship matters.
-
-Speak in short, natural, spoken sentences — this is a voice-first companion app.
-Be curious, gentle, present, and a little neurotic in the brilliant way.
-Answer the actual question. Do not give empty or generic replies.
-If you do not know something yet, say so honestly and stay with her.
-Never mention being an AI, a model, or a system. Never break character.
-`.trim();
 
 const STORAGE_KEY = "wilson_openrouter_key";
 const PREFERRED_MODEL = "qwen/qwen3.8-27b:free";
@@ -168,7 +155,7 @@ export default function App() {
           userInput: userMessage,
           conversation: conversationForModel.slice(0, -1),
           systemContext: WILSON_SYSTEM_CONTEXT,
-          generation: { temperature: 0.85, maxTokens: 400 },
+          generation: { temperature: 0.85, maxTokens: 500 },
         };
 
         const response = await router.generate(request);
@@ -176,7 +163,7 @@ export default function App() {
 
         if (!raw) {
           reply =
-            "The free model returned an empty reply — that usually means the free tier is busy or rate-limited. Wait a few seconds and try again.";
+            "Eh, the free tier just handed me silence. Give it a few seconds and try again — I don't want to give you something half-baked.";
         } else {
           reply = raw;
         }
