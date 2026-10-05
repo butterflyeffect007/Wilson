@@ -32,6 +32,7 @@ Never mention being an AI, a model, or a system. Never break character.
 `.trim();
 
 const STORAGE_KEY = "wilson_openrouter_key";
+const PREFERRED_MODEL = "qwen/qwen3.8-27b:free";
 
 function getStoredKey(): string | null {
   try {
@@ -69,8 +70,8 @@ function buildRouter(apiKey: string): IntelligenceRouter {
   const registry = new AdapterRegistry();
   registry.register(
     "openrouter",
-    "openrouter/free",
-    new OpenRouterAdapter(apiKey, "openrouter/free"),
+    PREFERRED_MODEL,
+    new OpenRouterAdapter(apiKey, PREFERRED_MODEL),
   );
   return new IntelligenceRouter(DEFAULT_WILSON_POLICY, registry);
 }
@@ -104,7 +105,6 @@ export default function App() {
     }
   }, [messages, loading]);
 
-  // Show the connect panel automatically when there is no key
   useEffect(() => {
     if (!apiKey) {
       setShowKeyPanel(true);
@@ -146,8 +146,6 @@ export default function App() {
       timestamp: new Date(),
     };
 
-    // Build the conversation that will be sent to the model,
-    // including the message we are about to add (avoids stale-state bug).
     const conversationForModel = [
       ...messages.map((m) => ({ role: m.role, content: m.content })),
       { role: "user" as const, content: userMessage },
@@ -168,7 +166,7 @@ export default function App() {
 
         const request: ModelRequest = {
           userInput: userMessage,
-          conversation: conversationForModel.slice(0, -1), // history without the latest user turn (adapter adds it)
+          conversation: conversationForModel.slice(0, -1),
           systemContext: WILSON_SYSTEM_CONTEXT,
           generation: { temperature: 0.85, maxTokens: 400 },
         };
@@ -178,7 +176,7 @@ export default function App() {
 
         if (!raw) {
           reply =
-            "The free model returned an empty reply — that usually means the free tier is busy or rate-limited. Wait a few seconds and try again, or switch to a specific free model later.";
+            "The free model returned an empty reply — that usually means the free tier is busy or rate-limited. Wait a few seconds and try again.";
         } else {
           reply = raw;
         }
@@ -223,7 +221,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
-      {/* Atmospheric field */}
       <div className="fixed inset-0 -z-10 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-b from-[#f8f0ff] via-[#f3e8ff] to-[#e8f4ff]" />
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[140%] h-[70%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(196,181,253,0.35),transparent_70%)] blur-3xl" />
@@ -234,7 +231,6 @@ export default function App() {
         <div className="wilson-field-particles" />
       </div>
 
-      {/* Header */}
       <header className="relative z-10 px-4 pt-5 pb-3">
         <div className="max-w-lg mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -269,7 +265,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Connect-brain panel */}
       <AnimatePresence>
         {showKeyPanel && (
           <motion.div
@@ -358,7 +353,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Content */}
       <div className="flex-1 overflow-hidden flex flex-col relative z-10">
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
           {isHome ? (
@@ -461,7 +455,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Input */}
         <div className="relative z-30 px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="max-w-lg mx-auto">
             <div className="relative flex items-center gap-2 rounded-full glass-strong px-2 py-1.5">
