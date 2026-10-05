@@ -5,7 +5,7 @@
  * unavailable, the boundary reports the unavailable state; it does not
  * silently switch to another provider.
  *
- * Default path: OpenRouter free models router (openrouter/free).
+ * Default path: a specific reliable free model (not the random free router).
  */
 
 export interface WilsonPreferredEngine {
@@ -18,12 +18,14 @@ export interface WilsonPolicy {
 }
 
 /**
- * Default policy: free OpenRouter router (no paid model required).
+ * Default policy: lock to one solid free model so replies stay consistent.
+ * The openrouter/free router was randomly picking overloaded models that
+ * frequently returned empty text.
  */
 export const DEFAULT_WILSON_POLICY: WilsonPolicy = {
   preferredEngine: {
     provider: "openrouter",
-    model: "openrouter/free",
+    model: "qwen/qwen3.8-27b:free",
   },
 };
 
