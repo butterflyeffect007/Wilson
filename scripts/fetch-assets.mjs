@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
  * Fetches the authentic Wilson Orb fluid texture from the original wilsonaibro repo.
- * Run automatically via `npm run fetch-assets` or after clone.
+ * Works on Node 16+ (no global fetch required).
+ * Run via: npm run fetch-assets
  */
 import { mkdir, writeFile, access } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import https from "node:https";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -24,6 +26,28 @@ async function exists(path) {
   }
 }
 
+function download(url) {
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          // follow one redirect
+          download(res.headers.location).then(resolve).catch(reject);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => resolve(Buffer.concat(chunks)));
+        res.on("error", reject);
+      })
+      .on("error", reject);
+  });
+}
+
 async function main() {
   await mkdir(assetsDir, { recursive: true });
 
@@ -33,17 +57,19 @@ async function main() {
   }
 
   console.log("Fetching authentic Wilson Orb fluid asset…");
-  const res = await fetch(sourceUrl);
-  if (!res.ok) {
-    console.error(`Failed to fetch asset: ${res.status} ${res.statusText}`);
-    console.error("The Orb will fall back to a pure CSS presence.");
+  try {
+    const buf = await download(sourceUrl);
+    await writeFile(target, buf);
+    console.log(`✓ Saved ${target} (${(buf.length / 1024).toFixed(1)} KB)`);
+  } catch (err) {
+    console.error("Failed to fetch asset:", err.message || err);
+    console.error("You can also download it manually with:");
+    console.error(
+      '  curl -fsSL -o src/assets/wilson-fluid.png "' + sourceUrl + '"',
+    );
+    console.error("The Orb will fall back to a pure CSS presence if the file is missing.");
     process.exitCode = 1;
-    return;
   }
-
-  const buf = Buffer.from(await res.arrayBuffer());
-  await writeFile(target, buf);
-  console.log(`✓ Saved ${target} (${(buf.length / 1024).toFixed(1)} KB)`);
 }
 
 main().catch((err) => {
