@@ -10,6 +10,12 @@ import {
 } from "./intelligence";
 import { DEFAULT_WILSON_POLICY } from "./core/wilson/WilsonPolicy";
 import { WILSON_SYSTEM_CONTEXT } from "./core/wilson/WilsonIdentity";
+import {
+  loadConversation,
+  saveConversation,
+  buildMemoryContext,
+  type StoredMessage,
+} from "./memory/LocalMemory";
 
 interface Message {
   id: string;
@@ -33,7 +39,7 @@ function setStoredKey(key: string) {
   try {
     localStorage.setItem(STORAGE_KEY, key);
   } catch {
-    // ignore quota / private mode
+    // ignore
   }
 }
 
@@ -63,8 +69,26 @@ function buildRouter(apiKey: string): IntelligenceRouter {
   return new IntelligenceRouter(DEFAULT_WILSON_POLICY, registry);
 }
 
+function toStored(messages: Message[]): StoredMessage[] {
+  return messages.map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    timestamp: m.timestamp.toISOString(),
+  }));
+}
+
+function fromStored(stored: StoredMessage[]): Message[] {
+  return stored.map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    timestamp: new Date(m.timestamp),
+  }));
+}
+
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => fromStored(loadConversation()));
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [displayName] = useState("Jenny");
@@ -80,6 +104,11 @@ export default function App() {
     hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   const isConnected = Boolean(apiKey);
+
+  // Persist conversation whenever it changes
+  useEffect(() => {
+    saveConversation(toStored(messages));
+  }, [messages]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -150,11 +179,12 @@ export default function App() {
         setShowKeyPanel(true);
       } else {
         const router = buildRouter(apiKey);
+        const fullSystem = `${WILSON_SYSTEM_CONTEXT}\n\n${buildMemoryContext()}`;
 
         const request: ModelRequest = {
           userInput: userMessage,
           conversation: conversationForModel.slice(0, -1),
-          systemContext: WILSON_SYSTEM_CONTEXT,
+          systemContext: fullSystem,
           generation: { temperature: 0.85, maxTokens: 500 },
         };
 
