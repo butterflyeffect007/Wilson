@@ -25,7 +25,7 @@ interface Message {
 }
 
 const STORAGE_KEY = "wilson_openrouter_key";
-const PREFERRED_MODEL = "qwen/qwen3.8-27b:free";
+const PREFERRED_MODEL = "qwen/qwen3.8-27b";
 
 function getStoredKey(): string | null {
   try {
