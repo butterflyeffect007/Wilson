@@ -17,3 +17,7 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# fetched by deploy workflow
+src/assets/wilson-fluid.png
+tsconfig.tsbuildinfo
