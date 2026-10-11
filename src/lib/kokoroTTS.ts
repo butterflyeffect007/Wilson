@@ -100,6 +100,7 @@ export function stopSpeaking(): void {
   if (typeof speechSynthesis !== "undefined") { try { speechSynthesis.cancel(); } catch { /* ignore */ } }
   setSpeakingFlag(false);
   setPending(false);
+  const e = endCurrent; endCurrent = null; e?.();
 }
 
 /** Strip markdown, emoji, tags so only clean words are spoken. */
@@ -212,9 +213,15 @@ export type SpeechStream = { push: (textSoFar: string) => void; finish: (finalTe
  * Start speaking a reply while it is still streaming. Call push() with the full displayed text so far,
  * then finish() with the final text. Server Echo only; if it fails before any audio, falls back to speak().
  */
-export function startSpeechStream(speed: number = SPEED): SpeechStream {
+export type StreamHooks = { onStart?: () => void; onEnd?: () => void };
+let endCurrent: (() => void) | null = null;
+
+export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}): SpeechStream {
   stopSpeaking();
   const my = generation;
+  let ended = false;
+  const end = () => { if (!ended) { ended = true; if (endCurrent === end) endCurrent = null; hooks.onEnd?.(); } };
+  endCurrent = end;
   let offset = 0, buffer = "", sentFirst = false, done = false, failed = false, played = false;
   let inflight = 0;
   const queue: Promise<AudioBuffer | null>[] = [];
@@ -235,6 +242,7 @@ export function startSpeechStream(speed: number = SPEED): SpeechStream {
       const ctx = getAudioContext()!;
       if (ctx.state !== "running") { try { await ctx.resume(); } catch { /* ignore */ } }
       setPending(false);
+      if (!played) hooks.onStart?.();
       played = true;
       if (status.state === "unavailable" || status.state === "fallback") setStatus({ state: "ready" });
       await new Promise<void>((resolve) => {
@@ -247,8 +255,8 @@ export function startSpeechStream(speed: number = SPEED): SpeechStream {
     }
     playing = false;
     if (my !== generation) return;
-    if (failed && !played && done) { setPending(false); void speak(fullText, speed); return; }
-    if (done && playIdx >= queue.length) setPending(false);
+    if (failed && !played && done) { setPending(false); hooks.onStart?.(); void speak(fullText, speed).finally(end); return; }
+    if (done && playIdx >= queue.length) { setPending(false); end(); }
   };
 
   const dispatch = (text: string) => {
@@ -280,7 +288,7 @@ export function startSpeechStream(speed: number = SPEED): SpeechStream {
   };
 
   if (serverDown) {
-    return { push: () => {}, finish: (t) => { if (my === generation) void speak(t, speed); } };
+    return { push: () => {}, finish: (t) => { if (my === generation) { hooks.onStart?.(); void speak(t, speed).finally(end); } } };
   }
   setPending(true);
   return {
@@ -290,14 +298,22 @@ export function startSpeechStream(speed: number = SPEED): SpeechStream {
       // final text may differ from streamed text (tags stripped); keep offset if prefix still matches
       if (!t.startsWith(fullText.slice(0, offset))) offset = Math.min(offset, t.length);
       fullText = t; done = true; feed(t, true);
-      if (!queue.length) { setPending(false); if (failed || serverDown) void speak(t, speed); }
+      if (!queue.length) { setPending(false); if (failed || serverDown) { hooks.onStart?.(); void speak(t, speed).finally(end); } else end(); }
       else void playLoop();
     },
   };
 }
 
+/** Speak one finished message with Echo (sentence-chunked). Works regardless of the auto-voice setting. */
+export function speakMessage(text: string, speed: number = SPEED, hooks: StreamHooks = {}): void {
+  primePlayback();
+  startSpeechStream(speed, hooks).finish(text);
+}
+
 export async function speak(text: string, speed: number = SPEED): Promise<SpeakResult> {
+  const keep = endCurrent; endCurrent = null; // fallback path inside a stream must not end that stream
   stopSpeaking();
+  endCurrent = keep;
   const my = generation;
   const speakable = toSpeakable(text);
   if (!speakable) return "skipped";

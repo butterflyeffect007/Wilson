@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, MicOff, Check, Menu, Plus, Trash2, X,
-  Square, Copy, RotateCcw, Volume2, VolumeX,
+  Square, Copy, Play, RotateCcw, Volume2, VolumeX,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import Backdrop from "./components/Backdrop";
@@ -18,7 +18,7 @@ import {
   buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
-import { startSpeechStream, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
+import { startSpeechStream, speakMessage, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
 import { emitRipple } from "./lib/listeningBus";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
@@ -76,6 +76,15 @@ export default function App() {
     return saved && loadThreads().some((t) => t.id === saved) ? saved : null;
   });
   const [input, setInput] = useState("");
+  const [playMsg, setPlayMsg] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
+  const toggleMessageVoice = (msg: StoredMessage) => {
+    if (playMsg?.id === msg.id) { stopSpeaking(); setPlayMsg(null); return; }
+    setPlayMsg({ id: msg.id, phase: "loading" });
+    speakMessage(msg.content, EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], {
+      onStart: () => setPlayMsg((p) => (p?.id === msg.id ? { id: msg.id, phase: "playing" } : p)),
+      onEnd: () => setPlayMsg((p) => (p?.id === msg.id ? null : p)),
+    });
+  };
   const [thinking, setThinking] = useState(false);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [vibe, setVibe] = useState<WilsonVibe>(() => loadProfile().vibe);
@@ -765,6 +774,20 @@ export default function App() {
                         >
                           {copiedId === msg.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                           {copiedId === msg.id ? "Copied" : "Copy"}
+                        </button>
+                      )}
+                      {streamingId !== msg.id && msg.role === "assistant" && (
+                        <button
+                          type="button"
+                          onClick={() => toggleMessageVoice(msg)}
+                          className="flex items-center gap-1 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-violet-600 touch-manipulation"
+                          aria-label={playMsg?.id === msg.id ? "Stop Wilson speaking" : "Play this message"}
+                        >
+                          {playMsg?.id === msg.id
+                            ? playMsg.phase === "loading"
+                              ? <><Loader2 className="w-3 h-3 animate-spin" />Loading</>
+                              : <><Square className="w-3 h-3" />Stop</>
+                            : <><Play className="w-3 h-3" />Play</>}
                         </button>
                       )}
                     </div>
