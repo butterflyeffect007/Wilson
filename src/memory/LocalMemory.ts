@@ -33,8 +33,6 @@ export interface Profile {
 
 export interface WilsonSettings {
   voiceEnabled: boolean;
-  elevenLabsKey: string;
-  elevenLabsVoiceId: string;
   displayName: string;
 }
 
@@ -62,8 +60,6 @@ const DEFAULT_RELATIONSHIP: RelationshipSeed = {
 
 export const DEFAULT_SETTINGS: WilsonSettings = {
   voiceEnabled: true,
-  elevenLabsKey: "",
-  elevenLabsVoiceId: "JBFqnCBsd6RMkjVY5Cd5", // same default voice as wilsonaibro
   displayName: "Jenny",
 };
 

@@ -15,10 +15,14 @@ import {
   buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
-import { speak, stopSpeaking, primePlayback } from "./lib/elevenLabsTTS";
+import { speak, stopSpeaking, primePlayback } from "./lib/kokoroTTS";
 import { emitRipple } from "./lib/listeningBus";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 
+export const WILSON_PROXY_URL: string =
+  ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
+  "https://wilson-proxy.butterflyeffect007.workers.dev";
+const PROXY_SENTINEL = "__proxy__";
 const KEY_STORAGE = "wilson_openrouter_key";
 const CONTEXT_WINDOW = 10; // parity: wilsonaibro sent only the last 10 messages
 const MAX_RETRIES = 2;
@@ -35,7 +39,7 @@ function clearStoredKey() {
 }
 function resolveApiKey(): string | null {
   const env = (import.meta.env.VITE_OPENROUTER_KEY as string | undefined)?.trim();
-  return env || getStoredKey()?.trim() || null;
+  return env || getStoredKey()?.trim() || (WILSON_PROXY_URL ? PROXY_SENTINEL : null);
 }
 
 /* ---------- greetings (logic from wilsonaibro Index.tsx @ 1816d92) ---------- */
@@ -121,7 +125,7 @@ export default function App() {
   useEffect(() => { saveThreads(threads); }, [threads]);
   useEffect(() => { saveActiveThreadId(activeId); }, [activeId]);
   useEffect(() => { saveSettings(settings); }, [settings]);
-  useEffect(() => { if (!apiKey) setShowKeyPanel(true); }, [apiKey]);
+  useEffect(() => { if (!apiKey && !WILSON_PROXY_URL) setShowKeyPanel(true); }, [apiKey]);
 
   /* smart auto-scroll: follow the stream unless the user scrolled up */
   const onScroll = () => {
@@ -202,7 +206,7 @@ export default function App() {
       }
 
       const engine = getPreferredEngine(DEFAULT_WILSON_POLICY);
-      const adapter = new OpenRouterAdapter(apiKey, engine.model);
+      const adapter = apiKey === PROXY_SENTINEL ? new OpenRouterAdapter("", engine.model, WILSON_PROXY_URL) : new OpenRouterAdapter(apiKey, engine.model);
 
       const convo = history
         .filter((m) => m.role === "user" || m.role === "assistant")
@@ -270,8 +274,8 @@ export default function App() {
           }
           if (dream) saveProfile({ dream });
 
-          if (result.finishReason !== "aborted" && clean && settings.voiceEnabled && settings.elevenLabsKey) {
-            void speak(clean, settings.elevenLabsKey, settings.elevenLabsVoiceId);
+          if (result.finishReason !== "aborted" && clean && settings.voiceEnabled) {
+            void speak(clean);
           }
           break;
         } catch (err) {
@@ -469,7 +473,7 @@ export default function App() {
             >
               {settings.voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </button>
-            <button
+            {!WILSON_PROXY_URL && <button
               type="button"
               onClick={() => setShowKeyPanel((v) => !v)}
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full glass transition-colors hover:bg-white/70 touch-manipulation"
@@ -486,7 +490,7 @@ export default function App() {
                   <span className="text-[11px] font-medium text-amber-700/80">Needs key</span>
                 </>
               )}
-            </button>
+            </button>}
           </div>
         </div>
       </header>
@@ -561,26 +565,6 @@ export default function App() {
                   <input
                     value={settings.displayName}
                     onChange={(e) => setSettings((s) => ({ ...s, displayName: e.target.value }))}
-                    className="mt-1 w-full rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] text-violet-700/60">ElevenLabs API key (Wilson's voice; stored only in this browser)</span>
-                  <input
-                    type="password"
-                    value={settings.elevenLabsKey}
-                    onChange={(e) => setSettings((s) => ({ ...s, elevenLabsKey: e.target.value.trim() }))}
-                    placeholder="sk_…"
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="mt-1 w-full rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950 placeholder-violet-400/50"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-[11px] text-violet-700/60">ElevenLabs voice ID</span>
-                  <input
-                    value={settings.elevenLabsVoiceId}
-                    onChange={(e) => setSettings((s) => ({ ...s, elevenLabsVoiceId: e.target.value.trim() }))}
                     className="mt-1 w-full rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950"
                   />
                 </label>

@@ -28,10 +28,13 @@ export interface StreamResult {
 export class OpenRouterAdapter implements ModelAdapter {
   private readonly apiKey: string;
   private readonly defaultModel: string;
+  private readonly url: string;
 
-  constructor(apiKey: string, defaultModel: string = "google/gemini-2.5-flash") {
-    if (!apiKey) throw new Error("OpenRouter API key is required");
+  /** If proxyUrl is given, requests go to the Wilson proxy (key held server-side). */
+  constructor(apiKey: string, defaultModel: string = "google/gemini-2.5-flash", proxyUrl?: string) {
+    if (!apiKey && !proxyUrl) throw new Error("OpenRouter API key is required");
     this.apiKey = apiKey;
+    this.url = proxyUrl ? proxyUrl.replace(/\/$/, "") + "/v1/chat/completions" : OPENROUTER_URL;
     this.defaultModel = defaultModel;
   }
 
@@ -55,6 +58,7 @@ export class OpenRouterAdapter implements ModelAdapter {
   }
 
   private headers(): Record<string, string> {
+    if (this.url !== OPENROUTER_URL) return { "Content-Type": "application/json" };
     return {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
@@ -78,7 +82,7 @@ export class OpenRouterAdapter implements ModelAdapter {
   }
 
   async generate(request: ModelRequest): Promise<ModelResponse> {
-    const response = await fetch(OPENROUTER_URL, {
+    const response = await fetch(this.url, {
       method: "POST",
       headers: this.headers(),
       body: JSON.stringify(this.buildBody(request, false)),
@@ -138,7 +142,7 @@ export class OpenRouterAdapter implements ModelAdapter {
     };
 
     try {
-      const response = await fetch(OPENROUTER_URL, {
+      const response = await fetch(this.url, {
         method: "POST",
         headers: this.headers(),
         body: JSON.stringify(this.buildBody(request, true)),
@@ -178,7 +182,7 @@ export class OpenRouterAdapter implements ModelAdapter {
   }
 
   getStatus(): ModelStatus {
-    return { available: Boolean(this.apiKey), provider: "openrouter", model: this.defaultModel };
+    return { available: Boolean(this.apiKey) || this.url !== OPENROUTER_URL, provider: "openrouter", model: this.defaultModel };
   }
 }
 
