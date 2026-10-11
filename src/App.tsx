@@ -18,7 +18,7 @@ import {
   buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
-import { startSpeechStream, speakMessage, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
+import { startSpeechStream, speakMessage, voiceTest, subscribeVoiceDebug, getVoiceDebug, type VoiceDebug, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
 import { emitRipple } from "./lib/listeningBus";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
@@ -103,6 +103,8 @@ export default function App() {
   const [fieldOpen, setFieldOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>(() => getVoiceStatus());
   useEffect(() => subscribeVoiceStatus(setVoiceStatus), []);
+  const [voiceDebug, setVoiceDebug] = useState<VoiceDebug>(() => getVoiceDebug());
+  useEffect(() => subscribeVoiceDebug(setVoiceDebug), []);
   useEffect(() => { if (settings.voiceEnabled) warmVoice(); }, []); // wake Render early
   const [showInstallHint, setShowInstallHint] = useState(() => {
     try {
@@ -680,6 +682,11 @@ export default function App() {
                   />
                   Read Wilson's replies aloud
                 </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => voiceTest()} className="rounded-full bg-violet-100 px-3 py-1 text-[12px] text-violet-800 touch-manipulation">Voice test</button>
+                  <span className="text-[10px] text-violet-500/80 break-all">{voiceDebug.lastEvent || "not tested yet"}</span>
+                </div>
+                {voiceDebug.lastError && <p className="text-[10px] text-rose-500/80 break-all">Last voice error: {voiceDebug.lastError}</p>}
                 <p className="text-[11px] text-violet-500/70">
                   Enter send · Shift+Enter new line · Esc stop · Ctrl/Cmd+Shift+O new thread
                 </p>
