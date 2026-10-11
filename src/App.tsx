@@ -167,7 +167,10 @@ export default function App() {
   };
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickToBottom.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (!el) return;
+    // Home screen (no messages): keep the top in view so the orb's butterflies aren't scrolled off on short phones
+    if (!messages.length && !thinking) { el.scrollTop = 0; return; }
+    if (stickToBottom.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, thinking]);
 
   /* textarea auto-grow */
@@ -570,7 +573,18 @@ export default function App() {
             <Sparkles className="w-[18px] h-[18px] text-violet-400 wl-title" />
             <h1 className="wl-title text-[19px] tracking-[0.28em] text-violet-900/80">WILSON</h1>
           </div>
-          <div className="flex items-center justify-end gap-1 -mr-1.5">
+          <div className="flex items-center justify-end gap-0.5 -mr-1.5">
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="wl-theme-toggle relative w-[23px] h-[23px] rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={theme === "dark" ? "Light theme" : "Dark theme"}
+              data-theme={theme}
+            >
+              <Sun className="wl-tt-sun absolute inset-0 m-auto w-[15px] h-[15px]" />
+              <Moon className="wl-tt-moon absolute inset-0 m-auto w-[15px] h-[15px]" />
+            </button>
             <button
               type="button"
               onClick={() => { primePlayback(); if (settings.voiceEnabled) stopSpeaking(); setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled })); }}
@@ -580,7 +594,7 @@ export default function App() {
             >
               {settings.voiceEnabled ? <Volume2 className="w-[15px] h-[15px]" /> : <VolumeX className="w-[15px] h-[15px]" />}
             </button>
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full glass text-[9px] whitespace-nowrap text-violet-700/70">
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full glass text-[8.5px] whitespace-nowrap text-violet-700/70">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Always with you
             </span>
             <button
@@ -699,7 +713,7 @@ export default function App() {
       <div className="flex-1 overflow-hidden flex flex-col relative z-10">
         <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4">
           {isHome ? (
-            <div className="h-full flex flex-col items-center justify-center pt-4 pb-16 max-w-md mx-auto">
+            <div className="min-h-full flex flex-col items-center justify-center pt-[clamp(3.5rem,11vh,6rem)] pb-16 max-w-md mx-auto">
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}

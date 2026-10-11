@@ -473,3 +473,11 @@ html:not(.dark) .wl-bgimg::after { content: ""; position: absolute; inset: 0; ba
 }
 @keyframes wl-orb-preparing { 0%,100% { opacity: 0.18; transform: scale(0.98); } 50% { opacity: 0.5; transform: scale(1.03); } }
 @media (prefers-reduced-motion: reduce) { .wl-orb-preparing { animation: none; opacity: 0.35; } }
+
+/* Header sun/moon toggle: animated swap */
+.wl-theme-toggle svg { transition: transform .5s cubic-bezier(.4,1.6,.5,1), opacity .35s ease; }
+.wl-theme-toggle[data-theme="light"] .wl-tt-sun { opacity: 0; transform: rotate(-90deg) scale(.4); }
+.wl-theme-toggle[data-theme="light"] .wl-tt-moon { opacity: 1; transform: rotate(0) scale(1); }
+.wl-theme-toggle[data-theme="dark"] .wl-tt-moon { opacity: 0; transform: rotate(90deg) scale(.4); }
+.wl-theme-toggle[data-theme="dark"] .wl-tt-sun { opacity: 1; transform: rotate(0) scale(1); color: #fde68a; filter: drop-shadow(0 0 4px rgba(253,230,138,.8)); }
+@media (prefers-reduced-motion: reduce) { .wl-theme-toggle svg { transition: none; } }
