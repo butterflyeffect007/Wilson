@@ -1,78 +1,29 @@
 /**
- * Wilson's voice.
- * Primary: Kokoro (kokoro-js, Kokoro-82M ONNX q8, WASM, single thread when not cross-origin isolated).
- * Fallback: Web Speech API (speechSynthesis), best en-US male voice, if Kokoro fails or takes > 20s.
+ * Wilson's voice: Echo (Kokoro am_echo) rendered on the server via the Wilson worker /tts.
+ * Echo ONLY. No device/speechSynthesis voice and no in-browser model: if Echo isn't ready,
+ * Wilson stays silent and shows "waking up" while retrying through Render's cold start.
  * Playback goes through ONE AudioContext unlocked on the first user gesture (required on iOS).
  */
 import { attachNode, getAudioContext, setSpeakingFlag } from "./audioBus";
 
-const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
-const VOICE = "am_echo";
 const SPEED = 1.1;
-const LOAD_TIMEOUT_MS = 20000;
 const SERVER_TTS_URL = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev") + "/tts";
 let serverDown = false;
 
-/** In-browser Kokoro only where it can realistically run (not iOS; enough RAM). */
-function canRunLocalKokoro(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  const iOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  if (iOS) return false;
-  const mem = (navigator as any).deviceMemory as number | undefined;
-  return mem === undefined ? !/Android/i.test(ua) : mem >= 4;
-}
-
-let ttsPromise: Promise<any> | null = null;
-let kokoroFailed = false;
 let currentSource: AudioBufferSourceNode | null = null;
 let detachCurrent: (() => void) | null = null;
 let generation = 0;
 let unlocked = false;
 
-export type SpeakResult = "success" | "blocked" | "error" | "skipped" | "fallback";
-export type VoiceStatus = { state: "idle" | "loading" | "ready" | "fallback" | "unavailable"; progress: number; reason?: string };
+export type SpeakResult = "success" | "skipped" | "error";
+export type VoiceStatus = { state: "idle" | "waking" | "ready"; progress: number; reason?: string };
 let status: VoiceStatus = { state: "idle", progress: 0 };
 const statusListeners = new Set<(s: VoiceStatus) => void>();
 function setStatus(s: Partial<VoiceStatus>) { status = { ...status, ...s }; statusListeners.forEach((l) => l(status)); }
 export function getVoiceStatus() { return status; }
 export function subscribeVoiceStatus(l: (s: VoiceStatus) => void) { statusListeners.add(l); return () => { statusListeners.delete(l); }; }
 
-function loadTTS(): Promise<any> {
-  if (!ttsPromise) {
-    setStatus({ state: "loading", progress: 0 });
-    ttsPromise = (async () => {
-      const t = await import("@huggingface/transformers");
-      const w = (t.env.backends.onnx as any).wasm;
-      if (w && !(globalThis as any).crossOriginIsolated) w.numThreads = 1;
-      const { KokoroTTS } = await import("kokoro-js");
-      const files: Record<string, { loaded: number; total: number }> = {};
-      const tts = await KokoroTTS.from_pretrained(MODEL_ID, {
-        dtype: "q8",
-        device: "wasm",
-        progress_callback: (p: any) => {
-          if (p?.file && p.total) {
-            files[p.file] = { loaded: p.loaded ?? 0, total: p.total };
-            const tot = Object.values(files).reduce((a, f) => a + f.total, 0);
-            const ld = Object.values(files).reduce((a, f) => a + f.loaded, 0);
-            setStatus({ progress: tot ? Math.min(99, Math.round((ld / tot) * 100)) : 0 });
-          }
-        },
-      } as any);
-      setStatus({ state: "ready", progress: 100 });
-      return tts;
-    })().catch((e) => {
-      console.warn("[voice] Kokoro failed to load, using device voice:", e);
-      kokoroFailed = true;
-      setStatus({ state: "fallback", reason: String(e?.message ?? e) });
-      ttsPromise = null;
-      throw e;
-    });
-  }
-  return ttsPromise;
-}
-
-/** Call synchronously inside a user gesture (tap send / mic / orb). Unlocks iOS audio + speech. */
+/** Call synchronously inside a user gesture (tap send / mic / orb / Play). Unlocks iOS audio. */
 export function primePlayback(): void {
   const ctx = getAudioContext();
   if (ctx) {
@@ -85,11 +36,7 @@ export function primePlayback(): void {
       } catch { /* ignore */ }
     }
   }
-  if (!unlocked && typeof speechSynthesis !== "undefined") {
-    try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch { /* ignore */ }
-  }
   unlocked = true;
-  if (!ttsPromise && !kokoroFailed && canRunLocalKokoro()) void loadTTS().catch(() => {}); // start downloading early
 }
 
 export function stopSpeaking(): void {
@@ -97,7 +44,6 @@ export function stopSpeaking(): void {
   try { currentSource?.stop(); } catch { /* ignore */ }
   currentSource = null;
   detachCurrent?.(); detachCurrent = null;
-  if (typeof speechSynthesis !== "undefined") { try { speechSynthesis.cancel(); } catch { /* ignore */ } }
   setSpeakingFlag(false);
   setPending(false);
   const e = endCurrent; endCurrent = null; e?.();
@@ -118,43 +64,10 @@ export function toSpeakable(text: string): string {
     .slice(0, 1500);
 }
 
-const MALE_RE = /\b(alex|aaron|fred|daniel|evan|nathan|tom|arthur|reed|rocko|ralph|eddy|grandpa|junior|male|guy|david|mark|christopher|eric|andrew|brian|roger|steffan|davis|jason|tony)\b/i;
-function pickVoice(): SpeechSynthesisVoice | null {
-  if (typeof speechSynthesis === "undefined") return null;
-  const all = speechSynthesis.getVoices();
-  const en = all.filter((v) => /^en[-_]?(US)?/i.test(v.lang));
-  const male = en.filter((v) => MALE_RE.test(v.name) && !/female/i.test(v.name));
-  const score = (v: SpeechSynthesisVoice) =>
-    (/premium/i.test(v.name + v.voiceURI) ? 40 : 0) + (/enhanced/i.test(v.name + v.voiceURI) ? 30 : 0) +
-    (/en[-_]US/i.test(v.lang) ? 10 : 0) + (v.localService ? 3 : 0);
-  return male.sort((a, b) => score(b) - score(a))[0] ?? null;
-}
-
-function speakFallback(text: string, speed: number, my: number): Promise<SpeakResult> {
-  return new Promise((resolve) => {
-    if (typeof speechSynthesis === "undefined") return resolve("error");
-    const v = pickVoice();
-    if (!v) {
-      console.warn("[voice] no male device voice available; staying silent");
-      setStatus({ state: "unavailable" });
-      return resolve("skipped");
-    }
-    const u = new SpeechSynthesisUtterance(text);
-    u.voice = v;
-    u.lang = v?.lang ?? "en-US";
-    u.rate = Math.max(0.8, Math.min(1.3, speed * 0.95));
-    u.pitch = 0.95;
-    u.onstart = () => { if (my === generation) setSpeakingFlag(true); };
-    u.onend = () => { setSpeakingFlag(false); resolve("fallback"); };
-    u.onerror = (e) => { console.warn("[voice] speechSynthesis error", e.error); setSpeakingFlag(false); resolve("error"); };
-    speechSynthesis.cancel();
-    speechSynthesis.speak(u);
-  });
-}
-
 /* ---------------- streaming Echo (sentence-by-sentence) ---------------- */
-const MAX_PARALLEL = 2;
-const MERGE_MAX = 150;
+const MAX_PARALLEL = 1; // free Render CPU serializes anyway; queuing there risks proxy timeouts
+const MERGE_MAX = 80; // each clip must finish < ~100 s (Render edge timeout) on the free CPU
+const WAKE_BUDGET_MS = 120000; // Render free cold start + slow first clip
 let pending = false;
 const pendingListeners = new Set<(p: boolean) => void>();
 function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListeners.forEach((l) => l(p)); } }
@@ -169,22 +82,42 @@ export function warmVoice(): void {
   void fetch(SERVER_TTS_URL + "/health", { method: "GET", cache: "no-store" }).catch(() => {});
 }
 
-async function fetchClip(text: string, speed: number, my: number): Promise<AudioBuffer | null> {
+async function fetchOnce(text: string, speed: number, timeoutMs: number): Promise<ArrayBuffer> {
   const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), 120000);
+  const to = setTimeout(() => ctrl.abort(), Math.max(5000, timeoutMs));
   try {
     const res = await fetch(SERVER_TTS_URL, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, speed }), signal: ctrl.signal,
     });
-    if (res.status === 503) serverDown = true;
+    if (res.status === 503) { serverDown = true; throw new Error("voice server not configured (503)"); }
     if (!res.ok) throw new Error("tts http " + res.status);
-    const data = await res.arrayBuffer();
-    if (my !== generation) return null;
-    const ctx = getAudioContext();
-    if (!ctx) throw new Error("no AudioContext");
-    return await ctx.decodeAudioData(data);
+    return await res.arrayBuffer();
   } finally { clearTimeout(to); }
+}
+
+/** Fetch one Echo clip, retrying through Render's cold start until `deadline`. */
+async function fetchClip(text: string, speed: number, my: number, deadline: number): Promise<AudioBuffer | null> {
+  let lastErr: unknown = null;
+  while (my === generation && !serverDown) {
+    const left = deadline - Date.now();
+    if (left <= 0) break;
+    try {
+      const data = await fetchOnce(text, speed, left);
+      if (my !== generation) return null;
+      const ctx = getAudioContext();
+      if (!ctx) throw new Error("no AudioContext");
+      return await ctx.decodeAudioData(data);
+    } catch (e) {
+      lastErr = e;
+      if (serverDown || my !== generation) break;
+      console.warn("[voice] Echo not ready, retrying:", (e as Error).message);
+      setStatus({ state: "waking" });
+      lastWarm = 0; warmVoice();
+      await new Promise((r) => setTimeout(r, 4000));
+    }
+  }
+  throw lastErr ?? new Error("Echo timed out");
 }
 
 /** Split off complete sentences from `text`, starting at `from`. Returns sentences + new offset. */
@@ -211,7 +144,7 @@ export type SpeechStream = { push: (textSoFar: string) => void; finish: (finalTe
 
 /**
  * Start speaking a reply while it is still streaming. Call push() with the full displayed text so far,
- * then finish() with the final text. Server Echo only; if it fails before any audio, falls back to speak().
+ * then finish() with the final text. Echo only: if Echo never answers, Wilson stays silent (no device voice).
  */
 export type StreamHooks = { onStart?: () => void; onEnd?: () => void };
 let endCurrent: (() => void) | null = null;
@@ -224,6 +157,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   endCurrent = end;
   let offset = 0, buffer = "", sentFirst = false, done = false, failed = false, played = false;
   let inflight = 0;
+  const wakeDeadline = Date.now() + WAKE_BUDGET_MS - 90000; // first clip gets the full budget
   const queue: Promise<AudioBuffer | null>[] = [];
   const spoken: string[] = [];
   let playing = false, playIdx = 0;
@@ -244,7 +178,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       setPending(false);
       if (!played) hooks.onStart?.();
       played = true;
-      if (status.state === "unavailable" || status.state === "fallback") setStatus({ state: "ready" });
+      if (status.state !== "ready") setStatus({ state: "ready" });
       await new Promise<void>((resolve) => {
         const src = ctx.createBufferSource();
         src.buffer = buf; currentSource = src; detachCurrent = attachNode(src);
@@ -255,7 +189,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     }
     playing = false;
     if (my !== generation) return;
-    if (failed && !played && done) { setPending(false); hooks.onStart?.(); void speak(fullText, speed).finally(end); return; }
+    if (failed && done) { setPending(false); if (!played) setStatus({ state: "waking" }); end(); return; }
     if (done && playIdx >= queue.length) { setPending(false); end(); }
   };
 
@@ -265,7 +199,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     spoken.push(t);
     queue.push((async () => {
       await slot(); inflight++;
-      try { return await fetchClip(t, speed, my); }
+      try { return await fetchClip(t, speed, my, Math.max(Date.now(), wakeDeadline) + 90000); }
       finally { inflight--; waiters.shift()?.(); }
     })());
     void playLoop();
@@ -288,7 +222,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   };
 
   if (serverDown) {
-    return { push: () => {}, finish: (t) => { if (my === generation) { hooks.onStart?.(); void speak(t, speed).finally(end); } } };
+    return { push: () => {}, finish: () => { setStatus({ state: "waking" }); end(); } };
   }
   setPending(true);
   return {
@@ -298,7 +232,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       // final text may differ from streamed text (tags stripped); keep offset if prefix still matches
       if (!t.startsWith(fullText.slice(0, offset))) offset = Math.min(offset, t.length);
       fullText = t; done = true; feed(t, true);
-      if (!queue.length) { setPending(false); if (failed || serverDown) { hooks.onStart?.(); void speak(t, speed).finally(end); } else end(); }
+      if (!queue.length) { setPending(false); end(); }
       else void playLoop();
     },
   };
@@ -310,86 +244,10 @@ export function speakMessage(text: string, speed: number = SPEED, hooks: StreamH
   startSpeechStream(speed, hooks).finish(text);
 }
 
-export async function speak(text: string, speed: number = SPEED): Promise<SpeakResult> {
-  const keep = endCurrent; endCurrent = null; // fallback path inside a stream must not end that stream
-  stopSpeaking();
-  endCurrent = keep;
-  const my = generation;
-  const speakable = toSpeakable(text);
-  if (!speakable) return "skipped";
-
-  // 1) Server-side Echo (Kokoro am_echo) via the Wilson worker
-  if (!serverDown) {
-    try {
-      const ctrl = new AbortController();
-      const to = setTimeout(() => ctrl.abort(), 25000);
-      const res = await fetch(SERVER_TTS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: speakable, speed }),
-        signal: ctrl.signal,
-      });
-      clearTimeout(to);
-      if (res.status === 503) serverDown = true; // not configured: stop trying this session
-      if (res.ok) {
-        const data = await res.arrayBuffer();
-        if (my !== generation) return "skipped";
-        const ctx = getAudioContext();
-        if (ctx) {
-          if (ctx.state !== "running") { try { await ctx.resume(); } catch { /* ignore */ } }
-          const buf = await ctx.decodeAudioData(data);
-          if (my !== generation) return "skipped";
-          const src = ctx.createBufferSource();
-          src.buffer = buf;
-          currentSource = src;
-          detachCurrent = attachNode(src);
-          src.onended = () => { if (currentSource === src) { detachCurrent?.(); detachCurrent = null; currentSource = null; } };
-          src.start();
-          if (status.state === "unavailable" || status.state === "fallback") setStatus({ state: "ready" });
-          return "success";
-        }
-      }
-    } catch (e) {
-      console.warn("[voice] server Echo voice failed:", (e as Error).message);
-    }
-  }
-  if (my !== generation) return "skipped";
-
-  // 2) In-browser Kokoro (desktop / capable Android only)
-  let tts: any = null;
-  if (!kokoroFailed && canRunLocalKokoro()) {
-    try {
-      tts = await Promise.race([
-        loadTTS(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("Kokoro load timeout (20s)")), LOAD_TIMEOUT_MS)),
-      ]);
-    } catch (e) {
-      console.warn("[voice] using device voice this time:", (e as Error).message);
-      if (status.state !== "ready" && status.state !== "loading") setStatus({ state: "fallback", reason: (e as Error).message });
-    }
-  }
-  if (my !== generation) return "skipped";
-  if (!tts) return speakFallback(speakable, speed, my);
-
-  try {
-    const out = await tts.generate(speakable, { voice: VOICE, speed });
-    if (my !== generation) return "skipped";
-    const ctx = getAudioContext();
-    if (!ctx) return speakFallback(speakable, speed, my);
-    if (ctx.state !== "running") { try { await ctx.resume(); } catch { /* ignore */ } }
-    const samples: Float32Array = out.audio;
-    const buf = ctx.createBuffer(1, samples.length, out.sampling_rate);
-    buf.copyToChannel(samples as Float32Array<ArrayBuffer>, 0);
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    currentSource = src;
-    detachCurrent = attachNode(src);
-    src.onended = () => { if (currentSource === src) { detachCurrent?.(); detachCurrent = null; currentSource = null; } };
-    src.start();
-    if (ctx.state !== "running") { console.warn("[voice] AudioContext not running:", ctx.state); return speakFallback(speakable, speed, my); }
-    return "success";
-  } catch (e) {
-    console.warn("[voice] Kokoro generate/playback failed, device voice:", e);
-    return speakFallback(speakable, speed, my);
-  }
+/** Speak a full text with Echo. Resolves when playback ends (or Echo gave up: silent). */
+export function speak(text: string, speed: number = SPEED): Promise<SpeakResult> {
+  return new Promise((resolve) => {
+    let started = false;
+    startSpeechStream(speed, { onStart: () => { started = true; }, onEnd: () => resolve(started ? "success" : "skipped") }).finish(text);
+  });
 }

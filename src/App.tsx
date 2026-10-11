@@ -246,7 +246,7 @@ export default function App() {
           voiceCtxRef.current.emotion && EMOTION_GUIDANCE[voiceCtxRef.current.emotion]
             ? `\n\n[Tone heard in their voice: ${voiceCtxRef.current.emotion}] ${EMOTION_GUIDANCE[voiceCtxRef.current.emotion]}` : ""
         }${toolCtx}`,
-        generation: { temperature: 0.8, maxTokens: 2048 },
+        generation: { temperature: 0.8, maxTokens: 4096 },
       };
 
       const msgId = "stream-" + newId();
@@ -272,7 +272,7 @@ export default function App() {
       let attempt = 0;
       for (;;) {
         try {
-          const result = await adapter.generateStream(
+          let result = await adapter.generateStream(
             request,
             (chunk) => {
               if (!raw) {
@@ -286,6 +286,28 @@ export default function App() {
             },
             abort.signal,
           );
+          // Auto-continue once if the model hit its length cap mid-thought
+          if (result.finishReason === "length" && raw && !abort.signal.aborted) {
+            const contReq: ModelRequest = {
+              ...request,
+              conversation: [...(request.conversation ?? []), { role: "user", content: request.userInput }, { role: "assistant", content: raw }],
+              userInput: "Continue exactly where you left off. Do not repeat anything or add a preamble.",
+            };
+            const needsSpace = !/\s$/.test(raw);
+            let first = true;
+            result = await adapter.generateStream(
+              contReq,
+              (chunk) => {
+                if (first && needsSpace && !/^\s/.test(chunk)) chunk = " " + chunk;
+                first = false;
+                raw += chunk;
+                const shown = stripTagsForDisplay(raw);
+                writeAssistant(shown);
+                speech?.push(shown);
+              },
+              abort.signal,
+            );
+          }
 
           const { clean, vibe: newVibe, dream } = parseAndStripTags(raw);
           let finalText = clean;
@@ -844,11 +866,8 @@ export default function App() {
             {settings.showHeard && settings.emotionDetection && heard && (
               <p className="mb-1 px-2 text-[11px] text-violet-500/60">Heard: {heard.tag} ({Math.round(heard.confidence * 100)}%)</p>
             )}
-            {settings.voiceEnabled && voiceStatus.state === "loading" && (
-              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is loading… {voiceStatus.progress}%</p>
-            )}
-            {settings.voiceEnabled && voiceStatus.state === "unavailable" && (
-              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Voice unavailable right now</p>
+            {settings.voiceEnabled && voiceStatus.state === "waking" && (
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is waking up…</p>
             )}
             {showInstallHint && (
               <div className="mb-2 mx-1 flex items-center gap-2 rounded-2xl glass px-3 py-2 text-[13px] text-violet-800/80">
