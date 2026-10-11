@@ -497,7 +497,7 @@ export default function App() {
 
       <header className="relative z-10 px-4 pt-5 pb-3">
         <div className="max-w-lg mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
@@ -507,13 +507,13 @@ export default function App() {
               <Menu className="w-[18px] h-[18px]" />
             </button>
             <Sparkles className="w-4 h-4 text-violet-400 wl-title" />
-            <h1 className="wl-title text-[17px] tracking-[0.32em] text-violet-900/90">WILSON</h1>
+            <h1 className="wl-title text-[16px] tracking-[0.26em] text-violet-900/90">WILSON</h1>
             <span className="ml-1 hidden min-[360px]:flex items-center gap-1.5 px-2 py-0.5 rounded-full glass text-[10px] whitespace-nowrap text-violet-700/70">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Always with you
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0 flex-shrink-0 -mr-1.5">
             <button
               type="button"
               onClick={() => setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled }))}
