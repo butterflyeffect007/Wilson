@@ -1,144 +1,180 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Sparkles, Loader2, Mic, KeyRound, Check } from "lucide-react";
-import WilsonOrb from "./components/WilsonOrb";
 import {
-  IntelligenceRouter,
-  AdapterRegistry,
-  OpenRouterAdapter,
-  type ModelRequest,
-} from "./intelligence";
-import { DEFAULT_WILSON_POLICY } from "./core/wilson/WilsonPolicy";
+  Send, Sparkles, Loader2, Mic, MicOff, KeyRound, Check, Menu, Plus, Trash2, X,
+  Square, Copy, RotateCcw, Volume2, VolumeX,
+} from "lucide-react";
+import WilsonOrb from "./components/WilsonOrb";
+import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
+import type { ModelRequest } from "./intelligence";
+import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { WILSON_SYSTEM_CONTEXT } from "./core/wilson/WilsonIdentity";
 import {
-  loadConversation,
-  saveConversation,
-  buildMemoryContext,
-  type StoredMessage,
+  loadThreads, saveThreads, loadActiveThreadId, saveActiveThreadId,
+  loadProfile, saveProfile, loadSettings, saveSettings,
+  buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
+  type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
+import { speak, stopSpeaking, primePlayback } from "./lib/elevenLabsTTS";
+import { emitRipple } from "./lib/listeningBus";
+import { useSpeechToText } from "./hooks/useSpeechToText";
 
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-}
+const KEY_STORAGE = "wilson_openrouter_key";
+const CONTEXT_WINDOW = 10; // parity: wilsonaibro sent only the last 10 messages
+const MAX_RETRIES = 2;
 
-const STORAGE_KEY = "wilson_openrouter_key";
-const PREFERRED_MODEL = "qwen/qwen3.8-27b";
-
+/* ---------- key helpers ---------- */
 function getStoredKey(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  try { return localStorage.getItem(KEY_STORAGE); } catch { return null; }
 }
-
-function setStoredKey(key: string) {
-  try {
-    localStorage.setItem(STORAGE_KEY, key);
-  } catch {
-    // ignore
-  }
+function setStoredKey(k: string) {
+  try { localStorage.setItem(KEY_STORAGE, k); } catch { /* ignore */ }
 }
-
 function clearStoredKey() {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // ignore
-  }
+  try { localStorage.removeItem(KEY_STORAGE); } catch { /* ignore */ }
 }
-
 function resolveApiKey(): string | null {
-  const fromEnv = (import.meta.env.VITE_OPENROUTER_KEY as string | undefined)?.trim();
-  if (fromEnv) return fromEnv;
-  const fromStorage = getStoredKey()?.trim();
-  if (fromStorage) return fromStorage;
-  return null;
+  const env = (import.meta.env.VITE_OPENROUTER_KEY as string | undefined)?.trim();
+  return env || getStoredKey()?.trim() || null;
 }
 
-function buildRouter(apiKey: string): IntelligenceRouter {
-  const registry = new AdapterRegistry();
-  registry.register(
-    "openrouter",
-    PREFERRED_MODEL,
-    new OpenRouterAdapter(apiKey, PREFERRED_MODEL),
-  );
-  return new IntelligenceRouter(DEFAULT_WILSON_POLICY, registry);
+/* ---------- greetings (logic from wilsonaibro Index.tsx @ 1816d92) ---------- */
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+function getThreadGreeting(displayName: string, isReturning: boolean): string {
+  const name = displayName ? ` ${displayName}` : "";
+  if (!isReturning) return `Hey${name} — I'm **Wilson**. Ask me anything. ✨`;
+  return pickRandom([
+    `Hey${name}. What's on your mind?`,
+    `Welcome back${name}. What are we tackling?`,
+    `Good to see you${name}. Where do we start?`,
+    `Hey${name} — back for more? Hit me.`,
+    `Yo${name}. What do you need?`,
+    `${name ? name.trim() + "!" : "Hey!"} What's up?`,
+  ]);
 }
 
-function toStored(messages: Message[]): StoredMessage[] {
-  return messages.map((m) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    timestamp: m.timestamp.toISOString(),
-  }));
+/* ---------- tiny safe inline markdown (bold, italic, code) ---------- */
+function renderInline(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+  return parts.map((p, i) => {
+    if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
+    if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
+    if (p.length > 2 && p.startsWith("`") && p.endsWith("`"))
+      return <code key={i} className="px-1 rounded bg-violet-100/70 text-[0.92em]">{p.slice(1, -1)}</code>;
+    return <span key={i}>{p}</span>;
+  });
 }
 
-function fromStored(stored: StoredMessage[]): Message[] {
-  return stored.map((m) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    timestamp: new Date(m.timestamp),
-  }));
+function friendlyError(err: unknown): { text: string; retryable: boolean; badKey: boolean } {
+  const status = err instanceof OpenRouterError ? err.status : 0;
+  const msg = err instanceof Error ? err.message : String(err);
+  if (status === 401 || status === 403)
+    return { text: "The key was rejected. Double-check it at openrouter.ai/keys, then reconnect.", retryable: false, badKey: true };
+  if (status === 402)
+    return { text: "*The OpenRouter account is out of credits. Top up at openrouter.ai/credits and try again.*", retryable: false, badKey: false };
+  if (status === 429) return { text: "*Whew — rate-limited. Give it a beat and ask again.*", retryable: true, badKey: false };
+  if (status >= 500 || status === 0)
+    return { text: "*Oh no no no! Something went wrong in the void... Please try again!*", retryable: true, badKey: false };
+  return { text: `Wilson stumbled: ${msg}`, retryable: false, badKey: false };
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>(() => fromStored(loadConversation()));
+  const [threads, setThreads] = useState<StoredThread[]>(() => loadThreads());
+  const [activeId, setActiveId] = useState<string | null>(() => {
+    const saved = loadActiveThreadId();
+    return saved && loadThreads().some((t) => t.id === saved) ? saved : null;
+  });
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [displayName] = useState("Jenny");
+  const [thinking, setThinking] = useState(false);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [vibe, setVibe] = useState<WilsonVibe>(() => loadProfile().vibe);
+  const [settings, setSettings] = useState<WilsonSettings>(() => loadSettings());
   const [apiKey, setApiKey] = useState<string | null>(() => resolveApiKey());
   const [showKeyPanel, setShowKeyPanel] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [keyInput, setKeyInput] = useState("");
   const [keyError, setKeyError] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [lastFailed, setLastFailed] = useState<{ threadId: string; content: string } | null>(null);
+
+  const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const stickToBottom = useRef(true);
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+
+  const busy = thinking || streamingId !== null;
+  const isConnected = Boolean(apiKey);
+  const activeThread = threads.find((t) => t.id === activeId) ?? null;
+  const messages = activeThread?.messages ?? [];
+  const displayName = settings.displayName || "Jenny";
 
   const hour = new Date().getHours();
-  const greeting =
-    hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
-  const isConnected = Boolean(apiKey);
+  /* persistence */
+  useEffect(() => { saveThreads(threads); }, [threads]);
+  useEffect(() => { saveActiveThreadId(activeId); }, [activeId]);
+  useEffect(() => { saveSettings(settings); }, [settings]);
+  useEffect(() => { if (!apiKey) setShowKeyPanel(true); }, [apiKey]);
 
-  // Persist conversation whenever it changes
+  /* smart auto-scroll: follow the stream unless the user scrolled up */
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  };
   useEffect(() => {
-    saveConversation(toStored(messages));
-  }, [messages]);
+    const el = scrollRef.current;
+    if (el && stickToBottom.current) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [messages, thinking]);
 
+  /* textarea auto-grow */
   useEffect(() => {
-    if (scrollRef.current) {
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({
-          top: scrollRef.current.scrollHeight,
-          behavior: "smooth",
-        });
-      }, 80);
-    }
-  }, [messages, loading]);
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 140) + "px";
+  }, [input]);
 
-  useEffect(() => {
-    if (!apiKey) {
-      setShowKeyPanel(true);
-    }
-  }, [apiKey]);
+  /* ---------- thread helpers ---------- */
+  const updateThread = useCallback((id: string, fn: (t: StoredThread) => StoredThread) => {
+    setThreads((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
+  }, []);
 
+  const createThread = useCallback((): StoredThread => {
+    const greetingMsg: StoredMessage = {
+      id: newId(),
+      role: "assistant",
+      content: getThreadGreeting(displayName, threadsRef.current.length > 0),
+      timestamp: new Date().toISOString(),
+    };
+    const t: StoredThread = { id: newId(), title: "New Thread", createdAt: new Date().toISOString(), messages: [greetingMsg] };
+    threadsRef.current = [t, ...threadsRef.current];
+    setThreads((prev) => [t, ...prev]);
+    setActiveId(t.id);
+    setSidebarOpen(false);
+    return t;
+  }, [displayName]);
+
+  const deleteThread = useCallback((id: string) => {
+    if (!window.confirm("Delete this thread?")) return;
+    setThreads((prev) => prev.filter((t) => t.id !== id));
+    setActiveId((cur) => (cur === id ? null : cur));
+  }, []);
+
+  /* ---------- key panel ---------- */
   const connectBrain = useCallback(() => {
-    const trimmed = keyInput.trim();
-    if (!trimmed) {
-      setKeyError("Paste your OpenRouter key to connect Wilson.");
-      return;
-    }
-    if (!trimmed.startsWith("sk-or-")) {
-      setKeyError("That doesn't look like an OpenRouter key (it should start with sk-or-).");
-      return;
-    }
-    setStoredKey(trimmed);
-    setApiKey(trimmed);
+    const k = keyInput.trim();
+    if (!k) { setKeyError("Paste your OpenRouter key to connect Wilson."); return; }
+    if (!k.startsWith("sk-or-")) { setKeyError("That doesn't look like an OpenRouter key (it should start with sk-or-)."); return; }
+    setStoredKey(k);
+    setApiKey(k);
     setKeyInput("");
     setKeyError("");
     setShowKeyPanel(false);
@@ -150,94 +186,193 @@ export default function App() {
     setShowKeyPanel(true);
   }, []);
 
-  const sendMessage = async (text?: string) => {
-    const userMessage = (text ?? input).trim();
-    if (!userMessage || loading) return;
-
-    setInput("");
-    const userMsg: Message = {
-      id: `user-${Date.now()}`,
-      role: "user",
-      content: userMessage,
-      timestamp: new Date(),
-    };
-
-    const conversationForModel = [
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
-      { role: "user" as const, content: userMessage },
-    ];
-
-    setMessages((prev) => [...prev, userMsg]);
-    setLoading(true);
-
-    try {
-      let reply: string;
+  /* ---------- core completion (streaming) ---------- */
+  const runCompletion = useCallback(
+    async (threadId: string, history: StoredMessage[], content: string) => {
+      const pushAssistant = (text: string) =>
+        updateThread(threadId, (t) => ({
+          ...t,
+          messages: [...t.messages, { id: newId(), role: "assistant", content: text, timestamp: new Date().toISOString() }],
+        }));
 
       if (!apiKey) {
-        reply =
-          "My brain isn't connected yet. Tap the key icon in the header and paste your OpenRouter key — then we can explore together.";
+        pushAssistant("My brain isn't connected yet. Tap the key icon in the header and paste your OpenRouter key — then we can explore together.");
         setShowKeyPanel(true);
-      } else {
-        const router = buildRouter(apiKey);
-        const fullSystem = `${WILSON_SYSTEM_CONTEXT}\n\n${buildMemoryContext()}`;
+        return;
+      }
 
-        const request: ModelRequest = {
-          userInput: userMessage,
-          conversation: conversationForModel.slice(0, -1),
-          systemContext: fullSystem,
-          generation: { temperature: 0.85, maxTokens: 500 },
-        };
+      const engine = getPreferredEngine(DEFAULT_WILSON_POLICY);
+      const adapter = new OpenRouterAdapter(apiKey, engine.model);
 
-        const response = await router.generate(request);
-        const raw = (response.text ?? "").trim();
+      const convo = history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role, content: m.content }));
+      // last 10 messages INCLUDING the new user message (parity)
+      const windowed = [...convo, { role: "user" as const, content }].slice(-CONTEXT_WINDOW);
+      const request: ModelRequest = {
+        userInput: content,
+        conversation: windowed.slice(0, -1),
+        systemContext: `${WILSON_SYSTEM_CONTEXT}\n\n${buildMemoryContext(threadsRef.current)}`,
+        generation: { temperature: 0.8, maxTokens: 2048 },
+      };
 
-        if (!raw) {
-          reply =
-            "Eh, the free tier just handed me silence. Give it a few seconds and try again — I don't want to give you something half-baked.";
-        } else {
-          reply = raw;
+      const msgId = "stream-" + newId();
+      let raw = "";
+      setThinking(true);
+      setLastFailed(null);
+      const abort = new AbortController();
+      abortRef.current = abort;
+
+      const writeAssistant = (text: string) => {
+        updateThread(threadId, (t) => {
+          const exists = t.messages.some((m) => m.id === msgId);
+          return {
+            ...t,
+            messages: exists
+              ? t.messages.map((m) => (m.id === msgId ? { ...m, content: text } : m))
+              : [...t.messages, { id: msgId, role: "assistant", content: text, timestamp: new Date().toISOString() }],
+          };
+        });
+      };
+
+      let attempt = 0;
+      for (;;) {
+        try {
+          const result = await adapter.generateStream(
+            request,
+            (chunk) => {
+              if (!raw) {
+                setThinking(false);
+                setStreamingId(msgId);
+              }
+              raw += chunk;
+              writeAssistant(stripTagsForDisplay(raw));
+            },
+            abort.signal,
+          );
+
+          const { clean, vibe: newVibe, dream } = parseAndStripTags(raw);
+          let finalText = clean;
+          if (result.finishReason === "aborted") {
+            finalText = clean ? `${clean}\n\n*...stopped.*` : "*Stopped.*";
+          } else if (!clean) {
+            finalText = "Eh, the void handed me silence. Give it a few seconds and try again — I don't want to give you something half-baked.";
+          } else if (result.finishReason === "length") {
+            finalText += "\n\n*...whew, hit my length ceiling. Ask me to continue and I'll pick up where I left off.*";
+          } else if (result.finishReason === "content_filter" || result.finishReason === "SAFETY") {
+            finalText += "\n\n*...okay okay, the safety net just yanked me back. Try rephrasing, or ask me something adjacent and I'll get you what you need.*";
+          }
+          writeAssistant(finalText);
+
+          if (newVibe) {
+            setVibe(newVibe);
+            saveProfile({ vibe: newVibe });
+          }
+          if (dream) saveProfile({ dream });
+
+          if (result.finishReason !== "aborted" && clean && settings.voiceEnabled && settings.elevenLabsKey) {
+            void speak(clean, settings.elevenLabsKey, settings.elevenLabsVoiceId);
+          }
+          break;
+        } catch (err) {
+          const fe = friendlyError(err);
+          // retry only if nothing has streamed yet (avoids duplicated text)
+          if (fe.retryable && !raw && attempt < MAX_RETRIES && !abort.signal.aborted) {
+            attempt++;
+            await sleep(800 * attempt);
+            continue;
+          }
+          if (fe.badKey) setShowKeyPanel(true);
+          writeAssistant(
+            raw
+              ? `${stripTagsForDisplay(raw)}\n\n*...connection dropped mid-thought. Ask me to continue and I'll pick it back up.*`
+              : fe.text,
+          );
+          if (fe.retryable && !raw) setLastFailed({ threadId, content });
+          break;
         }
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `ai-${Date.now()}`,
-          role: "assistant",
-          content: reply,
-          timestamp: new Date(),
-        },
-      ]);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      let friendly = message;
-      if (message.includes("401") || message.toLowerCase().includes("unauthorized")) {
-        friendly =
-          "The key was rejected. Double-check it at openrouter.ai/keys, then reconnect.";
-        setShowKeyPanel(true);
-      } else if (message.includes("429")) {
-        friendly =
-          "We're moving a little too fast for the free tier. Give it a moment and try again.";
-      }
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `ai-err-${Date.now()}`,
-          role: "assistant",
-          content: `Wilson stumbled: ${friendly}`,
-          timestamp: new Date(),
-        },
-      ]);
-    } finally {
-      setLoading(false);
+      abortRef.current = null;
+      setThinking(false);
+      setStreamingId(null);
       inputRef.current?.focus();
-    }
-  };
+    },
+    [apiKey, settings, updateThread],
+  );
 
-  const isHome = messages.length === 0 && !loading;
+  const sendMessage = useCallback(
+    async (text?: string) => {
+      const content = (text ?? input).trim();
+      if (!content || busy) return;
+      stopSpeaking(); // interrupt any voice on send (parity)
+      primePlayback();
+      emitRipple();
+      setInput("");
+      stickToBottom.current = true;
+
+      const thread = activeThread ?? createThread();
+      const history = thread.messages;
+      const userMsg: StoredMessage = { id: newId(), role: "user", content, timestamp: new Date().toISOString() };
+
+      updateThread(thread.id, (t) => ({
+        ...t,
+        title: t.title === "New Thread" ? makeTitle(content) : t.title,
+        messages: [...t.messages, userMsg],
+      }));
+
+      await runCompletion(thread.id, history, content);
+    },
+    [input, busy, activeThread, createThread, updateThread, runCompletion],
+  );
+
+  const retryLast = useCallback(() => {
+    if (!lastFailed || busy) return;
+    const t = threadsRef.current.find((x) => x.id === lastFailed.threadId);
+    if (!t) return;
+    const msgs = [...t.messages];
+    if (msgs.length && msgs[msgs.length - 1].role === "assistant") msgs.pop(); // drop error bubble
+    const historyBeforeUser = msgs.slice(0, -1);
+    updateThread(t.id, (x) => ({ ...x, messages: msgs }));
+    void runCompletion(t.id, historyBeforeUser, lastFailed.content);
+  }, [lastFailed, busy, updateThread, runCompletion]);
+
+  const stopGenerating = useCallback(() => abortRef.current?.abort(), []);
+
+  const copyMessage = useCallback(async (m: StoredMessage) => {
+    try {
+      await navigator.clipboard.writeText(m.content);
+      setCopiedId(m.id);
+      setTimeout(() => setCopiedId((c) => (c === m.id ? null : c)), 1500);
+    } catch { /* clipboard blocked */ }
+  }, []);
+
+  /* ---------- voice input ---------- */
+  const onFinalSpeech = useCallback((t: string) => { void sendMessage(t); }, [sendMessage]);
+  const onInterimSpeech = useCallback((t: string) => setInput(t), []);
+  const stt = useSpeechToText(onFinalSpeech, onInterimSpeech);
+
+  /* ---------- global shortcuts ---------- */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (abortRef.current) abortRef.current.abort();
+        stopSpeaking();
+        setSidebarOpen(false);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "o") {
+        e.preventDefault();
+        createThread();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createThread]);
+
+  const isHome = !activeThread;
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden">
+    <div className="h-[100dvh] flex flex-col relative overflow-hidden">
       <div className="fixed inset-0 -z-10 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-b from-[#f8f0ff] via-[#f3e8ff] to-[#e8f4ff]" />
         <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[140%] h-[70%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(196,181,253,0.35),transparent_70%)] blur-3xl" />
@@ -248,9 +383,74 @@ export default function App() {
         <div className="wilson-field-particles" />
       </div>
 
+      {/* Threads drawer (existing glass styling) */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <>
+            <motion.div
+              className="fixed inset-0 z-40 bg-violet-950/10"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setSidebarOpen(false)}
+            />
+            <motion.aside
+              initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }}
+              transition={{ type: "tween", duration: 0.25 }}
+              className="fixed z-50 inset-y-0 left-0 w-72 max-w-[85%] glass-strong flex flex-col"
+              aria-label="Threads"
+            >
+              <div className="flex items-center justify-between px-4 pt-5 pb-3">
+                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-violet-500">Threads</span>
+                <button type="button" onClick={() => setSidebarOpen(false)} className="p-1.5 rounded-full text-violet-400 hover:bg-violet-50/80" aria-label="Close threads">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="px-3 pb-2">
+                <button
+                  type="button"
+                  onClick={createThread}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-cyan-500 text-white text-sm font-medium shadow-md hover:opacity-95"
+                >
+                  <Plus className="w-4 h-4" /> New thread
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
+                {threads.length === 0 && <p className="text-[12px] text-violet-700/50 px-3 py-4">No threads yet.</p>}
+                {threads.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => { setActiveId(t.id); setSidebarOpen(false); }}
+                    className={`group flex items-center gap-2 rounded-xl px-3 py-2.5 cursor-pointer text-[13px] text-violet-950/85 ${
+                      t.id === activeId ? "bg-white/70" : "hover:bg-white/50"
+                    }`}
+                  >
+                    <span className="flex-1 truncate">{t.title}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); deleteThread(t.id); }}
+                      className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 rounded text-violet-400 hover:text-rose-500"
+                      aria-label="Delete thread"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
       <header className="relative z-10 px-4 pt-5 pb-3">
         <div className="max-w-lg mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="p-1.5 -ml-1.5 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+              aria-label="Open threads"
+            >
+              <Menu className="w-[18px] h-[18px]" />
+            </button>
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-400 via-pink-300 to-cyan-300 flex items-center justify-center shadow-sm">
               <Sparkles className="w-3.5 h-3.5 text-white" />
             </div>
@@ -260,6 +460,15 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled }))}
+              className="p-1.5 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+              title={settings.voiceEnabled ? "Voice replies on" : "Voice replies off"}
+              aria-label="Toggle voice replies"
+            >
+              {settings.voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
             <button
               type="button"
               onClick={() => setShowKeyPanel((v) => !v)}
@@ -290,32 +499,21 @@ export default function App() {
             exit={{ opacity: 0, y: -8 }}
             className="relative z-20 px-4 pb-3"
           >
-            <div className="max-w-lg mx-auto rounded-2xl glass-strong p-4 space-y-3 shadow-lg">
+            <div className="max-w-lg mx-auto rounded-2xl glass-strong p-4 space-y-3 shadow-lg max-h-[70dvh] overflow-y-auto">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-violet-950/90">
-                    Connect Wilson's brain
-                  </h3>
+                  <h3 className="text-sm font-semibold text-violet-950/90">Connect Wilson's brain</h3>
                   <p className="text-[12px] text-violet-700/60 mt-0.5 leading-relaxed">
                     Paste an OpenRouter key. It stays only in this browser (localStorage).
-                    Get a free key at{" "}
-                    <a
-                      href="https://openrouter.ai/keys"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="underline text-violet-600 hover:text-violet-800"
-                    >
+                    Get a key at{" "}
+                    <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="underline text-violet-600 hover:text-violet-800">
                       openrouter.ai/keys
                     </a>
                     .
                   </p>
                 </div>
                 {isConnected && (
-                  <button
-                    type="button"
-                    onClick={() => setShowKeyPanel(false)}
-                    className="text-violet-400 hover:text-violet-600 text-xs"
-                  >
+                  <button type="button" onClick={() => setShowKeyPanel(false)} className="text-violet-400 hover:text-violet-600 text-xs">
                     Close
                   </button>
                 )}
@@ -326,21 +524,14 @@ export default function App() {
                   <input
                     type="password"
                     value={keyInput}
-                    onChange={(e) => {
-                      setKeyInput(e.target.value);
-                      setKeyError("");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") connectBrain();
-                    }}
+                    onChange={(e) => { setKeyInput(e.target.value); setKeyError(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") connectBrain(); }}
                     placeholder="sk-or-v1-…"
                     className="w-full rounded-xl px-3 py-2.5 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950 placeholder-violet-400/50"
                     autoComplete="off"
                     spellCheck={false}
                   />
-                  {keyError && (
-                    <p className="text-[12px] text-rose-600">{keyError}</p>
-                  )}
+                  {keyError && <p className="text-[12px] text-rose-600">{keyError}</p>}
                   <button
                     type="button"
                     onClick={connectBrain}
@@ -356,22 +547,62 @@ export default function App() {
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     Brain is connected and ready.
                   </p>
-                  <button
-                    type="button"
-                    onClick={disconnectBrain}
-                    className="text-[12px] text-violet-500 hover:text-rose-500 transition-colors"
-                  >
+                  <button type="button" onClick={disconnectBrain} className="text-[12px] text-violet-500 hover:text-rose-500 transition-colors">
                     Disconnect
                   </button>
                 </div>
               )}
+
+              {/* Voice + name settings (persisted locally) */}
+              <div className="pt-3 border-t border-violet-200/50 space-y-2">
+                <h4 className="text-[12px] font-semibold text-violet-950/80">Voice & settings</h4>
+                <label className="block">
+                  <span className="text-[11px] text-violet-700/60">Your name</span>
+                  <input
+                    value={settings.displayName}
+                    onChange={(e) => setSettings((s) => ({ ...s, displayName: e.target.value }))}
+                    className="mt-1 w-full rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] text-violet-700/60">ElevenLabs API key (Wilson's voice; stored only in this browser)</span>
+                  <input
+                    type="password"
+                    value={settings.elevenLabsKey}
+                    onChange={(e) => setSettings((s) => ({ ...s, elevenLabsKey: e.target.value.trim() }))}
+                    placeholder="sk_…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="mt-1 w-full rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950 placeholder-violet-400/50"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] text-violet-700/60">ElevenLabs voice ID</span>
+                  <input
+                    value={settings.elevenLabsVoiceId}
+                    onChange={(e) => setSettings((s) => ({ ...s, elevenLabsVoiceId: e.target.value.trim() }))}
+                    className="mt-1 w-full rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
+                  <input
+                    type="checkbox"
+                    checked={settings.voiceEnabled}
+                    onChange={(e) => setSettings((s) => ({ ...s, voiceEnabled: e.target.checked }))}
+                  />
+                  Read Wilson's replies aloud
+                </label>
+                <p className="text-[11px] text-violet-500/70">
+                  Enter send · Shift+Enter new line · Esc stop · Ctrl/Cmd+Shift+O new thread
+                </p>
+              </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
       <div className="flex-1 overflow-hidden flex flex-col relative z-10">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
+        <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4">
           {isHome ? (
             <div className="h-full flex flex-col items-center justify-center pb-6 max-w-md mx-auto">
               <motion.div
@@ -381,7 +612,7 @@ export default function App() {
                 className="relative mb-8"
               >
                 <div className="relative">
-                  <WilsonOrb size="lg" />
+                  <WilsonOrb size="lg" vibe={vibe} isThinking={thinking} />
                 </div>
               </motion.div>
 
@@ -420,53 +651,76 @@ export default function App() {
             </div>
           ) : (
             <div className="max-w-lg mx-auto w-full py-4 space-y-4">
-              <AnimatePresence mode="popLayout">
-                {messages.map((msg) => (
-                  <motion.div
-                    key={msg.id}
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={`flex gap-3 ${
-                      msg.role === "user" ? "justify-end" : "items-start"
+              {messages.map((msg) => (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={`group flex gap-3 ${msg.role === "user" ? "justify-end" : "items-start"}`}
+                >
+                  {msg.role === "assistant" && <WilsonOrb size="sm" vibe={vibe} isThinking={streamingId === msg.id} />}
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                      msg.role === "assistant" ? "msg-wilson" : "msg-user"
                     }`}
                   >
-                    {msg.role === "assistant" && <WilsonOrb size="sm" />}
-                    <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                        msg.role === "assistant" ? "msg-wilson" : "msg-user"
-                      }`}
-                    >
-                      {msg.role === "assistant" && (
-                        <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-violet-500 mb-1">
-                          Wilson
-                        </span>
-                      )}
-                      <p className="text-violet-950/90">{msg.content}</p>
-                      <span className="block text-[10px] text-violet-400/60 mt-2">
-                        {msg.timestamp.toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
+                    {msg.role === "assistant" && (
+                      <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-violet-500 mb-1">
+                        Wilson
                       </span>
+                    )}
+                    <div className="text-violet-950/90 whitespace-pre-wrap break-words">
+                      {msg.content.split("\n").map((line, i) => (
+                        <div key={i}>{line ? renderInline(line) : "\u00A0"}</div>
+                      ))}
+                      {streamingId === msg.id && (
+                        <span className="inline-block w-1.5 h-4 align-middle bg-violet-400/70 animate-pulse ml-0.5" />
+                      )}
                     </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+                    <div className="flex items-center gap-3 mt-2 text-[10px] text-violet-400/60">
+                      <span>
+                        {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                      {streamingId !== msg.id && (
+                        <button
+                          type="button"
+                          onClick={() => copyMessage(msg)}
+                          className="flex items-center gap-1 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-violet-600"
+                          aria-label="Copy message"
+                        >
+                          {copiedId === msg.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                          {copiedId === msg.id ? "Copied" : "Copy"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
 
-              {loading && (
+              {thinking && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="flex gap-3 items-start"
                 >
-                  <WilsonOrb size="sm" isThinking />
+                  <WilsonOrb size="sm" vibe={vibe} isThinking />
                   <div className="rounded-2xl msg-wilson px-4 py-3 flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
-                    <span className="text-sm text-violet-700/60">
-                      Wilson is thinking...
-                    </span>
+                    <span className="text-sm text-violet-700/60">Wilson is thinking...</span>
                   </div>
                 </motion.div>
+              )}
+
+              {lastFailed && !busy && lastFailed.threadId === activeId && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={retryLast}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass text-[12px] text-violet-700/80 hover:bg-white/70"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" /> Retry
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -474,44 +728,58 @@ export default function App() {
 
         <div className="relative z-30 px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="max-w-lg mx-auto">
-            <div className="relative flex items-center gap-2 rounded-full glass-strong px-2 py-1.5">
-              <input
+            {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
+            <div className="relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5">
+              <textarea
                 ref={inputRef}
+                rows={1}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    sendMessage();
+                    void sendMessage();
                   }
                 }}
-                placeholder="Type a message..."
-                disabled={loading}
+                placeholder={stt.listening ? "Listening..." : "Type a message..."}
                 enterKeyHint="send"
-                className="flex-1 bg-transparent px-3 py-2.5 text-[16px] text-violet-950 placeholder-violet-400/50 outline-none disabled:opacity-50 touch-manipulation"
+                className="flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-violet-950 placeholder-violet-400/50 outline-none touch-manipulation"
               />
               <button
                 type="button"
-                className="p-2 rounded-full text-violet-400/70 hover:text-violet-500 hover:bg-violet-50/80 transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center touch-manipulation"
-                aria-label="Voice"
+                onClick={() => { primePlayback(); stopSpeaking(); stt.toggle(); }}
+                disabled={busy || !stt.supported}
+                className={`p-2 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center touch-manipulation disabled:opacity-40 ${
+                  stt.listening ? "text-rose-500 bg-rose-50/80" : "text-violet-400/70 hover:text-violet-500 hover:bg-violet-50/80"
+                }`}
+                aria-label={stt.listening ? "Stop listening" : "Voice"}
+                title={stt.supported ? "Speak to Wilson" : "Voice input isn't supported in this browser"}
               >
-                <Mic className="w-[18px] h-[18px]" />
+                {stt.listening ? <MicOff className="w-[18px] h-[18px]" /> : <Mic className="w-[18px] h-[18px]" />}
               </button>
-              <motion.button
-                type="button"
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => sendMessage()}
-                disabled={loading || !input.trim()}
-                className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
-                aria-label="Send"
-              >
-                {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
+              {busy ? (
+                <button
+                  type="button"
+                  onClick={stopGenerating}
+                  className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md touch-manipulation"
+                  aria-label="Stop generating"
+                  title="Stop (Esc)"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                </button>
+              ) : (
+                <motion.button
+                  type="button"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => void sendMessage()}
+                  disabled={!input.trim()}
+                  className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
+                  aria-label="Send"
+                >
                   <Send className="w-4 h-4" />
-                )}
-              </motion.button>
+                </motion.button>
+              )}
             </div>
           </div>
         </div>
