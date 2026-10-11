@@ -1,63 +1,135 @@
 /**
- * Kokoro TTS — fully in-browser (kokoro-js, Kokoro-82M ONNX). No key needed.
- * Model is lazy-loaded on first spoken reply and cached (browser cache + in-memory).
- * Audio plays through an <audio> element attached to audioBus so WilsonOrb reacts.
+ * Wilson's voice.
+ * Primary: Kokoro (kokoro-js, Kokoro-82M ONNX q8, WASM, single thread when not cross-origin isolated).
+ * Fallback: Web Speech API (speechSynthesis), best en-US male voice, if Kokoro fails or takes > 20s.
+ * Playback goes through ONE AudioContext unlocked on the first user gesture (required on iOS).
  */
-import { attachAudio, detachAudio, unlockAudioContext } from "./audioBus";
+import { attachNode, getAudioContext, setSpeakingFlag } from "./audioBus";
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 const VOICE = "am_echo";
 const SPEED = 1.1;
+const LOAD_TIMEOUT_MS = 20000;
 
 let ttsPromise: Promise<any> | null = null;
-let currentAudio: HTMLAudioElement | null = null;
-let currentUrl: string | null = null;
+let kokoroFailed = false;
+let currentSource: AudioBufferSourceNode | null = null;
+let detachCurrent: (() => void) | null = null;
 let generation = 0;
+let unlocked = false;
 
-export type SpeakResult = "success" | "blocked" | "error" | "skipped";
+export type SpeakResult = "success" | "blocked" | "error" | "skipped" | "fallback";
+export type VoiceStatus = { state: "idle" | "loading" | "ready" | "fallback"; progress: number; reason?: string };
+let status: VoiceStatus = { state: "idle", progress: 0 };
+const statusListeners = new Set<(s: VoiceStatus) => void>();
+function setStatus(s: Partial<VoiceStatus>) { status = { ...status, ...s }; statusListeners.forEach((l) => l(status)); }
+export function getVoiceStatus() { return status; }
+export function subscribeVoiceStatus(l: (s: VoiceStatus) => void) { statusListeners.add(l); return () => { statusListeners.delete(l); }; }
 
 function loadTTS(): Promise<any> {
   if (!ttsPromise) {
+    setStatus({ state: "loading", progress: 0 });
     ttsPromise = (async () => {
+      const t = await import("@huggingface/transformers");
+      const w = (t.env.backends.onnx as any).wasm;
+      if (w && !(globalThis as any).crossOriginIsolated) w.numThreads = 1;
       const { KokoroTTS } = await import("kokoro-js");
-      const hasWebGPU = typeof navigator !== "undefined" && "gpu" in navigator;
-      try {
-        if (hasWebGPU) return await KokoroTTS.from_pretrained(MODEL_ID, { dtype: "fp32", device: "webgpu" });
-      } catch { /* fall back to wasm */ }
-      return await KokoroTTS.from_pretrained(MODEL_ID, { dtype: "q8", device: "wasm" });
-    })().catch((e) => { ttsPromise = null; throw e; });
+      const files: Record<string, { loaded: number; total: number }> = {};
+      const tts = await KokoroTTS.from_pretrained(MODEL_ID, {
+        dtype: "q8",
+        device: "wasm",
+        progress_callback: (p: any) => {
+          if (p?.file && p.total) {
+            files[p.file] = { loaded: p.loaded ?? 0, total: p.total };
+            const tot = Object.values(files).reduce((a, f) => a + f.total, 0);
+            const ld = Object.values(files).reduce((a, f) => a + f.loaded, 0);
+            setStatus({ progress: tot ? Math.min(99, Math.round((ld / tot) * 100)) : 0 });
+          }
+        },
+      } as any);
+      setStatus({ state: "ready", progress: 100 });
+      return tts;
+    })().catch((e) => {
+      console.warn("[voice] Kokoro failed to load, using device voice:", e);
+      kokoroFailed = true;
+      setStatus({ state: "fallback", reason: String(e?.message ?? e) });
+      ttsPromise = null;
+      throw e;
+    });
   }
   return ttsPromise;
 }
 
+/** Call synchronously inside a user gesture (tap send / mic / orb). Unlocks iOS audio + speech. */
+export function primePlayback(): void {
+  const ctx = getAudioContext();
+  if (ctx) {
+    if (ctx.state !== "running") void ctx.resume().catch(() => {});
+    if (!unlocked) {
+      try {
+        const buf = ctx.createBuffer(1, 1, 22050);
+        const src = ctx.createBufferSource();
+        src.buffer = buf; src.connect(ctx.destination); src.start(0);
+      } catch { /* ignore */ }
+    }
+  }
+  if (!unlocked && typeof speechSynthesis !== "undefined") {
+    try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch { /* ignore */ }
+  }
+  unlocked = true;
+  if (!ttsPromise && !kokoroFailed) void loadTTS().catch(() => {}); // start downloading early
+}
+
 export function stopSpeaking(): void {
   generation++;
-  if (currentAudio) {
-    currentAudio.pause();
-    detachAudio(currentAudio);
-    currentAudio = null;
-  }
-  if (currentUrl) {
-    URL.revokeObjectURL(currentUrl);
-    currentUrl = null;
-  }
+  try { currentSource?.stop(); } catch { /* ignore */ }
+  currentSource = null;
+  detachCurrent?.(); detachCurrent = null;
+  if (typeof speechSynthesis !== "undefined") { try { speechSynthesis.cancel(); } catch { /* ignore */ } }
+  setSpeakingFlag(false);
 }
 
-/** Call from a user gesture (send/mic click) so iOS/Safari allow playback later. */
-export function primePlayback(): void {
-  void unlockAudioContext();
-}
-
-function toSpeakable(text: string): string {
+/** Strip markdown, emoji, tags so only clean words are spoken. */
+export function toSpeakable(text: string): string {
   return text
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/[*_#>~|]/g, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu, "")
+    .replace(/[*_#>~|<>{}\[\]]/g, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 1500);
+}
+
+function pickVoice(): SpeechSynthesisVoice | null {
+  const vs = speechSynthesis.getVoices().filter((v) => /^en(-|_)?US/i.test(v.lang) || v.lang === "en-US");
+  const pool = vs.length ? vs : speechSynthesis.getVoices().filter((v) => v.lang.startsWith("en"));
+  const male = /(aaron|evan|nathan|tom|alex|fred|daniel|arthur|reed|rocko|ralph|guy|david|mark|christopher|eric|male)/i;
+  const score = (v: SpeechSynthesisVoice) =>
+    (/premium/i.test(v.name) || /premium/i.test(v.voiceURI) ? 40 : 0) +
+    (/enhanced/i.test(v.name) || /enhanced/i.test(v.voiceURI) ? 30 : 0) +
+    (male.test(v.name) ? 20 : 0) + (v.localService ? 5 : 0) + (/google us english/i.test(v.name) ? 8 : 0);
+  return pool.sort((a, b) => score(b) - score(a))[0] ?? null;
+}
+
+function speakFallback(text: string, speed: number, my: number): Promise<SpeakResult> {
+  return new Promise((resolve) => {
+    if (typeof speechSynthesis === "undefined") return resolve("error");
+    const u = new SpeechSynthesisUtterance(text);
+    const v = pickVoice();
+    if (v) u.voice = v;
+    u.lang = v?.lang ?? "en-US";
+    u.rate = Math.max(0.8, Math.min(1.3, speed * 0.95));
+    u.pitch = 0.95;
+    u.onstart = () => { if (my === generation) setSpeakingFlag(true); };
+    u.onend = () => { setSpeakingFlag(false); resolve("fallback"); };
+    u.onerror = (e) => { console.warn("[voice] speechSynthesis error", e.error); setSpeakingFlag(false); resolve("error"); };
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  });
 }
 
 export async function speak(text: string, speed: number = SPEED): Promise<SpeakResult> {
@@ -65,26 +137,41 @@ export async function speak(text: string, speed: number = SPEED): Promise<SpeakR
   const my = generation;
   const speakable = toSpeakable(text);
   if (!speakable) return "skipped";
-  try {
-    const tts = await loadTTS();
-    if (my !== generation) return "skipped";
-    const audioOut = await tts.generate(speakable, { voice: VOICE, speed });
-    if (my !== generation) return "skipped";
-    const blob: Blob = audioOut.toBlob();
-    currentUrl = URL.createObjectURL(blob);
-    const audio = new Audio(currentUrl);
-    currentAudio = audio;
-    audio.addEventListener("ended", () => { if (currentAudio === audio) stopSpeaking(); });
-    attachAudio(audio);
+
+  let tts: any = null;
+  if (!kokoroFailed) {
     try {
-      await audio.play();
-      return "success";
+      tts = await Promise.race([
+        loadTTS(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Kokoro load timeout (20s)")), LOAD_TIMEOUT_MS)),
+      ]);
     } catch (e) {
-      detachAudio(audio);
-      return (e as Error).name === "NotAllowedError" ? "blocked" : "error";
+      console.warn("[voice] using device voice this time:", (e as Error).message);
+      if (status.state !== "ready" && status.state !== "loading") setStatus({ state: "fallback", reason: (e as Error).message });
     }
+  }
+  if (my !== generation) return "skipped";
+  if (!tts) return speakFallback(speakable, speed, my);
+
+  try {
+    const out = await tts.generate(speakable, { voice: VOICE, speed });
+    if (my !== generation) return "skipped";
+    const ctx = getAudioContext();
+    if (!ctx) return speakFallback(speakable, speed, my);
+    if (ctx.state !== "running") { try { await ctx.resume(); } catch { /* ignore */ } }
+    const samples: Float32Array = out.audio;
+    const buf = ctx.createBuffer(1, samples.length, out.sampling_rate);
+    buf.copyToChannel(samples as Float32Array<ArrayBuffer>, 0);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    currentSource = src;
+    detachCurrent = attachNode(src);
+    src.onended = () => { if (currentSource === src) { detachCurrent?.(); detachCurrent = null; currentSource = null; } };
+    src.start();
+    if (ctx.state !== "running") { console.warn("[voice] AudioContext not running:", ctx.state); return speakFallback(speakable, speed, my); }
+    return "success";
   } catch (e) {
-    console.error("[Kokoro]", e);
-    return "error";
+    console.warn("[voice] Kokoro generate/playback failed, device voice:", e);
+    return speakFallback(speakable, speed, my);
   }
 }

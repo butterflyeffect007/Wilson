@@ -159,3 +159,38 @@ export async function unlockAudioContext(): Promise<void> {
     }
   }
 }
+
+/* ---- Web Audio node playback (iOS-safe: one context, unlocked on first gesture) ---- */
+export function getAudioContext(): AudioContext | null {
+  return ensureContext();
+}
+
+/** Route a source node through the analyser so the orb reacts; returns a detach fn. */
+export function attachNode(node: AudioNode): () => void {
+  const ctx = ensureContext();
+  if (!ctx) return () => {};
+  if (!analyser) {
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.6;
+    dataArray = new Uint8Array(analyser.fftSize);
+    analyser.connect(ctx.destination);
+  } else {
+    try { analyser.connect(ctx.destination); } catch { /* already */ }
+  }
+  node.connect(analyser);
+  speaking = true;
+  emit();
+  startLoop();
+  return () => {
+    try { node.disconnect(); } catch { /* ignore */ }
+    speaking = false;
+    stopLoop();
+  };
+}
+
+/** Fake speaking state (for speechSynthesis fallback, which has no audio graph). */
+export function setSpeakingFlag(v: boolean): void {
+  speaking = v;
+  if (!v) stopLoop(); else emit();
+}

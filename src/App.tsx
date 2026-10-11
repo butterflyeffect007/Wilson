@@ -17,7 +17,7 @@ import {
   buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
-import { speak, stopSpeaking, primePlayback } from "./lib/kokoroTTS";
+import { speak, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
 import { emitRipple } from "./lib/listeningBus";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
@@ -91,6 +91,8 @@ export default function App() {
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
   const [fieldOpen, setFieldOpen] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>(() => getVoiceStatus());
+  useEffect(() => subscribeVoiceStatus(setVoiceStatus), []);
   const [showInstallHint, setShowInstallHint] = useState(() => {
     try {
       const ua = navigator.userAgent;
@@ -523,6 +525,15 @@ export default function App() {
             <h1 className="wl-title text-[19px] tracking-[0.28em] text-violet-900/80">WILSON</h1>
           </div>
           <div className="flex items-center justify-end gap-1 -mr-1.5">
+            <button
+              type="button"
+              onClick={() => { primePlayback(); if (settings.voiceEnabled) stopSpeaking(); setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled })); }}
+              className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+              aria-label={settings.voiceEnabled ? "Mute Wilson's voice" : "Turn on Wilson's voice"}
+              title={settings.voiceEnabled ? "Voice on" : "Voice off"}
+            >
+              {settings.voiceEnabled ? <Volume2 className="w-[15px] h-[15px]" /> : <VolumeX className="w-[15px] h-[15px]" />}
+            </button>
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-full glass text-[9px] whitespace-nowrap text-violet-700/70">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Always with you
             </span>
@@ -645,7 +656,7 @@ export default function App() {
                 className="relative mb-20"
               >
                 <div className="relative">
-                  <WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onLongPress={() => { if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (settings.voiceRecognition || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} />
+                  <WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={primePlayback} onLongPress={() => { if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (settings.voiceRecognition || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} />
                 </div>
               </motion.div>
 
@@ -796,6 +807,9 @@ export default function App() {
             )}
             {settings.showHeard && settings.emotionDetection && heard && (
               <p className="mb-1 px-2 text-[11px] text-violet-500/60">Heard: {heard.tag} ({Math.round(heard.confidence * 100)}%)</p>
+            )}
+            {settings.voiceEnabled && voiceStatus.state === "loading" && (
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is loading… {voiceStatus.progress}%</p>
             )}
             {showInstallHint && (
               <div className="mb-2 mx-1 flex items-center gap-2 rounded-2xl glass px-3 py-2 text-[13px] text-violet-800/80">

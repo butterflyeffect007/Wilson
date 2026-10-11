@@ -457,3 +457,10 @@ html:not(.dark) .wl-bgimg::after { content: ""; position: absolute; inset: 0; ba
 .wilson-orb-float { z-index: 1; }
 .wl-orb-platform { bottom: -38% !important; height: 38% !important; width: 150% !important; }
 .wl-orb-bflies { inset: -22% -42% -10% -42% !important; }
+
+/* Fix: never hue-rotate the orb image. Mood = pastel glow; thinking = shimmer + slow breathing */
+.wl-orb-img { filter: drop-shadow(0 0 calc(10px + var(--wilson-amp-glow) * 22px) var(--wl-mood, rgba(196,160,255,.55))) !important; }
+.wl-orb-ring { box-shadow: 0 0 14px var(--wl-mood, rgba(200,170,255,.35)) !important; }
+.wilson-orb-shell--thinking .wl-orb-img { animation: wl-orb-think 2.8s ease-in-out infinite !important; }
+@keyframes wl-orb-think { 0%,100% { transform: scale(1) rotate(-1deg); opacity: .96; } 50% { transform: scale(1.035) rotate(1.5deg); opacity: 1; } }
+.wilson-orb-shimmer { background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.35) 50%, transparent 80%) !important; border-radius: 9999px; mix-blend-mode: soft-light; }

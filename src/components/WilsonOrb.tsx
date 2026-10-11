@@ -12,6 +12,7 @@ interface WilsonOrbProps {
   vibe?: WilsonVibe;
   interactive?: boolean;
   onLongPress?: () => void;
+  onTap?: () => void;
 }
 
 const sizeMap = {
@@ -29,8 +30,17 @@ const vibeHue: Record<WilsonVibe, number> = {
   dreaming: 160,
 };
 
+// Pastel mood glow only (no hue-rotation of the orb image, never green)
+const moodColor: Record<WilsonVibe, string> = {
+  neutral: "rgba(196, 160, 255, 0.55)",
+  excited: "rgba(255, 150, 210, 0.6)",
+  calm: "rgba(150, 215, 255, 0.55)",
+  tired: "rgba(200, 180, 240, 0.45)",
+  dreaming: "rgba(255, 215, 150, 0.55)",
+};
+
 const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
-  ({ isThinking = false, speaking, size = "md", vibe = "neutral", interactive = false, onLongPress }, ref) => {
+  ({ isThinking = false, speaking, size = "md", vibe = "neutral", interactive = false, onLongPress, onTap }, ref) => {
     const { speaking: audioSpeaking, amplitude } = useWilsonAudio();
     const [listening, setListening] = useState<boolean>(getListening());
     const [rippleKey, setRippleKey] = useState(0);
@@ -131,6 +141,7 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
             if (pressTimer.current) window.clearTimeout(pressTimer.current);
             pressTimer.current = null;
             if (!longPressed.current) {
+              onTap?.();
               enableTilt();
               emitRipple();
               setPulse((k) => k + 1);
@@ -158,6 +169,7 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
         style={
           {
             "--wilson-vibe-hue": `${vibeHue[vibe]}`,
+            "--wl-mood": moodColor[vibe],
             "--wilson-parallax-x": `${parallax.x}px`,
             "--wilson-parallax-y": `${parallax.y}px`,
           } as React.CSSProperties
