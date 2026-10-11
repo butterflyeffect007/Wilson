@@ -2,9 +2,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { useWilsonAudio } from "@/hooks/useWilsonAudio";
 import { getListening, subscribeListening, subscribeRipple, emitRipple } from "@/lib/listeningBus";
 
-import wilsonFluidUrl from "@/assets/wilson-fluid.png";
-
-const wilsonFluid = wilsonFluidUrl;
 
 export type WilsonVibe = "neutral" | "excited" | "calm" | "tired" | "dreaming";
 
@@ -20,7 +17,7 @@ interface WilsonOrbProps {
 const sizeMap = {
   sm: "w-9 h-9",
   md: "w-16 h-16",
-  lg: "w-44 h-44 sm:w-52 sm:h-52",
+  lg: "w-[12.5rem] h-[12.5rem]",
   mdx: "w-24 h-24",
 };
 
@@ -171,7 +168,12 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
         {...handlers}
         data-interactive={interactive ? "true" : undefined}
       >
-        {size === "lg" && <span className="wl-orb-base" />}
+        {size === "lg" && <span className="wl-orb-platform" />}
+        {size === "lg" && (
+          <div className="wl-orb-bflies" aria-hidden="true">
+            {[0, 1, 2, 3, 4].map((i) => <span key={i} className={`wl-ob wl-ob-${i}`} />)}
+          </div>
+        )}
         <div className="wilson-orb-float absolute inset-0">
           {/* Soft orbital rings – always present for living presence */}
           <span className="wilson-orb-ring wilson-orb-ring--1" />
@@ -210,20 +212,20 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
 
           <div
             ref={innerRef}
-            className={`wilson-fluid wilson-fluid--${intensity} absolute inset-0`}
+            className={`wilson-fluid wl-orb-img wilson-fluid--${intensity} absolute inset-0`}
             style={
               {
                 "--wilson-amp-scale": reactiveScale,
                 "--wilson-amp-glow": reactiveGlow,
                 "--wilson-amp-hue": `${reactiveHue}deg`,
                 "--wilson-amp-aberration": `${aberration}px`,
-                backgroundImage: `url(${wilsonFluid})`,
+
               } as React.CSSProperties
             }
           />
 
           <span className="wl-orb-highlight" style={{ transform: `translate(${parallax.x * 1.6}px, ${parallax.y * 1.6}px)` }} />
-          <span className="wl-orb-rim" />
+          {size !== "sm" && <span className="wl-orb-ring" />}
           {pulse > 0 && <span key={`pulse-${pulse}`} className="wl-orb-pulse" />}
           {isThinking && <span className="wilson-orb-shimmer" />}
         </div>

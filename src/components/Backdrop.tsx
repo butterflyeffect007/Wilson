@@ -32,20 +32,8 @@ export default function Backdrop() {
   return (
     <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
       <div className="wl-sky absolute inset-0" />
-      <div className="wl-haze wl-haze-a" />
-      <div className="wl-haze wl-haze-b" />
-      <div className="wl-haze wl-haze-c" />
-      <div className="wl-prism" />
+      <div className="wl-bgimg" />
       <div className="wilson-field-particles wl-sparkles" />
-      <div className="wl-cube" style={{ left: "6%", top: "38%", width: 28, height: 28 }} />
-      <div className="wl-cube" style={{ right: "7%", top: "30%", width: 20, height: 20, animationDelay: "-5s" }} />
-      <div className="wl-cube" style={{ right: "18%", bottom: "24%", width: 16, height: 16, animationDelay: "-9s" }} />
-      <div className="wl-clouds" />
-      {BUTTERFLIES.map((b, i) => (
-        <div key={i} className="wl-bfly" style={{ left: b.left, top: b.top, animationDelay: b.delay, animationDuration: b.dur }}>
-          <Butterfly size={b.size} hue={b.hue} />
-        </div>
-      ))}
     </div>
   );
 }

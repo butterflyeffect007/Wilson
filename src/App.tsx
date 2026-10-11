@@ -506,51 +506,34 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <header className="relative z-10 px-4 pt-5 pb-3">
-        <div className="max-w-lg mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
+      <header className="relative z-10 px-4 pt-5 pb-2">
+        <div className="max-w-lg mx-auto grid grid-cols-[1fr_auto_1fr] items-center">
+          <div className="flex items-center">
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="p-1.5 -ml-1.5 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+              className="p-1.5 -ml-1.5 rounded-full text-violet-500/70 hover:bg-violet-50/80 touch-manipulation"
               aria-label="Open threads"
             >
               <Menu className="w-[18px] h-[18px]" />
             </button>
-            <Sparkles className="w-4 h-4 text-violet-400 wl-title" />
-            <h1 className="wl-title text-[16px] tracking-[0.26em] text-violet-900/90">WILSON</h1>
-            <span className="ml-1 hidden min-[360px]:flex items-center gap-1.5 px-2 py-0.5 rounded-full glass text-[10px] whitespace-nowrap text-violet-700/70">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Always with you
-            </span>
           </div>
-
-          <div className="flex items-center gap-0 flex-shrink-0 -mr-1.5">
-            <button
-              type="button"
-              onClick={() => setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled }))}
-              className="p-1.5 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
-              title={settings.voiceEnabled ? "Voice replies on" : "Voice replies off"}
-              aria-label="Toggle voice replies"
-            >
-              {settings.voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
-            </button>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="p-1.5 rounded-full text-violet-400/70 hover:bg-violet-50/80 touch-manipulation"
-              aria-label={theme === "dark" ? "Light theme" : "Dark theme"}
-              title={theme === "dark" ? "Light theme" : "Dark theme"}
-            >
-              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-[18px] h-[18px] text-violet-400 wl-title" />
+            <h1 className="wl-title text-[19px] tracking-[0.28em] text-violet-900/80">WILSON</h1>
+          </div>
+          <div className="flex items-center justify-end gap-1 -mr-1.5">
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full glass text-[9px] whitespace-nowrap text-violet-700/70">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Always with you
+            </span>
             <button
               type="button"
               onClick={() => setShowSettings((v) => !v)}
-              className="p-1.5 rounded-full text-violet-400/70 hover:bg-violet-50/80 touch-manipulation"
+              className="p-1 rounded-full text-violet-400/70 hover:bg-violet-50/80 touch-manipulation"
               aria-label="Settings"
               title="Settings"
             >
-              <SettingsIcon className="w-4 h-4" />
+              <SettingsIcon className="w-[15px] h-[15px]" />
             </button>
           </div>
         </div>
@@ -571,6 +554,14 @@ export default function App() {
               </div>
               {/* Voice + name settings (persisted locally) */}
               <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={toggleTheme} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass text-[12px] text-violet-800/80">
+                    {theme === "dark" ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}{theme === "dark" ? "Light" : "Dark"}
+                  </button>
+                  <button type="button" onClick={() => setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled }))} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass text-[12px] text-violet-800/80">
+                    {settings.voiceEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}{settings.voiceEnabled ? "Voice on" : "Voice off"}
+                  </button>
+                </div>
                 <label className="block">
                   <span className="text-[11px] text-violet-700/60">Your name</span>
                   <input
@@ -646,12 +637,12 @@ export default function App() {
       <div className="flex-1 overflow-hidden flex flex-col relative z-10">
         <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4">
           {isHome ? (
-            <div className="h-full flex flex-col items-center justify-center pb-6 max-w-md mx-auto">
+            <div className="h-full flex flex-col items-center justify-center pt-4 pb-16 max-w-md mx-auto">
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", stiffness: 120, damping: 18 }}
-                className="relative mb-8"
+                className="relative mb-20"
               >
                 <div className="relative">
                   <WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onLongPress={() => { if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (settings.voiceRecognition || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} />
@@ -664,7 +655,7 @@ export default function App() {
                 transition={{ delay: 0.15 }}
                 className="text-center space-y-2 mb-8"
               >
-                <h2 className="wl-thin text-2xl sm:text-[26px] text-violet-950/90 tracking-tight">
+                <h2 className="wl-thin text-[27px] text-violet-950/85 tracking-tight">
                   {greeting}, {displayName}
                   <span className="ml-1.5 text-pink-400">♡</span>
                 </h2>
@@ -682,10 +673,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => inputRef.current?.focus()}
-                  className="w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 glass text-left transition-all hover:bg-white/70 touch-manipulation"
+                  className="w-full flex items-center gap-4 rounded-[1.4rem] px-4 py-5 glass text-left transition-all touch-manipulation"
                 >
-                  <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                  <span className="text-[14px] text-violet-800/60 wl-thin">
+                  <span className="w-9 h-9 rounded-full glass flex items-center justify-center flex-shrink-0"><Sparkles className="w-4 h-4 text-violet-400" /></span>
+                  <span className="text-[16px] leading-snug text-violet-900/80 wl-thin max-w-[13rem]">
                     What would you like to explore today?
                   </span>
                 </button>
@@ -839,7 +830,7 @@ export default function App() {
                 }}
                 disabled={busy || !stt.supported}
                 className={`p-2 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center touch-manipulation disabled:opacity-40 ${
-                  stt.listening ? "text-rose-500 bg-rose-50/80" : "text-violet-400/70 hover:text-violet-500 hover:bg-violet-50/80"
+                  stt.listening ? "text-rose-500 bg-rose-50/80" : "glass text-violet-500/80"
                 }`}
                 aria-label={stt.listening ? "Stop listening" : "Voice"}
                 title={stt.supported ? "Speak to Wilson" : "Voice input isn't supported in this browser"}
@@ -863,7 +854,7 @@ export default function App() {
                   whileTap={{ scale: 0.95 }}
                   onClick={() => void sendMessage()}
                   disabled={!input.trim()}
-                  className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-violet-400 via-fuchsia-400 to-cyan-400 text-white shadow-md disabled:opacity-40 disabled:cursor-not-allowed touch-manipulation"
+                  className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-fuchsia-400 via-violet-500 to-sky-400 text-white shadow-[0_0_16px_rgba(168,85,247,.55)] disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation"
                   aria-label="Send"
                 >
                   <Send className="w-4 h-4" />
