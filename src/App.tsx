@@ -866,9 +866,6 @@ export default function App() {
             {settings.showHeard && settings.emotionDetection && heard && (
               <p className="mb-1 px-2 text-[11px] text-violet-500/60">Heard: {heard.tag} ({Math.round(heard.confidence * 100)}%)</p>
             )}
-            {settings.voiceEnabled && voiceStatus.state === "waking" && (
-              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is waking up…</p>
-            )}
             {showInstallHint && (
               <div className="mb-2 mx-1 flex items-center gap-2 rounded-2xl glass px-3 py-2 text-[13px] text-violet-800/80">
                 <span className="flex-1">Add Wilson to your Home Screen: tap Share, then “Add to Home Screen”.</span>

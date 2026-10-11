@@ -1,7 +1,6 @@
 /**
- * Wilson's voice: Echo (Kokoro am_echo) rendered on the server via the Wilson worker /tts.
- * Echo ONLY. No device/speechSynthesis voice and no in-browser model: if Echo isn't ready,
- * Wilson stays silent and shows "waking up" while retrying through Render's cold start.
+ * Wilson's voice: Deepgram Aura-2 "apollo" via Cloudflare Workers AI, through the Wilson worker /tts (MP3).
+ * Server voice ONLY. No device/speechSynthesis voice: if a clip fails, Wilson stays silent.
  * Playback goes through ONE AudioContext unlocked on the first user gesture (required on iOS).
  */
 import { attachNode, getAudioContext, setSpeakingFlag } from "./audioBus";
@@ -16,7 +15,7 @@ let generation = 0;
 let unlocked = false;
 
 export type SpeakResult = "success" | "skipped" | "error";
-export type VoiceStatus = { state: "idle" | "waking" | "ready"; progress: number; reason?: string };
+export type VoiceStatus = { state: "idle" | "ready"; progress: number; reason?: string };
 let status: VoiceStatus = { state: "idle", progress: 0 };
 const statusListeners = new Set<(s: VoiceStatus) => void>();
 function setStatus(s: Partial<VoiceStatus>) { status = { ...status, ...s }; statusListeners.forEach((l) => l(status)); }
@@ -64,23 +63,18 @@ export function toSpeakable(text: string): string {
     .slice(0, 1500);
 }
 
-/* ---------------- streaming Echo (sentence-by-sentence) ---------------- */
-const MAX_PARALLEL = 1; // free Render CPU serializes anyway; queuing there risks proxy timeouts
-const MERGE_MAX = 80; // each clip must finish < ~100 s (Render edge timeout) on the free CPU
-const WAKE_BUDGET_MS = 120000; // Render free cold start + slow first clip
+/* ---------------- streaming voice (sentence-by-sentence) ---------------- */
+const MAX_PARALLEL = 2;
+const MERGE_MAX = 250;
+const CLIP_TIMEOUT_MS = 20000;
 let pending = false;
 const pendingListeners = new Set<(p: boolean) => void>();
 function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListeners.forEach((l) => l(p)); } }
-/** True while Echo audio has been requested but nothing is playing yet ("getting ready to speak"). */
+/** True while voice audio has been requested but nothing is playing yet ("getting ready to speak"). */
 export function subscribeVoicePending(l: (p: boolean) => void) { pendingListeners.add(l); return () => { pendingListeners.delete(l); }; }
 
-let lastWarm = 0;
-/** Tiny ping so Render's free instance wakes before a reply needs it. Throttled to once per 60s. */
-export function warmVoice(): void {
-  if (serverDown || Date.now() - lastWarm < 60000) return;
-  lastWarm = Date.now();
-  void fetch(SERVER_TTS_URL + "/health", { method: "GET", cache: "no-store" }).catch(() => {});
-}
+/** Kept for callers; Workers AI needs no warm-up. */
+export function warmVoice(): void { /* no-op */ }
 
 async function fetchOnce(text: string, speed: number, timeoutMs: number): Promise<ArrayBuffer> {
   const ctrl = new AbortController();
@@ -96,28 +90,23 @@ async function fetchOnce(text: string, speed: number, timeoutMs: number): Promis
   } finally { clearTimeout(to); }
 }
 
-/** Fetch one Echo clip, retrying through Render's cold start until `deadline`. */
-async function fetchClip(text: string, speed: number, my: number, deadline: number): Promise<AudioBuffer | null> {
+/** Fetch + decode one clip (MP3). One quick retry on a transient error. */
+async function fetchClip(text: string, speed: number, my: number): Promise<AudioBuffer | null> {
   let lastErr: unknown = null;
-  while (my === generation && !serverDown) {
-    const left = deadline - Date.now();
-    if (left <= 0) break;
+  for (let attempt = 0; attempt < 2 && my === generation && !serverDown; attempt++) {
     try {
-      const data = await fetchOnce(text, speed, left);
+      const data = await fetchOnce(text, speed, CLIP_TIMEOUT_MS);
       if (my !== generation) return null;
       const ctx = getAudioContext();
       if (!ctx) throw new Error("no AudioContext");
       return await ctx.decodeAudioData(data);
     } catch (e) {
       lastErr = e;
-      if (serverDown || my !== generation) break;
-      console.warn("[voice] Echo not ready, retrying:", (e as Error).message);
-      setStatus({ state: "waking" });
-      lastWarm = 0; warmVoice();
-      await new Promise((r) => setTimeout(r, 4000));
+      console.warn("[voice] clip failed:", (e as Error).message);
+      if ((e as Error).name === "AbortError") break;
     }
   }
-  throw lastErr ?? new Error("Echo timed out");
+  throw lastErr ?? new Error("voice failed");
 }
 
 /** Split off complete sentences from `text`, starting at `from`. Returns sentences + new offset. */
@@ -144,7 +133,7 @@ export type SpeechStream = { push: (textSoFar: string) => void; finish: (finalTe
 
 /**
  * Start speaking a reply while it is still streaming. Call push() with the full displayed text so far,
- * then finish() with the final text. Echo only: if Echo never answers, Wilson stays silent (no device voice).
+ * then finish() with the final text. server voice only: if it never answers, Wilson stays silent (no device voice).
  */
 export type StreamHooks = { onStart?: () => void; onEnd?: () => void };
 let endCurrent: (() => void) | null = null;
@@ -157,7 +146,6 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   endCurrent = end;
   let offset = 0, buffer = "", sentFirst = false, done = false, failed = false, played = false;
   let inflight = 0;
-  const wakeDeadline = Date.now() + WAKE_BUDGET_MS - 90000; // first clip gets the full budget
   const queue: Promise<AudioBuffer | null>[] = [];
   const spoken: string[] = [];
   let playing = false, playIdx = 0;
@@ -170,7 +158,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     while (playIdx < queue.length && my === generation) {
       let buf: AudioBuffer | null = null;
       if (!played) setPending(true);
-      try { buf = await queue[playIdx]; } catch (e) { console.warn("[voice] Echo clip failed:", (e as Error).message); failed = true; }
+      try { buf = await queue[playIdx]; } catch (e) { console.warn("[voice] clip failed:", (e as Error).message); failed = true; }
       if (my !== generation) break;
       if (!buf) { if (failed) break; playIdx++; continue; }
       const ctx = getAudioContext()!;
@@ -189,7 +177,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     }
     playing = false;
     if (my !== generation) return;
-    if (failed && done) { setPending(false); if (!played) setStatus({ state: "waking" }); end(); return; }
+    if (failed && done) { setPending(false); end(); return; }
     if (done && playIdx >= queue.length) { setPending(false); end(); }
   };
 
@@ -199,7 +187,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     spoken.push(t);
     queue.push((async () => {
       await slot(); inflight++;
-      try { return await fetchClip(t, speed, my, Math.max(Date.now(), wakeDeadline) + 90000); }
+      try { return await fetchClip(t, speed, my); }
       finally { inflight--; waiters.shift()?.(); }
     })());
     void playLoop();
@@ -222,7 +210,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   };
 
   if (serverDown) {
-    return { push: () => {}, finish: () => { setStatus({ state: "waking" }); end(); } };
+    return { push: () => {}, finish: () => { end(); } };
   }
   setPending(true);
   return {
@@ -238,13 +226,13 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   };
 }
 
-/** Speak one finished message with Echo (sentence-chunked). Works regardless of the auto-voice setting. */
+/** Speak one finished message with Wilson's voice (sentence-chunked). Works regardless of the auto-voice setting. */
 export function speakMessage(text: string, speed: number = SPEED, hooks: StreamHooks = {}): void {
   primePlayback();
   startSpeechStream(speed, hooks).finish(text);
 }
 
-/** Speak a full text with Echo. Resolves when playback ends (or Echo gave up: silent). */
+/** Speak a full text with Wilson's voice. Resolves when playback ends (or the voice failed: silent). */
 export function speak(text: string, speed: number = SPEED): Promise<SpeakResult> {
   return new Promise((resolve) => {
     let started = false;
