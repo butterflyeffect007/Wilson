@@ -1,5 +1,5 @@
 """Wilson Echo voice: Kokoro-82M (ONNX int8) on CPU. POST /tts {"text": "..."} -> audio/wav (24 kHz mono 16-bit)"""
-import io, math, os, re, time
+import io, math, os, re, threading, time
 import numpy as np, soundfile as sf
 import onnxruntime as ort
 from fastapi import FastAPI, HTTPException, Request
@@ -37,10 +37,40 @@ so.intra_op_num_threads = THREADS
 so.inter_op_num_threads = 1
 so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+so.enable_cpu_mem_arena = False   # free tier has 512 MB: don't keep a growing arena
+so.enable_mem_pattern = False
 kokoro = Kokoro.from_session(ort.InferenceSession(MODEL, so, providers=["CPUExecutionProvider"]), VOICES)
 _t = time.time()
 kokoro.create("Hi.", voice="am_echo", speed=1.1, lang="en-us")  # warm the graph once at startup
 print(f"[tts] ready threads={THREADS} warmup={time.time()-_t:.2f}s", flush=True)
+LOCK = threading.Lock()  # one inference at a time (memory + CPU bound on free tier)
+CHUNK = int(os.environ.get("TTS_CHUNK_CHARS", "110"))
+
+
+def split_text(text: str) -> list[str]:
+    parts, cur = [], ""
+    for s in re.split(r"(?<=[.!?;:,])\s+", text):
+        while len(s) > CHUNK:  # very long clause: cut on a space
+            cut = s.rfind(" ", 0, CHUNK); cut = cut if cut > 20 else CHUNK
+            if cur: parts.append(cur); cur = ""
+            parts.append(s[:cut]); s = s[cut:].strip()
+        if cur and len(cur) + 1 + len(s) > CHUNK:
+            parts.append(cur); cur = s
+        else:
+            cur = f"{cur} {s}".strip()
+    if cur: parts.append(cur)
+    return parts
+
+
+def synth(text: str, speed: float):
+    out, sr = [], 24000
+    with LOCK:
+        for part in split_text(text):
+            a, sr = kokoro.create(part, voice="am_echo", speed=speed, lang="en-us")
+            out.append(np.asarray(a, dtype=np.float32))
+    return np.concatenate(out), sr
+
+
 app = FastAPI()
 
 
@@ -60,7 +90,7 @@ async def tts(req: Request):
         raise HTTPException(400, "text required")
     speed = min(1.4, max(0.8, float(body.get("speed", 1.1))))
     t0 = time.time()
-    samples, sr = await run_in_threadpool(kokoro.create, text, voice="am_echo", speed=speed, lang="en-us")
+    samples, sr = await run_in_threadpool(synth, text, speed)
     buf = io.BytesIO()
     sf.write(buf, np.asarray(samples, dtype=np.float32), sr, format="WAV", subtype="PCM_16")
     dt = time.time() - t0
