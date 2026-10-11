@@ -99,6 +99,7 @@ export function stopSpeaking(): void {
   detachCurrent?.(); detachCurrent = null;
   if (typeof speechSynthesis !== "undefined") { try { speechSynthesis.cancel(); } catch { /* ignore */ } }
   setSpeakingFlag(false);
+  setPending(false);
 }
 
 /** Strip markdown, emoji, tags so only clean words are spoken. */
@@ -148,6 +149,151 @@ function speakFallback(text: string, speed: number, my: number): Promise<SpeakRe
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
   });
+}
+
+/* ---------------- streaming Echo (sentence-by-sentence) ---------------- */
+const MAX_PARALLEL = 2;
+const MERGE_MAX = 150;
+let pending = false;
+const pendingListeners = new Set<(p: boolean) => void>();
+function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListeners.forEach((l) => l(p)); } }
+/** True while Echo audio has been requested but nothing is playing yet ("getting ready to speak"). */
+export function subscribeVoicePending(l: (p: boolean) => void) { pendingListeners.add(l); return () => { pendingListeners.delete(l); }; }
+
+let lastWarm = 0;
+/** Tiny ping so Render's free instance wakes before a reply needs it. Throttled to once per 60s. */
+export function warmVoice(): void {
+  if (serverDown || Date.now() - lastWarm < 60000) return;
+  lastWarm = Date.now();
+  void fetch(SERVER_TTS_URL + "/health", { method: "GET", cache: "no-store" }).catch(() => {});
+}
+
+async function fetchClip(text: string, speed: number, my: number): Promise<AudioBuffer | null> {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 120000);
+  try {
+    const res = await fetch(SERVER_TTS_URL, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, speed }), signal: ctrl.signal,
+    });
+    if (res.status === 503) serverDown = true;
+    if (!res.ok) throw new Error("tts http " + res.status);
+    const data = await res.arrayBuffer();
+    if (my !== generation) return null;
+    const ctx = getAudioContext();
+    if (!ctx) throw new Error("no AudioContext");
+    return await ctx.decodeAudioData(data);
+  } finally { clearTimeout(to); }
+}
+
+/** Split off complete sentences from `text`, starting at `from`. Returns sentences + new offset. */
+function takeSentences(text: string, from: number, final: boolean): { parts: string[]; next: number } {
+  const parts: string[] = [];
+  let start = from, next = from;
+  for (let i = from; i < text.length; i++) {
+    const c = text[i];
+    let end = -1;
+    if (c === "\n") end = i + 1;
+    else if (c === "." || c === "!" || c === "?") {
+      let j = i + 1;
+      while (j < text.length && /[.!?"')\]*]/.test(text[j])) j++;
+      if (j < text.length && /\s/.test(text[j])) end = j;
+      i = j - 1;
+    }
+    if (end > 0) { const t = text.slice(start, end).trim(); if (t) parts.push(t); start = next = end; }
+  }
+  if (final && next < text.length) { const t = text.slice(next).trim(); if (t) parts.push(t); next = text.length; }
+  return { parts, next };
+}
+
+export type SpeechStream = { push: (textSoFar: string) => void; finish: (finalText: string) => void };
+
+/**
+ * Start speaking a reply while it is still streaming. Call push() with the full displayed text so far,
+ * then finish() with the final text. Server Echo only; if it fails before any audio, falls back to speak().
+ */
+export function startSpeechStream(speed: number = SPEED): SpeechStream {
+  stopSpeaking();
+  const my = generation;
+  let offset = 0, buffer = "", sentFirst = false, done = false, failed = false, played = false;
+  let inflight = 0;
+  const queue: Promise<AudioBuffer | null>[] = [];
+  const spoken: string[] = [];
+  let playing = false, playIdx = 0;
+  let fullText = "";
+  const waiters: (() => void)[] = [];
+  const slot = () => inflight < MAX_PARALLEL ? Promise.resolve() : new Promise<void>((r) => waiters.push(r));
+
+  const playLoop = async () => {
+    if (playing) return; playing = true;
+    while (playIdx < queue.length && my === generation) {
+      let buf: AudioBuffer | null = null;
+      if (!played) setPending(true);
+      try { buf = await queue[playIdx]; } catch (e) { console.warn("[voice] Echo clip failed:", (e as Error).message); failed = true; }
+      if (my !== generation) break;
+      if (!buf) { if (failed) break; playIdx++; continue; }
+      const ctx = getAudioContext()!;
+      if (ctx.state !== "running") { try { await ctx.resume(); } catch { /* ignore */ } }
+      setPending(false);
+      played = true;
+      if (status.state === "unavailable" || status.state === "fallback") setStatus({ state: "ready" });
+      await new Promise<void>((resolve) => {
+        const src = ctx.createBufferSource();
+        src.buffer = buf; currentSource = src; detachCurrent = attachNode(src);
+        src.onended = () => { if (currentSource === src) { detachCurrent?.(); detachCurrent = null; currentSource = null; } resolve(); };
+        src.start();
+      });
+      playIdx++;
+    }
+    playing = false;
+    if (my !== generation) return;
+    if (failed && !played && done) { setPending(false); void speak(fullText, speed); return; }
+    if (done && playIdx >= queue.length) setPending(false);
+  };
+
+  const dispatch = (text: string) => {
+    const t = toSpeakable(text);
+    if (!t || failed || serverDown) return;
+    spoken.push(t);
+    queue.push((async () => {
+      await slot(); inflight++;
+      try { return await fetchClip(t, speed, my); }
+      finally { inflight--; waiters.shift()?.(); }
+    })());
+    void playLoop();
+  };
+
+  const flush = (force: boolean) => {
+    if (buffer && (force || inflight === 0)) { dispatch(buffer); buffer = ""; }
+  };
+
+  const feed = (text: string, final: boolean) => {
+    if (my !== generation) return;
+    const { parts, next } = takeSentences(text, offset, final);
+    offset = next;
+    for (const p of parts) {
+      if (!sentFirst) { sentFirst = true; dispatch(p); continue; }
+      if (buffer && buffer.length + 1 + p.length > MERGE_MAX) { dispatch(buffer); buffer = p; }
+      else buffer = buffer ? buffer + " " + p : p;
+    }
+    flush(final);
+  };
+
+  if (serverDown) {
+    return { push: () => {}, finish: (t) => { if (my === generation) void speak(t, speed); } };
+  }
+  setPending(true);
+  return {
+    push: (t) => { fullText = t; feed(t, false); },
+    finish: (t) => {
+      if (my !== generation || done) return;
+      // final text may differ from streamed text (tags stripped); keep offset if prefix still matches
+      if (!t.startsWith(fullText.slice(0, offset))) offset = Math.min(offset, t.length);
+      fullText = t; done = true; feed(t, true);
+      if (!queue.length) { setPending(false); if (failed || serverDown) void speak(t, speed); }
+      else void playLoop();
+    },
+  };
 }
 
 export async function speak(text: string, speed: number = SPEED): Promise<SpeakResult> {

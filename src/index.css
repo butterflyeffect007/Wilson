@@ -464,3 +464,12 @@ html:not(.dark) .wl-bgimg::after { content: ""; position: absolute; inset: 0; ba
 .wilson-orb-shell--thinking .wl-orb-img { animation: wl-orb-think 2.8s ease-in-out infinite !important; }
 @keyframes wl-orb-think { 0%,100% { transform: scale(1) rotate(-1deg); opacity: .96; } 50% { transform: scale(1.035) rotate(1.5deg); opacity: 1; } }
 .wilson-orb-shimmer { background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.35) 50%, transparent 80%) !important; border-radius: 9999px; mix-blend-mode: soft-light; }
+
+/* Echo audio requested, not playing yet: soft breathing halo ("getting ready to speak") */
+.wl-orb-preparing {
+  position: absolute; inset: -6%; border-radius: 9999px; pointer-events: none;
+  box-shadow: 0 0 22px 6px var(--wl-mood, rgba(196, 181, 253, 0.55));
+  opacity: 0.25; animation: wl-orb-preparing 1.6s ease-in-out infinite;
+}
+@keyframes wl-orb-preparing { 0%,100% { opacity: 0.18; transform: scale(0.98); } 50% { opacity: 0.5; transform: scale(1.03); } }
+@media (prefers-reduced-motion: reduce) { .wl-orb-preparing { animation: none; opacity: 0.35; } }

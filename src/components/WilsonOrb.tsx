@@ -1,3 +1,4 @@
+import { subscribeVoicePending } from "../lib/kokoroTTS";
 import React, { useEffect, useRef, useState } from "react";
 import { useWilsonAudio } from "@/hooks/useWilsonAudio";
 import { getListening, subscribeListening, subscribeRipple, emitRipple } from "@/lib/listeningBus";
@@ -57,6 +58,8 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
       ? "listening"
       : "idle";
 
+    const [preparing, setPreparing] = useState(false);
+    useEffect(() => subscribeVoicePending(setPreparing), []);
     useEffect(() => subscribeListening(() => setListening(getListening())), []);
     useEffect(() => subscribeRipple(() => setRippleKey((k) => k + 1)), []);
 
@@ -240,6 +243,7 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
           {size !== "sm" && <span className="wl-orb-ring" />}
           {pulse > 0 && <span key={`pulse-${pulse}`} className="wl-orb-pulse" />}
           {isThinking && <span className="wilson-orb-shimmer" />}
+          {preparing && !isSpeaking && !isThinking && <span className="wl-orb-preparing" aria-hidden="true" />}
         </div>
       </div>
     );

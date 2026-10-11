@@ -18,7 +18,7 @@ import {
   buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
-import { speak, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
+import { startSpeechStream, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
 import { emitRipple } from "./lib/listeningBus";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
@@ -94,6 +94,7 @@ export default function App() {
   const [fieldOpen, setFieldOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>(() => getVoiceStatus());
   useEffect(() => subscribeVoiceStatus(setVoiceStatus), []);
+  useEffect(() => { if (settings.voiceEnabled) warmVoice(); }, []); // wake Render early
   const [showInstallHint, setShowInstallHint] = useState(() => {
     try {
       const ua = navigator.userAgent;
@@ -258,6 +259,7 @@ export default function App() {
         });
       };
 
+      const speech = settings.voiceEnabled ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"]) : null;
       let attempt = 0;
       for (;;) {
         try {
@@ -269,7 +271,9 @@ export default function App() {
                 setStreamingId(msgId);
               }
               raw += chunk;
-              writeAssistant(stripTagsForDisplay(raw));
+              const shown = stripTagsForDisplay(raw);
+              writeAssistant(shown);
+              speech?.push(shown);
             },
             abort.signal,
           );
@@ -296,9 +300,7 @@ export default function App() {
           if (result.finishReason !== "aborted" && clean && settings.longMemory) {
             void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
           }
-          if (result.finishReason !== "aborted" && clean && settings.voiceEnabled) {
-            void speak(clean, EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"]);
-          }
+          if (result.finishReason !== "aborted" && clean && speech) speech.finish(clean);
           break;
         } catch (err) {
           const fe = friendlyError(err);
@@ -318,6 +320,8 @@ export default function App() {
         }
       }
 
+      if (speech && abort.signal.aborted) stopSpeaking();
+      else if (speech) speech.finish(stripTagsForDisplay(raw)); // no-op if already finished
       abortRef.current = null;
       setThinking(false);
       setStreamingId(null);
@@ -835,7 +839,7 @@ export default function App() {
                 ref={inputRef}
                 rows={1}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => { setInput(e.target.value); if (settings.voiceEnabled) warmVoice(); }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
@@ -849,7 +853,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  primePlayback(); stopSpeaking();
+                  primePlayback(); stopSpeaking(); if (settings.voiceEnabled) warmVoice();
                   if (!stt.listening && (settings.voiceRecognition || settings.emotionDetection)) void startCapture().catch((e) => console.warn("[capture]", e));
                   if (stt.listening) setTimeout(() => void stopCapture(), 3000);
                   stt.toggle();
