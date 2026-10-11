@@ -23,7 +23,7 @@ html {
 body {
   margin: 0;
   min-height: 100dvh;
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  font-family: "Lexend", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   background: linear-gradient(180deg, #f8f0ff 0%, #f3e8ff 35%, #e8f4ff 70%, #f0f9ff 100%);
   color: #2e1065;
@@ -360,3 +360,24 @@ html.dark [class*="hover:bg-violet-50"]:hover, html.dark [class*="hover:bg-white
 @media (prefers-reduced-motion: reduce) {
   .wl-bfly, .wl-wing, .wl-cube, .wl-orb-base::before, .wl-orb-base::after { animation: none !important; }
 }
+
+/* Readability: Lexend base, optional OpenDyslexic */
+html { font-size: 17px; }
+body { font-size: 17px; line-height: 1.6; letter-spacing: 0.012em; text-align: left; }
+html.font-dyslexic body, html.font-dyslexic button, html.font-dyslexic input, html.font-dyslexic textarea { font-family: "OpenDyslexic", "Lexend", sans-serif !important; letter-spacing: 0.02em; }
+button, input, textarea { font-family: inherit; }
+em, i { font-style: normal; font-weight: 400; }
+.msg-wilson, .msg-user { font-size: 17px !important; line-height: 1.6 !important; }
+
+/* Interactive orb */
+.wilson-orb-shell[data-interactive] { cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.wl-orb-highlight { position: absolute; top: 12%; left: 22%; width: 34%; height: 24%; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(ellipse, rgba(255,255,255,.75), rgba(255,255,255,0) 70%); filter: blur(2px); transition: transform 120ms ease-out; mix-blend-mode: screen; }
+.wilson-fluid { transition: transform 120ms ease-out; }
+.wl-orb-pulse { position: absolute; inset: 0; border-radius: 9999px; pointer-events: none; box-shadow: 0 0 0 2px var(--wl-rim), 0 0 40px 10px var(--wl-rim); animation: wl-pulse 900ms ease-out forwards; }
+@keyframes wl-pulse { from { transform: scale(1); opacity: .95; } to { transform: scale(1.45); opacity: 0; } }
+body.wl-scatter .wl-bfly-svg { animation: wl-scatter 1.5s ease-in-out; }
+.wl-bfly:nth-child(odd) .wl-bfly-svg { --wl-sx: -60px; --wl-sy: -50px; }
+.wl-bfly:nth-child(even) .wl-bfly-svg { --wl-sx: 60px; --wl-sy: -40px; }
+@keyframes wl-scatter { 0%,100% { transform: translate(0,0) scale(1); } 40% { transform: translate(var(--wl-sx), var(--wl-sy)) scale(.85); } }
+@media (prefers-reduced-motion: reduce) { .wl-orb-pulse, body.wl-scatter .wl-bfly-svg { animation: none !important; } .wl-orb-highlight { transition: none; } }

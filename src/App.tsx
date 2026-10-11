@@ -101,6 +101,9 @@ export default function App() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [theme]);
+  useEffect(() => {
+    document.documentElement.classList.toggle("font-dyslexic", Boolean(settings.dyslexiaFont));
+  }, [settings.dyslexiaFont]);
   const toggleTheme = () => setTheme((t) => {
     const n = t === "dark" ? "light" : "dark";
     try { localStorage.setItem("wilson_theme", n); } catch { /* ignore */ }
@@ -451,7 +454,7 @@ export default function App() {
               aria-label="Threads"
             >
               <div className="flex items-center justify-between px-4 pt-5 pb-3">
-                <span className="text-[11px] font-bold uppercase tracking-[0.2em] text-violet-500">Threads</span>
+                <span className="text-[13px] tracking-[0.04em] text-violet-500">Threads</span>
                 <button type="button" onClick={() => setSidebarOpen(false)} className="p-1.5 rounded-full text-violet-400 hover:bg-violet-50/80" aria-label="Close threads">
                   <X className="w-4 h-4" />
                 </button>
@@ -597,6 +600,10 @@ export default function App() {
                   <input type="checkbox" checked={settings.showHeard} onChange={(e) => setSettings((s) => ({ ...s, showHeard: e.target.checked }))} />
                   Show mood label
                 </label>
+                <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
+                  <input type="checkbox" checked={Boolean(settings.dyslexiaFont)} onChange={(e) => setSettings((s) => ({ ...s, dyslexiaFont: e.target.checked }))} />
+                  Dyslexia font
+                </label>
                 {voiceProfiles.length > 0 && (
                   <div className="text-[12px] text-violet-800/80">
                     <span className="text-[11px] text-violet-700/60">Voices</span>
@@ -636,7 +643,7 @@ export default function App() {
                 className="relative mb-8"
               >
                 <div className="relative">
-                  <WilsonOrb size="lg" vibe={vibe} isThinking={thinking} />
+                  <WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onLongPress={() => { if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (settings.voiceRecognition || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} />
                 </div>
               </motion.div>
 
@@ -675,7 +682,7 @@ export default function App() {
             </div>
           ) : (
             <div className="max-w-lg mx-auto w-full py-4 space-y-4">
-              <div className="flex justify-center pt-1 pb-3"><WilsonOrb size="mdx" vibe={vibe} isThinking={thinking} /></div>
+              <div className="flex justify-center pt-1 pb-3"><WilsonOrb size="mdx" vibe={vibe} isThinking={thinking} interactive /></div>
               <div className="rounded-2xl glass px-4 py-2.5">
                 <button type="button" onClick={() => setFieldOpen((v) => !v)} className="w-full flex items-center gap-3 text-left" aria-expanded={fieldOpen}>
                   <Sparkles className="w-4 h-4 text-violet-400" />
@@ -702,7 +709,7 @@ export default function App() {
                 >
                   {msg.role === "assistant" && <WilsonOrb size="sm" vibe={vibe} isThinking={streamingId === msg.id} />}
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-[17px] leading-[1.6] ${
                       msg.role === "assistant" ? "msg-wilson" : "msg-user"
                     }`}
                   >

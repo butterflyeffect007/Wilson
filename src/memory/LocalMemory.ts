@@ -38,6 +38,7 @@ export interface WilsonSettings {
   emotionDetection: boolean;
   longMemory: boolean;
   showHeard: boolean;
+  dyslexiaFont: boolean;
 }
 
 const LEGACY_CONVO_KEY = "wilson_conversation_v1";
@@ -69,6 +70,7 @@ export const DEFAULT_SETTINGS: WilsonSettings = {
   emotionDetection: true,
   longMemory: true,
   showHeard: false,
+  dyslexiaFont: false,
 };
 
 function safeGet<T>(key: string): T | null {
