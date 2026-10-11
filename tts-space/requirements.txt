@@ -1,5 +1,4 @@
-kokoro-onnx==0.4.9
+edge-tts==7.2.0
 fastapi==0.115.0
 uvicorn==0.30.6
-soundfile==0.12.1
 numpy<2.3
