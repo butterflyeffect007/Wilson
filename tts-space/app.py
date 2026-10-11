@@ -1,5 +1,5 @@
 """Wilson Echo voice: Kokoro-82M (ONNX int8) on CPU. POST /tts {"text": "..."} -> audio/wav (24 kHz mono 16-bit)"""
-import io, math, os, re, threading, time
+import asyncio, io, math, os, re, time
 import numpy as np, soundfile as sf
 import onnxruntime as ort
 from fastapi import FastAPI, HTTPException, Request
@@ -43,7 +43,9 @@ kokoro = Kokoro.from_session(ort.InferenceSession(MODEL, so, providers=["CPUExec
 _t = time.time()
 kokoro.create("Hi.", voice="am_echo", speed=1.1, lang="en-us")  # warm the graph once at startup
 print(f"[tts] ready threads={THREADS} warmup={time.time()-_t:.2f}s", flush=True)
-LOCK = threading.Lock()  # one inference at a time (memory + CPU bound on free tier)
+ALOCK = asyncio.Lock()  # one inference at a time (memory + CPU bound on free tier)
+MAX_CHARS = int(os.environ.get("TTS_MAX_CHARS", "200"))  # clients send sentence chunks; Render edge cuts at ~100 s
+QUEUE_WAIT = float(os.environ.get("TTS_QUEUE_WAIT", "45"))
 CHUNK = int(os.environ.get("TTS_CHUNK_CHARS", "110"))
 
 
@@ -64,7 +66,7 @@ def split_text(text: str) -> list[str]:
 
 def synth(text: str, speed: float):
     out, sr = [], 24000
-    with LOCK:
+    if True:
         for part in split_text(text):
             a, sr = kokoro.create(part, voice="am_echo", speed=speed, lang="en-us")
             out.append(np.asarray(a, dtype=np.float32))
@@ -85,12 +87,24 @@ async def tts(req: Request):
     if SHARED and req.headers.get("x-wilson-key") != SHARED:
         raise HTTPException(403, "forbidden")
     body = await req.json()
-    text = re.sub(r"\s+", " ", str(body.get("text", ""))).strip()[:1200]
+    text = re.sub(r"\s+", " ", str(body.get("text", ""))).strip()
     if not text:
         raise HTTPException(400, "text required")
+    if len(text) > MAX_CHARS:
+        raise HTTPException(413, f"text too long ({len(text)} > {MAX_CHARS}); send sentence chunks")
     speed = min(1.4, max(0.8, float(body.get("speed", 1.1))))
-    t0 = time.time()
-    samples, sr = await run_in_threadpool(synth, text, speed)
+    try:
+        await asyncio.wait_for(ALOCK.acquire(), QUEUE_WAIT)
+    except asyncio.TimeoutError:
+        raise HTTPException(429, "busy, retry")
+    try:
+        if await req.is_disconnected():
+            print("[tts] caller gone, skipped", flush=True)
+            raise HTTPException(499, "client disconnected")
+        t0 = time.time()
+        samples, sr = await run_in_threadpool(synth, text, speed)
+    finally:
+        ALOCK.release()
     buf = io.BytesIO()
     sf.write(buf, np.asarray(samples, dtype=np.float32), sr, format="WAV", subtype="PCM_16")
     dt = time.time() - t0
