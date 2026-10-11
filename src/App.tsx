@@ -18,6 +18,10 @@ import {
 import { speak, stopSpeaking, primePlayback } from "./lib/kokoroTTS";
 import { emitRipple } from "./lib/listeningBus";
 import { useSpeechToText } from "./hooks/useSpeechToText";
+import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
+import { identify, loadProfiles, saveProfiles, renameProfile, mergeProfiles, splitLast, DEFAULT_THRESHOLD, type SpeakerProfile } from "./lib/speakerMatch";
+import { queryMemories, upsertMemory, listMemories, clearMemories, deleteMemory, summarizeExchange, type MemoryItem } from "./lib/longMemory";
+import { analyzeProsody, classify, EMOTION_CONFIDENCE_MIN, EMOTION_GUIDANCE, EMOTION_TTS_SPEED, type EmotionTag } from "./lib/emotion";
 
 export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
@@ -97,6 +101,16 @@ export default function App() {
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [vibe, setVibe] = useState<WilsonVibe>(() => loadProfile().vibe);
   const [settings, setSettings] = useState<WilsonSettings>(() => loadSettings());
+  const [voiceProfiles, setVoiceProfiles] = useState<SpeakerProfile[]>(() => loadProfiles());
+  const [speaker, setSpeaker] = useState<{ id: string; lowConfidence: boolean; isNew: boolean } | null>(null);
+  const [heard, setHeard] = useState<{ tag: EmotionTag; confidence: number } | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [correcting, setCorrecting] = useState(false);
+  const voiceCtxRef = useRef<{ name: string; emotion: EmotionTag | null; id: string }>({ name: "", emotion: null, id: "default" });
+  const [memories, setMemories] = useState<MemoryItem[] | null>(null);
+  useEffect(() => { saveProfiles(voiceProfiles); }, [voiceProfiles]);
+  const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
+  useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [apiKey, setApiKey] = useState<string | null>(() => resolveApiKey());
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -213,10 +227,25 @@ export default function App() {
         .map((m) => ({ role: m.role, content: m.content }));
       // last 10 messages INCLUDING the new user message (parity)
       const windowed = [...convo, { role: "user" as const, content }].slice(-CONTEXT_WINDOW);
+      let recalled = "";
+      if (settings.longMemory) {
+        try {
+          const hits = await Promise.race([
+            queryMemories(content, voiceCtxRef.current.id),
+            new Promise<MemoryItem[]>((r) => setTimeout(() => r([]), 3000)),
+          ]);
+          if (hits.length) recalled = `\n\n[Long-term memories relevant to this turn]\n${hits.map((h) => `- (${h.ts.slice(0, 10)}) ${h.text}`).join("\n")}`;
+        } catch (e) { console.warn("[memory]", e); }
+      }
       const request: ModelRequest = {
         userInput: content,
         conversation: windowed.slice(0, -1),
-        systemContext: `${WILSON_SYSTEM_CONTEXT}\n\n${buildMemoryContext(threadsRef.current)}`,
+        systemContext: `${WILSON_SYSTEM_CONTEXT}\n\n${buildMemoryContext(threadsRef.current)}${recalled}${
+          voiceCtxRef.current.name ? `\n\n[Voice recognition] The person speaking right now is ${voiceCtxRef.current.name}. Address them by name naturally.` : ""
+        }${
+          voiceCtxRef.current.emotion && EMOTION_GUIDANCE[voiceCtxRef.current.emotion]
+            ? `\n\n[Tone heard in their voice: ${voiceCtxRef.current.emotion}] ${EMOTION_GUIDANCE[voiceCtxRef.current.emotion]}` : ""
+        }`,
         generation: { temperature: 0.8, maxTokens: 2048 },
       };
 
@@ -274,8 +303,11 @@ export default function App() {
           }
           if (dream) saveProfile({ dream });
 
+          if (result.finishReason !== "aborted" && clean && settings.longMemory) {
+            void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
+          }
           if (result.finishReason !== "aborted" && clean && settings.voiceEnabled) {
-            void speak(clean);
+            void speak(clean, EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"]);
           }
           break;
         } catch (err) {
@@ -352,7 +384,67 @@ export default function App() {
   }, []);
 
   /* ---------- voice input ---------- */
-  const onFinalSpeech = useCallback((t: string) => { void sendMessage(t); }, [sendMessage]);
+  const analyzeUtterance = useCallback(async (text: string) => {
+    const samples = await stopCapture();
+    if (!samples || samples.length < 16000 * 0.6) return;
+    if (settings.emotionDetection) {
+      const words = text.split(/\s+/).filter(Boolean).length;
+      const c = classify(analyzeProsody(samples, 16000, words));
+      const ok = c.confidence >= EMOTION_CONFIDENCE_MIN;
+      voiceCtxRef.current.emotion = ok ? c.tag : null;
+      setHeard(ok ? c : null);
+      if (ok && (c.tag === "excited" || c.tag === "calm" || c.tag === "sad" || c.tag === "tired")) {
+        const vibeMap: Record<string, string> = { excited: "excited", calm: "calm", sad: "tired", tired: "tired" };
+        const v = vibeMap[c.tag] as WilsonVibe;
+        try { setVibe(v); } catch { /* ignore */ }
+      }
+    }
+    if (settings.voiceRecognition) {
+      const emb = await embedSpeaker(samples);
+      setVoiceProfiles((prev) => {
+        const r = identify(prev, emb, DEFAULT_THRESHOLD);
+        setSpeaker({ id: r.profile.id, lowConfidence: r.lowConfidence, isNew: r.isNew || !r.profile.name });
+        voiceCtxRef.current.name = r.profile.name;
+        voiceCtxRef.current.id = r.profile.id;
+        return r.profiles;
+      });
+    }
+  }, [settings.emotionDetection, settings.voiceRecognition]);
+
+  const onFinalSpeech = useCallback(async (t: string) => {
+    if (settings.voiceRecognition || settings.emotionDetection) {
+      // wait briefly for on-device analysis (first run downloads the model; don't block on that)
+      await Promise.race([analyzeUtterance(t).catch((e) => console.warn("[voice]", e)), new Promise((r) => setTimeout(r, 2500))]);
+    }
+    void sendMessage(t);
+  }, [sendMessage, analyzeUtterance, settings.voiceRecognition, settings.emotionDetection]);
+
+  const nameSpeaker = useCallback((name: string) => {
+    const n = name.trim();
+    if (!speaker || !n) return;
+    setVoiceProfiles((prev) => {
+      const existing = prev.find((p) => p.id !== speaker.id && p.name.toLowerCase() === n.toLowerCase());
+      if (existing) { setSpeaker({ id: existing.id, lowConfidence: false, isNew: false }); return mergeProfiles(prev, speaker.id, existing.id); }
+      return renameProfile(prev, speaker.id, n);
+    });
+    voiceCtxRef.current.name = n;
+    setSpeaker((s) => (s ? { ...s, isNew: false, lowConfidence: false } : s));
+    setNameDraft(""); setCorrecting(false);
+  }, [speaker]);
+
+  const correctSpeaker = useCallback((name: string) => {
+    const n = name.trim();
+    if (!speaker || !n) return;
+    setVoiceProfiles((prev) => {
+      const target = prev.find((p) => p.id !== speaker.id && p.name.toLowerCase() === n.toLowerCase());
+      const { profiles, created } = splitLast(prev, speaker.id, n);
+      if (target && created) { setSpeaker({ id: target.id, lowConfidence: false, isNew: false }); return mergeProfiles(profiles, created.id, target.id); }
+      if (created) setSpeaker({ id: created.id, lowConfidence: false, isNew: false });
+      return profiles;
+    });
+    voiceCtxRef.current.name = n;
+    setNameDraft(""); setCorrecting(false);
+  }, [speaker]);
   const onInterimSpeech = useCallback((t: string) => setInput(t), []);
   const stt = useSpeechToText(onFinalSpeech, onInterimSpeech);
 
@@ -569,6 +661,45 @@ export default function App() {
                   />
                 </label>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
+                  <input type="checkbox" checked={settings.voiceRecognition} onChange={(e) => setSettings((s) => ({ ...s, voiceRecognition: e.target.checked }))} />
+                  Recognize who's speaking (on-device)
+                </label>
+                <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
+                  <input type="checkbox" checked={settings.emotionDetection} onChange={(e) => setSettings((s) => ({ ...s, emotionDetection: e.target.checked }))} />
+                  Notice how I sound (on-device tone detection)
+                </label>
+                <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
+                  <input type="checkbox" checked={settings.longMemory} onChange={(e) => setSettings((s) => ({ ...s, longMemory: e.target.checked }))} />
+                  Long-term memory (stored on this device)
+                </label>
+                <div className="text-[12px] text-violet-800/80">
+                  <button type="button" className="underline" onClick={() => void listMemories().then(setMemories).catch(() => setMemories([]))}>{memories ? "Refresh memories" : "View memories"}</button>
+                  {" · "}
+                  <button type="button" className="underline text-rose-500" onClick={() => { if (confirm("Clear all of Wilson's long-term memories?")) void clearMemories().then(() => setMemories([])); }}>Clear all</button>
+                  {memories && (
+                    <div className="mt-1 max-h-40 overflow-y-auto space-y-1">
+                      {memories.length === 0 && <div className="text-violet-500/60">No memories yet.</div>}
+                      {[...memories].sort((a, b) => b.ts.localeCompare(a.ts)).map((m) => (
+                        <div key={m.id} className="flex gap-2 justify-between">
+                          <span className="text-[11px]">{m.ts.slice(0, 10)} · {m.text}</span>
+                          <button type="button" className="text-rose-500" onClick={() => void deleteMemory(m.id).then(() => setMemories((v) => v?.filter((x) => x.id !== m.id) ?? null))}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {voiceProfiles.length > 0 && (
+                  <div className="text-[12px] text-violet-800/80">
+                    <span className="text-[11px] text-violet-700/60">Voice profiles (stored only on this device)</span>
+                    {voiceProfiles.map((p) => (
+                      <div key={p.id} className="flex items-center justify-between">
+                        <span>{p.name || "Unnamed"} · {p.count} utterances</span>
+                        <button type="button" className="text-rose-500 underline" onClick={() => { setVoiceProfiles((v) => v.filter((x) => x.id !== p.id)); if (speaker?.id === p.id) setSpeaker(null); }}>Delete</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input
                     type="checkbox"
                     checked={settings.voiceEnabled}
@@ -712,6 +843,24 @@ export default function App() {
 
         <div className="relative z-30 px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="max-w-lg mx-auto">
+            {settings.voiceRecognition && speaker && (speaker.isNew || !speakerProfile?.name || correcting) && (
+              <form onSubmit={(e) => { e.preventDefault(); correcting ? correctSpeaker(nameDraft) : nameSpeaker(nameDraft); }} className="flex items-center gap-2 mb-1.5 px-2 text-[12px] text-violet-700/80">
+                <span>{correcting ? "Who is this, then?" : "Who am I talking to?"}</span>
+                <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="Name" className="flex-1 min-w-0 rounded-full px-2 py-0.5 bg-white/70 border border-violet-200/60 outline-none" />
+                <button type="submit" className="text-violet-600 underline">Save</button>
+                <button type="button" onClick={() => { setSpeaker(null); setCorrecting(false); }} className="text-violet-400">✕</button>
+              </form>
+            )}
+            {settings.voiceRecognition && speaker && speakerProfile?.name && speaker.lowConfidence && !speaker.isNew && !correcting && (
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">
+                I think this is {speakerProfile.name}?{" "}
+                <button type="button" className="underline" onClick={() => setSpeaker({ ...speaker, lowConfidence: false })}>Yes</button>{" · "}
+                <button type="button" className="underline" onClick={() => setCorrecting(true)}>No</button>
+              </p>
+            )}
+            {settings.emotionDetection && heard && (
+              <p className="mb-1 px-2 text-[11px] text-violet-500/60">Heard: {heard.tag} ({Math.round(heard.confidence * 100)}%)</p>
+            )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
             <div className="relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5">
               <textarea
@@ -731,7 +880,12 @@ export default function App() {
               />
               <button
                 type="button"
-                onClick={() => { primePlayback(); stopSpeaking(); stt.toggle(); }}
+                onClick={() => {
+                  primePlayback(); stopSpeaking();
+                  if (!stt.listening && (settings.voiceRecognition || settings.emotionDetection)) void startCapture().catch((e) => console.warn("[capture]", e));
+                  if (stt.listening) setTimeout(() => void stopCapture(), 3000);
+                  stt.toggle();
+                }}
                 disabled={busy || !stt.supported}
                 className={`p-2 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center touch-manipulation disabled:opacity-40 ${
                   stt.listening ? "text-rose-500 bg-rose-50/80" : "text-violet-400/70 hover:text-violet-500 hover:bg-violet-50/80"

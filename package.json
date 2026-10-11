@@ -10,6 +10,7 @@
     "fetch-assets": "node scripts/fetch-assets.mjs"
   },
   "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
     "clsx": "^2.1.1",
     "framer-motion": "^11.0.0",
     "kokoro-js": "^1.2.1",

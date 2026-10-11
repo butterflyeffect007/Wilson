@@ -34,6 +34,9 @@ export interface Profile {
 export interface WilsonSettings {
   voiceEnabled: boolean;
   displayName: string;
+  voiceRecognition: boolean;
+  emotionDetection: boolean;
+  longMemory: boolean;
 }
 
 const LEGACY_CONVO_KEY = "wilson_conversation_v1";
@@ -61,6 +64,9 @@ const DEFAULT_RELATIONSHIP: RelationshipSeed = {
 export const DEFAULT_SETTINGS: WilsonSettings = {
   voiceEnabled: true,
   displayName: "Jenny",
+  voiceRecognition: true,
+  emotionDetection: true,
+  longMemory: true,
 };
 
 function safeGet<T>(key: string): T | null {

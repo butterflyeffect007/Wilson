@@ -60,7 +60,7 @@ function toSpeakable(text: string): string {
     .slice(0, 1500);
 }
 
-export async function speak(text: string): Promise<SpeakResult> {
+export async function speak(text: string, speed: number = SPEED): Promise<SpeakResult> {
   stopSpeaking();
   const my = generation;
   const speakable = toSpeakable(text);
@@ -68,7 +68,7 @@ export async function speak(text: string): Promise<SpeakResult> {
   try {
     const tts = await loadTTS();
     if (my !== generation) return "skipped";
-    const audioOut = await tts.generate(speakable, { voice: VOICE, speed: SPEED });
+    const audioOut = await tts.generate(speakable, { voice: VOICE, speed });
     if (my !== generation) return "skipped";
     const blob: Blob = audioOut.toBlob();
     currentUrl = URL.createObjectURL(blob);
