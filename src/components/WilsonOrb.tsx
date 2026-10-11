@@ -11,7 +11,7 @@ export type WilsonVibe = "neutral" | "excited" | "calm" | "tired" | "dreaming";
 interface WilsonOrbProps {
   isThinking?: boolean;
   speaking?: boolean;
-  size?: "sm" | "md" | "lg";
+  size?: "sm" | "md" | "lg" | "mdx";
   vibe?: WilsonVibe;
 }
 
@@ -19,6 +19,7 @@ const sizeMap = {
   sm: "w-9 h-9",
   md: "w-16 h-16",
   lg: "w-44 h-44 sm:w-52 sm:h-52",
+  mdx: "w-24 h-24",
 };
 
 const vibeHue: Record<WilsonVibe, number> = {
@@ -103,6 +104,7 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
         }
         aria-hidden="true"
       >
+        {size === "lg" && <span className="wl-orb-base" />}
         <div className="wilson-orb-float absolute inset-0">
           {/* Soft orbital rings – always present for living presence */}
           <span className="wilson-orb-ring wilson-orb-ring--1" />
@@ -153,6 +155,7 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
             }
           />
 
+          <span className="wl-orb-rim" />
           {isThinking && <span className="wilson-orb-shimmer" />}
         </div>
       </div>

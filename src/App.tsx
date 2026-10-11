@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Settings as SettingsIcon,
+  Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, MicOff, Check, Menu, Plus, Trash2, X,
   Square, Copy, RotateCcw, Volume2, VolumeX,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
+import Backdrop from "./components/Backdrop";
 import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
 import type { ModelRequest } from "./intelligence";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
@@ -89,6 +90,22 @@ export default function App() {
   const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
+  const [fieldOpen, setFieldOpen] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try {
+      const t = localStorage.getItem("wilson_theme");
+      if (t === "light" || t === "dark") return t;
+      return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    } catch { return "light"; }
+  });
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+  const toggleTheme = () => setTheme((t) => {
+    const n = t === "dark" ? "light" : "dark";
+    try { localStorage.setItem("wilson_theme", n); } catch { /* ignore */ }
+    return n;
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [lastFailed, setLastFailed] = useState<{ threadId: string; content: string } | null>(null);
@@ -416,15 +433,7 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] flex flex-col relative overflow-hidden">
-      <div className="fixed inset-0 -z-10 pointer-events-none">
-        <div className="absolute inset-0 bg-gradient-to-b from-[#f8f0ff] via-[#f3e8ff] to-[#e8f4ff]" />
-        <div className="absolute top-[-10%] left-1/2 -translate-x-1/2 w-[140%] h-[70%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(196,181,253,0.35),transparent_70%)] blur-3xl" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[80%] h-[60%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(165,243,252,0.25),transparent_70%)] blur-3xl" />
-        <div className="absolute top-[30%] left-[-15%] w-[50%] h-[40%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(249,168,212,0.2),transparent_70%)] blur-3xl" />
-        <div className="absolute bottom-[10%] left-[20%] w-[40%] h-[30%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(167,243,208,0.15),transparent_70%)] blur-3xl" />
-        <div className="absolute top-[15%] right-[5%] w-[35%] h-[25%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(253,224,71,0.12),transparent_70%)] blur-3xl" />
-        <div className="wilson-field-particles" />
-      </div>
+      <Backdrop />
 
       {/* Threads drawer (existing glass styling) */}
       <AnimatePresence>
@@ -494,12 +503,11 @@ export default function App() {
             >
               <Menu className="w-[18px] h-[18px]" />
             </button>
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-400 via-pink-300 to-cyan-300 flex items-center justify-center shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-white" />
-            </div>
-            <h1 className="text-[17px] font-semibold tracking-[0.22em] text-violet-900/90">
-              W I L S O N
-            </h1>
+            <Sparkles className="w-4 h-4 text-violet-400 wl-title" />
+            <h1 className="wl-title text-[17px] tracking-[0.32em] text-violet-900/90">WILSON</h1>
+            <span className="ml-1 hidden min-[360px]:flex items-center gap-1.5 px-2 py-0.5 rounded-full glass text-[10px] whitespace-nowrap text-violet-700/70">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />Always with you
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -511,6 +519,15 @@ export default function App() {
               aria-label="Toggle voice replies"
             >
               {settings.voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="p-1.5 rounded-full text-violet-400/70 hover:bg-violet-50/80 touch-manipulation"
+              aria-label={theme === "dark" ? "Light theme" : "Dark theme"}
+              title={theme === "dark" ? "Light theme" : "Dark theme"}
+            >
+              {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
             <button
               type="button"
@@ -629,11 +646,11 @@ export default function App() {
                 transition={{ delay: 0.15 }}
                 className="text-center space-y-2 mb-8"
               >
-                <h2 className="text-2xl sm:text-[26px] font-semibold text-violet-950/90 tracking-tight">
+                <h2 className="wl-thin text-2xl sm:text-[26px] text-violet-950/90 tracking-tight">
                   {greeting}, {displayName}
-                  <span className="ml-1.5 text-pink-400">♥</span>
+                  <span className="ml-1.5 text-pink-400">♡</span>
                 </h2>
-                <p className="text-[13px] text-violet-700/55 font-medium tracking-wide">
+                <p className="text-[13px] text-violet-700/55 wl-thin tracking-wide">
                   Imagination becomes intelligence.
                 </p>
               </motion.div>
@@ -650,7 +667,7 @@ export default function App() {
                   className="w-full flex items-center gap-3 rounded-2xl px-4 py-3.5 glass text-left transition-all hover:bg-white/70 touch-manipulation"
                 >
                   <Sparkles className="w-4 h-4 text-violet-400 flex-shrink-0" />
-                  <span className="text-[14px] text-violet-800/50 font-medium">
+                  <span className="text-[14px] text-violet-800/60 wl-thin">
                     What would you like to explore today?
                   </span>
                 </button>
@@ -658,6 +675,24 @@ export default function App() {
             </div>
           ) : (
             <div className="max-w-lg mx-auto w-full py-4 space-y-4">
+              <div className="flex justify-center pt-1 pb-3"><WilsonOrb size="mdx" vibe={vibe} isThinking={thinking} /></div>
+              <div className="rounded-2xl glass px-4 py-2.5">
+                <button type="button" onClick={() => setFieldOpen((v) => !v)} className="w-full flex items-center gap-3 text-left" aria-expanded={fieldOpen}>
+                  <Sparkles className="w-4 h-4 text-violet-400" />
+                  <span className="flex-1">
+                    <span className="block text-[13px] text-violet-900/90">Wilson Field</span>
+                    <span className="block text-[10px] text-violet-600/60">Your memory · Your mood · Your dreams</span>
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-violet-400 transition-transform ${fieldOpen ? "rotate-180" : ""}`} />
+                </button>
+                {fieldOpen && (
+                  <div className="mt-2 pt-2 border-t border-violet-200/30 space-y-1 text-[12px] text-violet-800/80 wl-thin">
+                    <div>Mood: {vibe}{heard ? ` · I heard you sounding ${heard.tag}` : ""}</div>
+                    <div>Dream: {loadProfile().dream || "Still dreaming…"}</div>
+                    <div>Talking with: {speakerProfile?.name || displayName}</div>
+                  </div>
+                )}
+              </div>
               {messages.map((msg) => (
                 <motion.div
                   key={msg.id}
@@ -672,7 +707,7 @@ export default function App() {
                     }`}
                   >
                     {msg.role === "assistant" && (
-                      <span className="block text-[11px] font-bold uppercase tracking-[0.2em] text-violet-500 mb-1">
+                      <span className="block text-[12px] tracking-[0.08em] text-violet-500 mb-1">
                         Wilson
                       </span>
                     )}
