@@ -16,7 +16,7 @@ export const DEFAULT_WILSON_POLICY: WilsonPolicy = {
   preferredEngine: {
     provider: "openrouter",
     // Same model family the original wilsonaibro used.
-    model: "google/gemini-2.5-flash",
+    model: "google/gemma-4-31b-it:free",
   },
 };
 

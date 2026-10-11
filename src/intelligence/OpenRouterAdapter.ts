@@ -31,7 +31,7 @@ export class OpenRouterAdapter implements ModelAdapter {
   private readonly url: string;
 
   /** If proxyUrl is given, requests go to the Wilson proxy (key held server-side). */
-  constructor(apiKey: string, defaultModel: string = "google/gemini-2.5-flash", proxyUrl?: string) {
+  constructor(apiKey: string, defaultModel: string = "google/gemma-4-31b-it:free", proxyUrl?: string) {
     if (!apiKey && !proxyUrl) throw new Error("OpenRouter API key is required");
     this.apiKey = apiKey;
     this.url = proxyUrl ? proxyUrl.replace(/\/$/, "") + "/v1/chat/completions" : OPENROUTER_URL;
