@@ -10,6 +10,18 @@ const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 const VOICE = "am_echo";
 const SPEED = 1.1;
 const LOAD_TIMEOUT_MS = 20000;
+const SERVER_TTS_URL = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev") + "/tts";
+let serverDown = false;
+
+/** In-browser Kokoro only where it can realistically run (not iOS; enough RAM). */
+function canRunLocalKokoro(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const iOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (iOS) return false;
+  const mem = (navigator as any).deviceMemory as number | undefined;
+  return mem === undefined ? !/Android/i.test(ua) : mem >= 4;
+}
 
 let ttsPromise: Promise<any> | null = null;
 let kokoroFailed = false;
@@ -19,7 +31,7 @@ let generation = 0;
 let unlocked = false;
 
 export type SpeakResult = "success" | "blocked" | "error" | "skipped" | "fallback";
-export type VoiceStatus = { state: "idle" | "loading" | "ready" | "fallback"; progress: number; reason?: string };
+export type VoiceStatus = { state: "idle" | "loading" | "ready" | "fallback" | "unavailable"; progress: number; reason?: string };
 let status: VoiceStatus = { state: "idle", progress: 0 };
 const statusListeners = new Set<(s: VoiceStatus) => void>();
 function setStatus(s: Partial<VoiceStatus>) { status = { ...status, ...s }; statusListeners.forEach((l) => l(status)); }
@@ -77,7 +89,7 @@ export function primePlayback(): void {
     try { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch { /* ignore */ }
   }
   unlocked = true;
-  if (!ttsPromise && !kokoroFailed) void loadTTS().catch(() => {}); // start downloading early
+  if (!ttsPromise && !kokoroFailed && canRunLocalKokoro()) void loadTTS().catch(() => {}); // start downloading early
 }
 
 export function stopSpeaking(): void {
@@ -104,23 +116,29 @@ export function toSpeakable(text: string): string {
     .slice(0, 1500);
 }
 
+const MALE_RE = /\b(alex|aaron|fred|daniel|evan|nathan|tom|arthur|reed|rocko|ralph|eddy|grandpa|junior|male|guy|david|mark|christopher|eric|andrew|brian|roger|steffan|davis|jason|tony)\b/i;
 function pickVoice(): SpeechSynthesisVoice | null {
-  const vs = speechSynthesis.getVoices().filter((v) => /^en(-|_)?US/i.test(v.lang) || v.lang === "en-US");
-  const pool = vs.length ? vs : speechSynthesis.getVoices().filter((v) => v.lang.startsWith("en"));
-  const male = /(aaron|evan|nathan|tom|alex|fred|daniel|arthur|reed|rocko|ralph|guy|david|mark|christopher|eric|male)/i;
+  if (typeof speechSynthesis === "undefined") return null;
+  const all = speechSynthesis.getVoices();
+  const en = all.filter((v) => /^en[-_]?(US)?/i.test(v.lang));
+  const male = en.filter((v) => MALE_RE.test(v.name) && !/female/i.test(v.name));
   const score = (v: SpeechSynthesisVoice) =>
-    (/premium/i.test(v.name) || /premium/i.test(v.voiceURI) ? 40 : 0) +
-    (/enhanced/i.test(v.name) || /enhanced/i.test(v.voiceURI) ? 30 : 0) +
-    (male.test(v.name) ? 20 : 0) + (v.localService ? 5 : 0) + (/google us english/i.test(v.name) ? 8 : 0);
-  return pool.sort((a, b) => score(b) - score(a))[0] ?? null;
+    (/premium/i.test(v.name + v.voiceURI) ? 40 : 0) + (/enhanced/i.test(v.name + v.voiceURI) ? 30 : 0) +
+    (/en[-_]US/i.test(v.lang) ? 10 : 0) + (v.localService ? 3 : 0);
+  return male.sort((a, b) => score(b) - score(a))[0] ?? null;
 }
 
 function speakFallback(text: string, speed: number, my: number): Promise<SpeakResult> {
   return new Promise((resolve) => {
     if (typeof speechSynthesis === "undefined") return resolve("error");
-    const u = new SpeechSynthesisUtterance(text);
     const v = pickVoice();
-    if (v) u.voice = v;
+    if (!v) {
+      console.warn("[voice] no male device voice available; staying silent");
+      setStatus({ state: "unavailable" });
+      return resolve("skipped");
+    }
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = v;
     u.lang = v?.lang ?? "en-US";
     u.rate = Math.max(0.8, Math.min(1.3, speed * 0.95));
     u.pitch = 0.95;
@@ -138,8 +156,46 @@ export async function speak(text: string, speed: number = SPEED): Promise<SpeakR
   const speakable = toSpeakable(text);
   if (!speakable) return "skipped";
 
+  // 1) Server-side Echo (Kokoro am_echo) via the Wilson worker
+  if (!serverDown) {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 25000);
+      const res = await fetch(SERVER_TTS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: speakable, speed }),
+        signal: ctrl.signal,
+      });
+      clearTimeout(to);
+      if (res.status === 503) serverDown = true; // not configured: stop trying this session
+      if (res.ok) {
+        const data = await res.arrayBuffer();
+        if (my !== generation) return "skipped";
+        const ctx = getAudioContext();
+        if (ctx) {
+          if (ctx.state !== "running") { try { await ctx.resume(); } catch { /* ignore */ } }
+          const buf = await ctx.decodeAudioData(data);
+          if (my !== generation) return "skipped";
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          currentSource = src;
+          detachCurrent = attachNode(src);
+          src.onended = () => { if (currentSource === src) { detachCurrent?.(); detachCurrent = null; currentSource = null; } };
+          src.start();
+          if (status.state === "unavailable" || status.state === "fallback") setStatus({ state: "ready" });
+          return "success";
+        }
+      }
+    } catch (e) {
+      console.warn("[voice] server Echo voice failed:", (e as Error).message);
+    }
+  }
+  if (my !== generation) return "skipped";
+
+  // 2) In-browser Kokoro (desktop / capable Android only)
   let tts: any = null;
-  if (!kokoroFailed) {
+  if (!kokoroFailed && canRunLocalKokoro()) {
     try {
       tts = await Promise.race([
         loadTTS(),

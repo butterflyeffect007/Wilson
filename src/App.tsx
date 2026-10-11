@@ -9,6 +9,7 @@ import WilsonOrb from "./components/WilsonOrb";
 import Backdrop from "./components/Backdrop";
 import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
 import type { ModelRequest } from "./intelligence";
+import { prepareTools } from "./intelligence";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { WILSON_SYSTEM_CONTEXT } from "./core/wilson/WilsonIdentity";
 import {
@@ -218,6 +219,14 @@ export default function App() {
           if (hits.length) recalled = `\n\n[Long-term memories relevant to this turn]\n${hits.map((h) => `- (${h.ts.slice(0, 10)}) ${h.text}`).join("\n")}`;
         } catch (e) { console.warn("[memory]", e); }
       }
+      let toolCtx = "";
+      try {
+        const step = await Promise.race([
+          prepareTools(content, { toolsUrl: WILSON_PROXY_URL, adapter }),
+          new Promise<{ context: string }>((r) => setTimeout(() => r({ context: "" }), 15000)),
+        ]);
+        toolCtx = step.context;
+      } catch (e) { console.warn("[tools]", e); }
       const request: ModelRequest = {
         userInput: content,
         conversation: windowed.slice(0, -1),
@@ -226,7 +235,7 @@ export default function App() {
         }${
           voiceCtxRef.current.emotion && EMOTION_GUIDANCE[voiceCtxRef.current.emotion]
             ? `\n\n[Tone heard in their voice: ${voiceCtxRef.current.emotion}] ${EMOTION_GUIDANCE[voiceCtxRef.current.emotion]}` : ""
-        }`,
+        }${toolCtx}`,
         generation: { temperature: 0.8, maxTokens: 2048 },
       };
 
@@ -810,6 +819,9 @@ export default function App() {
             )}
             {settings.voiceEnabled && voiceStatus.state === "loading" && (
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is loading… {voiceStatus.progress}%</p>
+            )}
+            {settings.voiceEnabled && voiceStatus.state === "unavailable" && (
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Voice unavailable right now</p>
             )}
             {showInstallHint && (
               <div className="mb-2 mx-1 flex items-center gap-2 rounded-2xl glass px-3 py-2 text-[13px] text-violet-800/80">

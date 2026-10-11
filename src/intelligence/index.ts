@@ -12,3 +12,6 @@ export { IntelligenceRouter } from "./IntelligenceRouter";
 export type { AdapterRegistry as AdapterRegistryType } from "./IntelligenceRouter";
 export { AdapterRegistry } from "./AdapterRegistry";
 export { OpenRouterAdapter } from "./OpenRouterAdapter";
+export { prepareTools } from "./IntelligenceRouter";
+export type { ToolStep } from "./IntelligenceRouter";
+export * from "./tools";
