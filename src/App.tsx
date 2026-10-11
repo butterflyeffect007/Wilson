@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Send, Sparkles, Loader2, Mic, MicOff, KeyRound, Check, Menu, Plus, Trash2, X,
+  Settings as SettingsIcon,
+  Send, Sparkles, Loader2, Mic, MicOff, Check, Menu, Plus, Trash2, X,
   Square, Copy, RotateCcw, Volume2, VolumeX,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
@@ -26,25 +27,8 @@ import { analyzeProsody, classify, EMOTION_CONFIDENCE_MIN, EMOTION_GUIDANCE, EMO
 export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
   "https://wilson-proxy.butterflyeffect007.workers.dev";
-const PROXY_SENTINEL = "__proxy__";
-const KEY_STORAGE = "wilson_openrouter_key";
 const CONTEXT_WINDOW = 10; // parity: wilsonaibro sent only the last 10 messages
 const MAX_RETRIES = 2;
-
-/* ---------- key helpers ---------- */
-function getStoredKey(): string | null {
-  try { return localStorage.getItem(KEY_STORAGE); } catch { return null; }
-}
-function setStoredKey(k: string) {
-  try { localStorage.setItem(KEY_STORAGE, k); } catch { /* ignore */ }
-}
-function clearStoredKey() {
-  try { localStorage.removeItem(KEY_STORAGE); } catch { /* ignore */ }
-}
-function resolveApiKey(): string | null {
-  const env = (import.meta.env.VITE_OPENROUTER_KEY as string | undefined)?.trim();
-  return env || getStoredKey()?.trim() || (WILSON_PROXY_URL ? PROXY_SENTINEL : null);
-}
 
 /* ---------- greetings (logic from wilsonaibro Index.tsx @ 1816d92) ---------- */
 function pickRandom<T>(arr: T[]): T {
@@ -75,17 +59,10 @@ function renderInline(text: string) {
   });
 }
 
-function friendlyError(err: unknown): { text: string; retryable: boolean; badKey: boolean } {
+function friendlyError(err: unknown): { text: string; retryable: boolean } {
   const status = err instanceof OpenRouterError ? err.status : 0;
-  const msg = err instanceof Error ? err.message : String(err);
-  if (status === 401 || status === 403)
-    return { text: "The key was rejected. Double-check it at openrouter.ai/keys, then reconnect.", retryable: false, badKey: true };
-  if (status === 402)
-    return { text: "*The OpenRouter account is out of credits. Top up at openrouter.ai/credits and try again.*", retryable: false, badKey: false };
-  if (status === 429) return { text: "*Whew — rate-limited. Give it a beat and ask again.*", retryable: true, badKey: false };
-  if (status >= 500 || status === 0)
-    return { text: "*Oh no no no! Something went wrong in the void... Please try again!*", retryable: true, badKey: false };
-  return { text: `Wilson stumbled: ${msg}`, retryable: false, badKey: false };
+  if (status === 429) return { text: "*Whew, lots of people talking at once. Give me a second and ask again.*", retryable: true };
+  return { text: "*My brain's a little busy right now. Try again in a moment.*", retryable: true };
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -111,11 +88,8 @@ export default function App() {
   useEffect(() => { saveProfiles(voiceProfiles); }, [voiceProfiles]);
   const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
-  const [apiKey, setApiKey] = useState<string | null>(() => resolveApiKey());
-  const [showKeyPanel, setShowKeyPanel] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [keyInput, setKeyInput] = useState("");
-  const [keyError, setKeyError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [lastFailed, setLastFailed] = useState<{ threadId: string; content: string } | null>(null);
 
@@ -127,7 +101,6 @@ export default function App() {
   threadsRef.current = threads;
 
   const busy = thinking || streamingId !== null;
-  const isConnected = Boolean(apiKey);
   const activeThread = threads.find((t) => t.id === activeId) ?? null;
   const messages = activeThread?.messages ?? [];
   const displayName = settings.displayName || "Jenny";
@@ -139,7 +112,6 @@ export default function App() {
   useEffect(() => { saveThreads(threads); }, [threads]);
   useEffect(() => { saveActiveThreadId(activeId); }, [activeId]);
   useEffect(() => { saveSettings(settings); }, [settings]);
-  useEffect(() => { if (!apiKey && !WILSON_PROXY_URL) setShowKeyPanel(true); }, [apiKey]);
 
   /* smart auto-scroll: follow the stream unless the user scrolled up */
   const onScroll = () => {
@@ -186,24 +158,6 @@ export default function App() {
     setActiveId((cur) => (cur === id ? null : cur));
   }, []);
 
-  /* ---------- key panel ---------- */
-  const connectBrain = useCallback(() => {
-    const k = keyInput.trim();
-    if (!k) { setKeyError("Paste your OpenRouter key to connect Wilson."); return; }
-    if (!k.startsWith("sk-or-")) { setKeyError("That doesn't look like an OpenRouter key (it should start with sk-or-)."); return; }
-    setStoredKey(k);
-    setApiKey(k);
-    setKeyInput("");
-    setKeyError("");
-    setShowKeyPanel(false);
-  }, [keyInput]);
-
-  const disconnectBrain = useCallback(() => {
-    clearStoredKey();
-    setApiKey(null);
-    setShowKeyPanel(true);
-  }, []);
-
   /* ---------- core completion (streaming) ---------- */
   const runCompletion = useCallback(
     async (threadId: string, history: StoredMessage[], content: string) => {
@@ -213,14 +167,8 @@ export default function App() {
           messages: [...t.messages, { id: newId(), role: "assistant", content: text, timestamp: new Date().toISOString() }],
         }));
 
-      if (!apiKey) {
-        pushAssistant("My brain isn't connected yet. Tap the key icon in the header and paste your OpenRouter key — then we can explore together.");
-        setShowKeyPanel(true);
-        return;
-      }
-
       const engine = getPreferredEngine(DEFAULT_WILSON_POLICY);
-      const adapter = apiKey === PROXY_SENTINEL ? new OpenRouterAdapter("", engine.model, WILSON_PROXY_URL) : new OpenRouterAdapter(apiKey, engine.model);
+      const adapter = new OpenRouterAdapter("", engine.model, WILSON_PROXY_URL);
 
       const convo = history
         .filter((m) => m.role === "user" || m.role === "assistant")
@@ -318,7 +266,6 @@ export default function App() {
             await sleep(800 * attempt);
             continue;
           }
-          if (fe.badKey) setShowKeyPanel(true);
           writeAssistant(
             raw
               ? `${stripTagsForDisplay(raw)}\n\n*...connection dropped mid-thought. Ask me to continue and I'll pick it back up.*`
@@ -334,7 +281,7 @@ export default function App() {
       setStreamingId(null);
       inputRef.current?.focus();
     },
-    [apiKey, settings, updateThread],
+    [settings, updateThread],
   );
 
   const sendMessage = useCallback(
@@ -565,30 +512,21 @@ export default function App() {
             >
               {settings.voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
             </button>
-            {!WILSON_PROXY_URL && <button
+            <button
               type="button"
-              onClick={() => setShowKeyPanel((v) => !v)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full glass transition-colors hover:bg-white/70 touch-manipulation"
-              title={isConnected ? "Brain connected — click to manage" : "Connect Wilson's brain"}
+              onClick={() => setShowSettings((v) => !v)}
+              className="p-1.5 rounded-full text-violet-400/70 hover:bg-violet-50/80 touch-manipulation"
+              aria-label="Settings"
+              title="Settings"
             >
-              {isConnected ? (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-[11px] font-medium text-violet-800/70">Connected</span>
-                </>
-              ) : (
-                <>
-                  <KeyRound className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="text-[11px] font-medium text-amber-700/80">Needs key</span>
-                </>
-              )}
-            </button>}
+              <SettingsIcon className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </header>
 
       <AnimatePresence>
-        {showKeyPanel && (
+        {showSettings && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -596,62 +534,12 @@ export default function App() {
             className="relative z-20 px-4 pb-3"
           >
             <div className="max-w-lg mx-auto rounded-2xl glass-strong p-4 space-y-3 shadow-lg max-h-[70dvh] overflow-y-auto">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-violet-950/90">Connect Wilson's brain</h3>
-                  <p className="text-[12px] text-violet-700/60 mt-0.5 leading-relaxed">
-                    Paste an OpenRouter key. It stays only in this browser (localStorage).
-                    Get a key at{" "}
-                    <a href="https://openrouter.ai/keys" target="_blank" rel="noreferrer" className="underline text-violet-600 hover:text-violet-800">
-                      openrouter.ai/keys
-                    </a>
-                    .
-                  </p>
-                </div>
-                {isConnected && (
-                  <button type="button" onClick={() => setShowKeyPanel(false)} className="text-violet-400 hover:text-violet-600 text-xs">
-                    Close
-                  </button>
-                )}
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-violet-950/90">Settings</h3>
+                <button type="button" onClick={() => setShowSettings(false)} className="text-violet-400 hover:text-violet-600" aria-label="Close settings"><X className="w-4 h-4" /></button>
               </div>
-
-              {!isConnected ? (
-                <>
-                  <input
-                    type="password"
-                    value={keyInput}
-                    onChange={(e) => { setKeyInput(e.target.value); setKeyError(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") connectBrain(); }}
-                    placeholder="sk-or-v1-…"
-                    className="w-full rounded-xl px-3 py-2.5 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950 placeholder-violet-400/50"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  {keyError && <p className="text-[12px] text-rose-600">{keyError}</p>}
-                  <button
-                    type="button"
-                    onClick={connectBrain}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-violet-500 via-fuchsia-500 to-cyan-500 text-white text-sm font-medium shadow-md hover:opacity-95 transition-opacity touch-manipulation"
-                  >
-                    <Check className="w-4 h-4" />
-                    Connect
-                  </button>
-                </>
-              ) : (
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[12px] text-emerald-700/80 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    Brain is connected and ready.
-                  </p>
-                  <button type="button" onClick={disconnectBrain} className="text-[12px] text-violet-500 hover:text-rose-500 transition-colors">
-                    Disconnect
-                  </button>
-                </div>
-              )}
-
               {/* Voice + name settings (persisted locally) */}
-              <div className="pt-3 border-t border-violet-200/50 space-y-2">
-                <h4 className="text-[12px] font-semibold text-violet-950/80">Voice & settings</h4>
+              <div className="space-y-2">
                 <label className="block">
                   <span className="text-[11px] text-violet-700/60">Your name</span>
                   <input
@@ -662,15 +550,15 @@ export default function App() {
                 </label>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input type="checkbox" checked={settings.voiceRecognition} onChange={(e) => setSettings((s) => ({ ...s, voiceRecognition: e.target.checked }))} />
-                  Recognize who's speaking (on-device)
+                  Know who's talking
                 </label>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input type="checkbox" checked={settings.emotionDetection} onChange={(e) => setSettings((s) => ({ ...s, emotionDetection: e.target.checked }))} />
-                  Notice how I sound (on-device tone detection)
+                  Notice my mood
                 </label>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input type="checkbox" checked={settings.longMemory} onChange={(e) => setSettings((s) => ({ ...s, longMemory: e.target.checked }))} />
-                  Long-term memory (stored on this device)
+                  Remember things
                 </label>
                 <div className="text-[12px] text-violet-800/80">
                   <button type="button" className="underline" onClick={() => void listMemories().then(setMemories).catch(() => setMemories([]))}>{memories ? "Refresh memories" : "View memories"}</button>
@@ -688,12 +576,16 @@ export default function App() {
                     </div>
                   )}
                 </div>
+                <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
+                  <input type="checkbox" checked={settings.showHeard} onChange={(e) => setSettings((s) => ({ ...s, showHeard: e.target.checked }))} />
+                  Show mood label
+                </label>
                 {voiceProfiles.length > 0 && (
                   <div className="text-[12px] text-violet-800/80">
-                    <span className="text-[11px] text-violet-700/60">Voice profiles (stored only on this device)</span>
+                    <span className="text-[11px] text-violet-700/60">Voices</span>
                     {voiceProfiles.map((p) => (
                       <div key={p.id} className="flex items-center justify-between">
-                        <span>{p.name || "Unnamed"} · {p.count} utterances</span>
+                        <span>{p.name || "Unnamed"}</span>
                         <button type="button" className="text-rose-500 underline" onClick={() => { setVoiceProfiles((v) => v.filter((x) => x.id !== p.id)); if (speaker?.id === p.id) setSpeaker(null); }}>Delete</button>
                       </div>
                     ))}
@@ -843,7 +735,7 @@ export default function App() {
 
         <div className="relative z-30 px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="max-w-lg mx-auto">
-            {settings.voiceRecognition && speaker && (speaker.isNew || !speakerProfile?.name || correcting) && (
+            {settings.voiceRecognition && speaker && (speaker.isNew || correcting) && (
               <form onSubmit={(e) => { e.preventDefault(); correcting ? correctSpeaker(nameDraft) : nameSpeaker(nameDraft); }} className="flex items-center gap-2 mb-1.5 px-2 text-[12px] text-violet-700/80">
                 <span>{correcting ? "Who is this, then?" : "Who am I talking to?"}</span>
                 <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="Name" className="flex-1 min-w-0 rounded-full px-2 py-0.5 bg-white/70 border border-violet-200/60 outline-none" />
@@ -858,7 +750,7 @@ export default function App() {
                 <button type="button" className="underline" onClick={() => setCorrecting(true)}>No</button>
               </p>
             )}
-            {settings.emotionDetection && heard && (
+            {settings.showHeard && settings.emotionDetection && heard && (
               <p className="mb-1 px-2 text-[11px] text-violet-500/60">Heard: {heard.tag} ({Math.round(heard.confidence * 100)}%)</p>
             )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
