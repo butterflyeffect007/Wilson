@@ -381,3 +381,11 @@ body.wl-scatter .wl-bfly-svg { animation: wl-scatter 1.5s ease-in-out; }
 .wl-bfly:nth-child(even) .wl-bfly-svg { --wl-sx: 60px; --wl-sy: -40px; }
 @keyframes wl-scatter { 0%,100% { transform: translate(0,0) scale(1); } 40% { transform: translate(var(--wl-sx), var(--wl-sy)) scale(.85); } }
 @media (prefers-reduced-motion: reduce) { .wl-orb-pulse, body.wl-scatter .wl-bfly-svg { animation: none !important; } .wl-orb-highlight { transition: none; } }
+
+/* Native feel */
+html, body { overscroll-behavior: none; height: 100%; }
+body { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; position: fixed; inset: 0; overflow: hidden; }
+#root { height: 100dvh; }
+header, button, nav, aside, .wl-chrome, [role="button"] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.msg-wilson, .msg-user, textarea, input { -webkit-user-select: text; user-select: text; }
+header { padding-top: max(1.25rem, env(safe-area-inset-top)) !important; padding-left: max(1rem, env(safe-area-inset-left)) !important; padding-right: max(1rem, env(safe-area-inset-right)) !important; }

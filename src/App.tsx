@@ -91,6 +91,16 @@ export default function App() {
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
   const [fieldOpen, setFieldOpen] = useState(false);
+  const [showInstallHint, setShowInstallHint] = useState(() => {
+    try {
+      const ua = navigator.userAgent;
+      const iOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const safari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+      const standalone = (navigator as any).standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+      return iOS && safari && !standalone && !localStorage.getItem("wilson_install_hint_seen");
+    } catch { return false; }
+  });
+  const dismissInstallHint = () => { setShowInstallHint(false); try { localStorage.setItem("wilson_install_hint_seen", "1"); } catch { /* ignore */ } };
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     try {
       const t = localStorage.getItem("wilson_theme");
@@ -100,6 +110,7 @@ export default function App() {
   });
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.setAttribute("content", theme === "dark" ? "#0d1030" : "#efe4ff"));
   }, [theme]);
   useEffect(() => {
     document.documentElement.classList.toggle("font-dyslexic", Boolean(settings.dyslexiaFont));
@@ -794,6 +805,12 @@ export default function App() {
             )}
             {settings.showHeard && settings.emotionDetection && heard && (
               <p className="mb-1 px-2 text-[11px] text-violet-500/60">Heard: {heard.tag} ({Math.round(heard.confidence * 100)}%)</p>
+            )}
+            {showInstallHint && (
+              <div className="mb-2 mx-1 flex items-center gap-2 rounded-2xl glass px-3 py-2 text-[13px] text-violet-800/80">
+                <span className="flex-1">Add Wilson to your Home Screen: tap Share, then “Add to Home Screen”.</span>
+                <button type="button" onClick={dismissInstallHint} aria-label="Dismiss" className="text-violet-400"><X className="w-4 h-4" /></button>
+              </div>
             )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
             <div className="relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5">
