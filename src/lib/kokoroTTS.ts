@@ -44,7 +44,7 @@ function audioEl(): HTMLAudioElement {
 }
 
 export type SpeakResult = "success" | "skipped" | "error";
-export type VoiceStatus = { state: "idle" | "ready"; progress: number; reason?: string };
+export type VoiceStatus = { state: "idle" | "ready" | "resting"; progress: number; reason?: string };
 let status: VoiceStatus = { state: "idle", progress: 0 };
 const statusListeners = new Set<(s: VoiceStatus) => void>();
 function setStatus(s: Partial<VoiceStatus>) { status = { ...status, ...s }; statusListeners.forEach((l) => l(status)); }
@@ -130,7 +130,49 @@ export function subscribeVoicePending(l: (p: boolean) => void) { pendingListener
 /** Kept for callers; Workers AI needs no warm-up. */
 export function warmVoice(): void { /* no-op */ }
 
+/* ---- client-side clip cache (IndexedDB) so replays don't spend the daily voice allowance ---- */
+const IDB_NAME = "wilson-voice", IDB_STORE = "clips";
+let idbP: Promise<IDBDatabase | null> | null = null;
+function idb(): Promise<IDBDatabase | null> {
+  if (!idbP) idbP = new Promise((res) => {
+    try {
+      const r = indexedDB.open(IDB_NAME, 1);
+      r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => res(null);
+    } catch { res(null); }
+  });
+  return idbP;
+}
+async function clipKey(text: string) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("apollo|" + text));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function cacheGet(key: string): Promise<Blob | null> {
+  const db = await idb(); if (!db) return null;
+  return new Promise((res) => {
+    try {
+      const q = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
+      q.onsuccess = () => res(q.result ? new Blob([q.result as ArrayBuffer], { type: "audio/mpeg" }) : null);
+      q.onerror = () => res(null);
+    } catch { res(null); }
+  });
+}
+async function cachePut(key: string, blob: Blob) {
+  const db = await idb(); if (!db) return;
+  try { const buf = await blob.arrayBuffer(); db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put(buf, key); } catch { /* quota */ }
+}
+
+/** Daily free voice limit hit (worker 429): stay quiet until the reset. */
+let restingUntil = 0;
+function nextResetUtcMidnight() { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); }
+export function isVoiceResting() { return Date.now() < restingUntil; }
+class VoiceLimitError extends Error { constructor() { super("daily voice limit reached"); this.name = "VoiceLimit"; } }
+
 async function fetchOnce(text: string, speed: number, timeoutMs: number): Promise<Blob> {
+  const key = await clipKey(text).catch(() => "");
+  if (key) { const hit = await cacheGet(key); if (hit) { dbg("clip from device cache"); return hit; } }
+  if (isVoiceResting()) throw new VoiceLimitError();
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), Math.max(5000, timeoutMs));
   try {
@@ -139,10 +181,13 @@ async function fetchOnce(text: string, speed: number, timeoutMs: number): Promis
       body: JSON.stringify({ text, speed }), signal: ctrl.signal,
     });
     if (res.status === 503) { serverDown = true; throw new Error("voice server not configured (503)"); }
+    if (res.status === 429) { restingUntil = nextResetUtcMidnight(); setStatus({ state: "resting" }); throw new VoiceLimitError(); }
     if (!res.ok) throw new Error("tts http " + res.status);
     const blob = await res.blob();
     if (blob.size < 100) throw new Error("tts empty audio");
-    return blob.type ? blob : new Blob([blob], { type: "audio/mpeg" });
+    const out = blob.type ? blob : new Blob([blob], { type: "audio/mpeg" });
+    if (key) void cachePut(key, out);
+    return out;
   } finally { clearTimeout(to); }
 }
 
@@ -158,7 +203,7 @@ async function fetchClip(text: string, speed: number, my: number): Promise<Blob 
     } catch (e) {
       lastErr = e;
       dbg("tts request failed", e);
-      if ((e as Error).name === "AbortError") break;
+      if ((e as Error).name === "AbortError" || (e as Error).name === "VoiceLimit") break;
     }
   }
   throw lastErr ?? new Error("voice failed");
@@ -219,7 +264,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       setPending(false);
       if (!played) hooks.onStart?.();
       played = true;
-      if (status.state !== "ready") setStatus({ state: "ready" });
+      if (status.state === "idle") setStatus({ state: "ready" });
       await playBlob(buf, my);
       playIdx++;
     }

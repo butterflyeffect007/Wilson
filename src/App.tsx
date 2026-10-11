@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
-  Send, Sparkles, Loader2, Mic, MicOff, Check, Menu, Plus, Trash2, X,
+  Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
@@ -105,7 +105,6 @@ export default function App() {
   useEffect(() => subscribeVoiceStatus(setVoiceStatus), []);
   const [voiceDebug, setVoiceDebug] = useState<VoiceDebug>(() => getVoiceDebug());
   useEffect(() => subscribeVoiceDebug(setVoiceDebug), []);
-  useEffect(() => { if (settings.voiceEnabled) warmVoice(); }, []); // wake Render early
   const [showInstallHint, setShowInstallHint] = useState(() => {
     try {
       const ua = navigator.userAgent;
@@ -694,7 +693,7 @@ export default function App() {
                     checked={settings.voiceEnabled}
                     onChange={(e) => setSettings((s) => ({ ...s, voiceEnabled: e.target.checked }))}
                   />
-                  Read Wilson's replies aloud
+                  Auto-speak replies (otherwise tap Play on a reply; saves the daily voice allowance)
                 </label>
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={() => voiceTest()} className="rounded-full bg-violet-100 px-3 py-1 text-[12px] text-violet-800 touch-manipulation">Voice test</button>
@@ -893,6 +892,9 @@ export default function App() {
                 <button type="button" onClick={dismissInstallHint} aria-label="Dismiss" className="text-violet-400"><X className="w-4 h-4" /></button>
               </div>
             )}
+            {voiceStatus.state === "resting" && (
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting until 7 PM Central (daily free limit).</p>
+            )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
             <div className="relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5">
               <textarea
@@ -906,26 +908,29 @@ export default function App() {
                     void sendMessage();
                   }
                 }}
-                placeholder={stt.listening ? "Listening..." : "Type a message..."}
+                placeholder={stt.listening ? "Listening…" : "Type a message..."}
                 enterKeyHint="send"
                 className="flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-violet-950 placeholder-violet-400/50 outline-none touch-manipulation"
               />
               <button
                 type="button"
                 onClick={() => {
-                  primePlayback(); stopSpeaking(); if (settings.voiceEnabled) warmVoice();
-                  if (!stt.listening && (settings.voiceRecognition || settings.emotionDetection)) void startCapture().catch((e) => console.warn("[capture]", e));
-                  if (stt.listening) setTimeout(() => void stopCapture(), 3000);
+                  primePlayback(); stopSpeaking();
+                  const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+                  // iOS can't share the mic between getUserMedia and speech recognition reliably: skip voice ID capture there
+                  if (!iOS && !stt.listening && (settings.voiceRecognition || settings.emotionDetection)) void startCapture().catch((e) => console.warn("[capture]", e));
+                  if (!iOS && stt.listening) setTimeout(() => void stopCapture(), 3000);
                   stt.toggle();
                 }}
-                disabled={busy || !stt.supported}
-                className={`p-2 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center touch-manipulation disabled:opacity-40 ${
-                  stt.listening ? "text-rose-500 bg-rose-50/80" : "glass text-violet-500/80"
+                disabled={!stt.supported}
+                className={`relative p-2 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center touch-manipulation disabled:opacity-40 ${
+                  stt.listening ? "text-white bg-rose-500 wl-mic-live" : "glass text-violet-500/80"
                 }`}
-                aria-label={stt.listening ? "Stop listening" : "Voice"}
-                title={stt.supported ? "Speak to Wilson" : "Voice input isn't supported in this browser"}
+                aria-label={stt.listening ? "Stop listening" : "Talk to type"}
+                aria-pressed={stt.listening}
+                title={stt.supported ? (stt.listening ? "Listening… tap to stop" : "Tap to talk") : "Voice input isn't supported in this browser"}
               >
-                {stt.listening ? <MicOff className="w-[18px] h-[18px]" /> : <Mic className="w-[18px] h-[18px]" />}
+                <Mic className="w-[18px] h-[18px]" />
               </button>
               {busy ? (
                 <button

@@ -64,7 +64,7 @@ const DEFAULT_RELATIONSHIP: RelationshipSeed = {
 };
 
 export const DEFAULT_SETTINGS: WilsonSettings = {
-  voiceEnabled: true,
+  voiceEnabled: false, // auto-speak off: voice plays on Play tap (daily free voice allowance)
   displayName: "Jenny",
   voiceRecognition: true,
   emotionDetection: true,
@@ -178,7 +178,10 @@ export function saveProfile(patch: Partial<Profile>): Profile {
 /* ---------- settings ---------- */
 
 export function loadSettings(): WilsonSettings {
-  return { ...DEFAULT_SETTINGS, ...(safeGet<Partial<WilsonSettings>>(SETTINGS_KEY) ?? {}) };
+  const saved = safeGet<Partial<WilsonSettings> & { autoSpeakV2?: boolean }>(SETTINGS_KEY) ?? {};
+  // one-time migration: turn auto-speak off for existing installs (voice allowance); user can re-enable
+  if (!saved.autoSpeakV2) { saved.voiceEnabled = false; saved.autoSpeakV2 = true; safeSet(SETTINGS_KEY, { ...DEFAULT_SETTINGS, ...saved }); }
+  return { ...DEFAULT_SETTINGS, ...saved };
 }
 export function saveSettings(s: WilsonSettings): void {
   safeSet(SETTINGS_KEY, s);
