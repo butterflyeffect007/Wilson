@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
-  Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon,
+  Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import Backdrop from "./components/Backdrop";
@@ -15,6 +15,8 @@ import { composeRequest } from "./core/wilson/WilsonCore";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
 import { joinBeta, betaNumber } from "./lib/beta";
+import Organizer, { type OrgTab } from "./components/Organizer";
+import { detectAction, runAction, checkDue, dueNow } from "./lib/organizer";
 import FeedbackSheet, { type FeedbackTarget } from "./components/FeedbackSheet";
 import { IntelligenceRouter } from "./intelligence/IntelligenceRouter";
 import {
@@ -126,6 +128,16 @@ export default function App() {
   const [betaFull, setBetaFull] = useState(false);
   useEffect(() => { if (isBeta && !betaNumber()) void joinBeta().then((n) => { if (typeof n === "number") setBetaNum(n); else if (n === "full") setBetaFull(true); }); }, [isBeta]);
   const [feedback, setFeedback] = useState<FeedbackTarget | null>(null);
+  const [orgTab, setOrgTab] = useState<OrgTab | null>(null);
+  const [dueBanner, setDueBanner] = useState<string[]>([]);
+  useEffect(() => {
+    const surface = () => { const fired = checkDue(); if (fired.length) setDueBanner((b) => [...new Set([...b, ...fired.map((r) => r.text)])]); };
+    setDueBanner(dueNow().map((r) => r.text)); checkDue();
+    const t = setInterval(surface, 20000);
+    const vis = () => { if (document.visibilityState === "visible") { surface(); setDueBanner(dueNow().map((r) => r.text)); } };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
+  }, []);
   const [lessons, setLessons] = useState<Lesson[]>(() => loadLessons());
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [fieldOpen, setFieldOpen] = useState(false);
@@ -271,8 +283,10 @@ export default function App() {
         for (const f of extractFacts(content, voiceCtxRef.current.name || displayName))
           void upsertMemory(f, voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch(() => {});
       }
+      const orgAction = detectAction(content);
+      const orgCtx = orgAction ? runAction(orgAction) : "";
       let toolCtx = "";
-      try {
+      if (!orgAction) try {
         const step = await Promise.race([
           prepareTools(content, { toolsUrl: WILSON_PROXY_URL, adapter }),
           new Promise<{ context: string }>((r) => setTimeout(() => r({ context: "" }), 15000)),
@@ -285,7 +299,7 @@ export default function App() {
         recalled,
         speakerName: voiceCtxRef.current.name,
         emotion: emo && EMOTION_GUIDANCE[emo] ? { tag: emo, guidance: EMOTION_GUIDANCE[emo] } : null,
-        tools: toolCtx,
+        tools: (orgCtx ? `\n\n${orgCtx}` : "") + toolCtx,
         lessons: loadLessons().map((l) => l.text),
         newLesson: learned,
         suggest: settings.suggestions && !learned && shouldSuggest(),
@@ -536,6 +550,16 @@ export default function App() {
   return (
     <div className="h-[100dvh] flex flex-col relative overflow-hidden">
       <Backdrop chat={!isHome} />
+      {orgTab && <Organizer tab={orgTab} onTab={setOrgTab} onClose={() => setOrgTab(null)} />}
+      {dueBanner.length > 0 && !orgTab && (
+        <div className="fixed z-[45] left-3 right-3 top-[max(4.25rem,calc(env(safe-area-inset-top)+3.5rem))] max-w-lg mx-auto glass-strong rounded-2xl px-4 py-3 flex items-start gap-3 shadow-lg">
+          <Bell className="w-4 h-4 mt-0.5 text-violet-500 flex-shrink-0" />
+          <button type="button" className="flex-1 text-left text-[14px] text-violet-950/90" onClick={() => { setOrgTab("reminders"); setDueBanner([]); }}>
+            <span className="block text-[11px] text-violet-500 tracking-wide">Reminder{dueBanner.length > 1 ? "s" : ""} due</span>{dueBanner.slice(0, 3).join(" · ")}
+          </button>
+          <button type="button" aria-label="Dismiss" onClick={() => setDueBanner([])} className="text-violet-400"><X className="w-4 h-4" /></button>
+        </div>
+      )}
       {feedback && <FeedbackSheet target={feedback} onClose={() => setFeedback(null)} />}
 
       {/* Threads drawer (existing glass styling) */}
@@ -567,6 +591,10 @@ export default function App() {
                 >
                   <Plus className="w-4 h-4" /> New thread
                 </button>
+              </div>
+              <div className="px-3 pb-2 flex gap-2">
+                <button type="button" onClick={() => { setSidebarOpen(false); setOrgTab("notes"); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><StickyNote className="w-4 h-4" />Notes</button>
+                <button type="button" onClick={() => { setSidebarOpen(false); setOrgTab("reminders"); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><Bell className="w-4 h-4" />Reminders</button>
               </div>
               <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
                 {threads.length === 0 && <p className="text-[12px] text-violet-700/50 px-3 py-4">No threads yet.</p>}
