@@ -637,7 +637,7 @@ export default function App() {
             >
               {settings.voiceEnabled ? <Volume2 className="w-[15px] h-[15px]" /> : <VolumeX className="w-[15px] h-[15px]" />}
             </button>
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full glass text-[8.5px] whitespace-nowrap text-violet-700/70">
+            <span className={`${activeThread ? "hidden min-[430px]:flex" : "flex"} items-center gap-1 px-1.5 py-0.5 rounded-full glass text-[8.5px] whitespace-nowrap text-violet-700/70`}>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Always with you
             </span>
             {activeThread && activeThread.messages.some((m) => m.role === "user") && (
