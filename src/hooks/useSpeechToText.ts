@@ -24,16 +24,20 @@ function getCtor(): SRCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
-const DENIED_HELP =
-  "Microphone is blocked. On iPhone: Settings → Apps → Safari → Microphone → Allow (and Settings → Privacy & Security → Speech Recognition → allow Safari). Then tap the mic again.";
-const SILENCE_MS = 2500;   // stop this long after the last words
-const NO_SPEECH_MS = 8000; // stop if nothing is said at all
-const STOP_GRACE_MS = 1200; // if the engine never fires onend, force-reset
+const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+
+const DENIED_HELP = isAndroid
+  ? "Microphone blocked. On Android: tap the lock icon in the address bar → Permissions → Microphone → Allow. Then reload and try the mic again. Also make sure Chrome has mic permission in system settings."
+  : "Microphone is blocked. On iPhone: Settings → Apps → Safari → Microphone → Allow (and Settings → Privacy & Security → Speech Recognition → allow Safari). Then tap the mic again.";
+
+const SILENCE_MS = isAndroid ? 3500 : 2500;
+const NO_SPEECH_MS = 10000;
+const STOP_GRACE_MS = 1500;
 
 /**
  * Talk-to-text toggle. Tap to start, tap to stop, auto-stops after silence.
- * Never gets stuck: every session uses a NEW recognition instance, and any stop/error/denial
- * (or a missing onend, common on iOS) resets state so the mic can be tapped again.
+ * Improved Android (Galaxy/Chrome) reliability: explicit getUserMedia permission request,
+ * longer silence window, better error messaging.
  */
 export function useSpeechToText(onFinal: (text: string) => void, onInterim?: (text: string) => void) {
   const [listening, setLocal] = useState(false);
@@ -51,7 +55,6 @@ export function useSpeechToText(onFinal: (text: string) => void, onInterim?: (te
   const update = (v: boolean) => { setLocal(v); setListening(v); };
   const clearTimers = () => { window.clearTimeout(timers.current.silence); window.clearTimeout(timers.current.grace); timers.current = {}; };
 
-  /** Finish a session exactly once: deliver text, reset everything. */
   const finish = useCallback((session: number, deliver: boolean) => {
     if (session !== sessionRef.current || !recRef.current) return;
     const rec = recRef.current;
@@ -77,10 +80,19 @@ export function useSpeechToText(onFinal: (text: string) => void, onInterim?: (te
     timers.current.silence = window.setTimeout(() => stop(), ms);
   };
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     const Ctor = getCtor();
-    if (!Ctor) { setError("Voice input isn't supported in this browser. Try Safari or Chrome."); return; }
-    // drop any stale session first
+    if (!Ctor) { setError("Voice input isn't supported in this browser. Try Chrome or Safari."); return; }
+
+    // Explicit permission request helps Android Chrome unlock the mic reliably
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(t => t.stop());
+    } catch (e) {
+      setError(DENIED_HELP);
+      return;
+    }
+
     if (recRef.current) { const old = recRef.current; finish(sessionRef.current, false); try { old.abort(); } catch { /* ignore */ } }
     setError(null);
     finalRef.current = "";
@@ -88,7 +100,7 @@ export function useSpeechToText(onFinal: (text: string) => void, onInterim?: (te
     let rec: SRInstance;
     try { rec = new Ctor(); } catch { setError("Couldn't start the microphone. Tap to try again."); update(false); return; }
     rec.lang = navigator.language || "en-US";
-    rec.continuous = false;
+    rec.continuous = isAndroid;
     rec.interimResults = true;
     rec.onresult = (e) => {
       if (session !== sessionRef.current) return;
@@ -104,7 +116,7 @@ export function useSpeechToText(onFinal: (text: string) => void, onInterim?: (te
     rec.onerror = (e) => {
       if (session !== sessionRef.current) return;
       if (e.error === "not-allowed" || e.error === "service-not-allowed") setError(DENIED_HELP);
-      else if (e.error !== "no-speech" && e.error !== "aborted") setError(`Mic hiccup (${e.error}). Tap the mic to try again.`);
+      else if (e.error !== "no-speech" && e.error !== "aborted") setError(`Mic issue (${e.error}). Tap the mic to try again.`);
       finish(session, true);
     };
     rec.onend = () => finish(session, true);
@@ -120,7 +132,7 @@ export function useSpeechToText(onFinal: (text: string) => void, onInterim?: (te
     }
   }, [finish]);
 
-  const toggle = useCallback(() => (recRef.current ? stop() : start()), [start, stop]);
+  const toggle = useCallback(() => (recRef.current ? stop() : void start()), [start, stop]);
 
   useEffect(() => () => { clearTimers(); try { recRef.current?.abort(); } catch { /* ignore */ } setListening(false); }, []);
 
