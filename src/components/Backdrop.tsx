@@ -1,5 +1,6 @@
 /** Ambient scene: sky gradient, haze, prism light, opal clouds, glass cubes, sparkles, butterflies. CSS-only animation. */
-const BUTTERFLIES = [
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export const BUTTERFLIES = [
   { left: "12%", top: "22%", size: 40, delay: "0s", dur: "18s", hue: 190 },
   { left: "78%", top: "16%", size: 34, delay: "-6s", dur: "22s", hue: 300 },
   { left: "84%", top: "52%", size: 28, delay: "-11s", dur: "20s", hue: 260 },
@@ -28,12 +29,24 @@ function Butterfly({ size, hue }: { size: number; hue: number }) {
   );
 }
 
-export default function Backdrop() {
+const MINI = [
+  { left: "3%", top: "18%", size: 18, dur: "26s", delay: "0s", hue: 300 },
+  { left: "91%", top: "34%", size: 15, dur: "30s", delay: "-9s", hue: 190 },
+  { left: "4%", top: "68%", size: 14, dur: "28s", delay: "-4s", hue: 260 },
+  { left: "90%", top: "78%", size: 17, dur: "32s", delay: "-15s", hue: 330 },
+];
+
+export default function Backdrop({ chat = false }: { chat?: boolean }) {
   return (
     <div className="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
       <div className="wl-sky absolute inset-0" />
       <div className="wl-bgimg" />
       <div className="wilson-field-particles wl-sparkles" />
+      {chat && MINI.map((b, i) => (
+        <span key={i} className="wl-bfly-mini" style={{ left: b.left, top: b.top, animationDuration: b.dur, animationDelay: b.delay }}>
+          <Butterfly size={b.size} hue={b.hue} />
+        </span>
+      ))}
     </div>
   );
 }

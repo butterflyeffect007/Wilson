@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
-  Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2,
+  Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import Backdrop from "./components/Backdrop";
@@ -14,6 +14,8 @@ import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonP
 import { composeRequest } from "./core/wilson/WilsonCore";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
+import { joinBeta, betaNumber } from "./lib/beta";
+import FeedbackSheet, { type FeedbackTarget } from "./components/FeedbackSheet";
 import { IntelligenceRouter } from "./intelligence/IntelligenceRouter";
 import {
   loadThreads, saveThreads, loadActiveThreadId, saveActiveThreadId,
@@ -112,6 +114,7 @@ export default function App() {
       if (params.get("beta") === "1") {
         localStorage.setItem("wilson_beta", "1");
         setIsBeta(true);
+        void joinBeta().then((n) => { if (typeof n === "number") setBetaNum(n); else if (n === "full") setBetaFull(true); });
         const url = new URL(window.location.href);
         url.searchParams.delete("beta");
         window.history.replaceState({}, "", url.toString());
@@ -119,6 +122,10 @@ export default function App() {
     } catch { /* ignore */ }
   }, []);
 
+  const [betaNum, setBetaNum] = useState<number | null>(() => betaNumber());
+  const [betaFull, setBetaFull] = useState(false);
+  useEffect(() => { if (isBeta && !betaNumber()) void joinBeta().then((n) => { if (typeof n === "number") setBetaNum(n); else if (n === "full") setBetaFull(true); }); }, [isBeta]);
+  const [feedback, setFeedback] = useState<FeedbackTarget | null>(null);
   const [lessons, setLessons] = useState<Lesson[]>(() => loadLessons());
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [fieldOpen, setFieldOpen] = useState(false);
@@ -528,7 +535,8 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] flex flex-col relative overflow-hidden">
-      <Backdrop />
+      <Backdrop chat={!isHome} />
+      {feedback && <FeedbackSheet target={feedback} onClose={() => setFeedback(null)} />}
 
       {/* Threads drawer (existing glass styling) */}
       <AnimatePresence>
@@ -603,8 +611,8 @@ export default function App() {
             <Sparkles className="w-[18px] h-[18px] text-violet-400 wl-title" />
             <h1 className="wl-title text-[19px] tracking-[0.28em] text-violet-900/80">WILSON</h1>
             {isBeta && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-700 font-medium tracking-wide">
-                BETA
+              <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-600/80 tracking-wide" title={betaNum ? `Founding Beta #${betaNum}` : "Beta"}>
+                {betaNum ? `β${betaNum}` : "β"}
               </span>
             )}
           </div>
@@ -671,24 +679,9 @@ export default function App() {
               </div>
               {isBeta && (
                 <div className="pt-2 border-t border-violet-200/40">
-                  <p className="text-[11px] text-violet-600/70 mb-1.5">Founding Beta tester</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const report = prompt("Describe the problem:");
-                      if (report && report.trim()) {
-                        try {
-                          const reports = JSON.parse(localStorage.getItem("wilson_reports") || "[]");
-                          reports.push({ ts: new Date().toISOString(), text: report.trim(), name: settings.displayName || "anonymous" });
-                          localStorage.setItem("wilson_reports", JSON.stringify(reports.slice(-50)));
-                          alert("Report saved. You can share it with Jenny later.");
-                        } catch { alert("Couldn't save report."); }
-                      }
-                    }}
-                    className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800"
-                  >
-                    Report a problem
-                  </button>
+                  <p className="mb-2"><span className="inline-block text-[11px] px-2 py-0.5 rounded-full bg-gradient-to-r from-pink-200/70 via-violet-200/70 to-sky-200/70 text-violet-800">✦ Founding Beta {betaNum ? `#${betaNum}` : betaFull ? "(all 100 spots taken)" : ""}</span></p>
+                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "problem" }); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Report a problem</button>
+                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "suggestion" }); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800 mt-1.5">Send a suggestion</button>
                   <button
                     type="button"
                     onClick={() => {
@@ -931,6 +924,17 @@ export default function App() {
                               ? <><Loader2 className="w-3 h-3 animate-spin" />Loading</>
                               : <><Square className="w-3 h-3" />Stop</>
                             : <><Play className="w-3 h-3" />Play</>}
+                        </button>
+                      )}
+                      {streamingId !== msg.id && msg.role === "assistant" && (
+                        <button
+                          type="button"
+                          onClick={() => { const i = messages.findIndex((m) => m.id === msg.id); const prev = [...messages.slice(0, i)].reverse().find((m) => m.role === "user"); setFeedback({ type: "problem", reply: msg.content, context: prev?.content }); }}
+                          className="flex items-center gap-1 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-violet-600 touch-manipulation"
+                          aria-label="Send this reply to Jenny"
+                          title="Send to Jenny"
+                        >
+                          <SendIcon className="w-3 h-3" />
                         </button>
                       )}
                     </div>

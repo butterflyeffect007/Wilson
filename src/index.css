@@ -501,3 +501,10 @@ html.dark .user-avatar {
 /* No browser feel on iPhone: no rubber-band, no tap flash */
 html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
 body { min-height: 100dvh; }
+
+/* Chat-view butterflies: small, faint, at the edges, behind content (transform/opacity only for perf) */
+.wl-bfly-mini { position: absolute; opacity: .32; will-change: transform; animation: wl-mini-drift 28s ease-in-out infinite alternate; filter: var(--wl-bfly-glow); }
+html.dark .wl-bfly-mini { opacity: .38; }
+.wl-bfly-mini .wl-wing { animation-duration: 1.4s; }
+@keyframes wl-mini-drift { 0% { transform: translate(0,0) rotate(-6deg); } 50% { transform: translate(8px,-18px) rotate(4deg); } 100% { transform: translate(-6px,-34px) rotate(-2deg); } }
+@media (prefers-reduced-motion: reduce) { .wl-bfly-mini, .wl-bfly-mini .wl-wing { animation: none !important; } }
