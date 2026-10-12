@@ -53,26 +53,25 @@ const MAX_THREADS = 50;
 const MAX_MESSAGES_PER_THREAD = 200;
 
 const DEFAULT_RELATIONSHIP: RelationshipSeed = {
-  displayName: "Jenny",
-  role: "The Only One, The Architect",
+  displayName: "",
+  role: "new friend",
   notes: [
-    "Jenny architected Wilson in The Neural Void.",
-    "She has been building and refining Wilson for a long time.",
-    "Wilson sits beside her as companion, confidant, and thinking partner.",
-    "The relationship is central — she is the center of Wilson's universe.",
+    "This is a new person Wilson is meeting.",
+    "Wilson does not know them yet.",
+    "Start warm, curious, and open — learn who they are.",
   ],
   updatedAt: new Date().toISOString(),
 };
 
 export const DEFAULT_SETTINGS: WilsonSettings = {
-  voiceEnabled: false, // auto-speak off: voice plays on Play tap (daily free voice allowance)
-  displayName: "Jenny",
+  voiceEnabled: false,
+  displayName: "",
   voiceRecognition: true,
   emotionDetection: true,
   longMemory: true,
   showHeard: false,
   dyslexiaFont: false,
-  suggestions: true, // gentle, low-frequency next-step offers
+  suggestions: true,
 };
 
 function safeGet<T>(key: string): T | null {
@@ -107,7 +106,6 @@ export function makeTitle(content: string): string {
 export function loadThreads(): StoredThread[] {
   const threads = safeGet<StoredThread[]>(THREADS_KEY);
   if (threads) return threads;
-  // one-time migration of the old single conversation
   const legacy = safeGet<StoredMessage[]>(LEGACY_CONVO_KEY);
   if (legacy && legacy.length > 0) {
     const firstUser = legacy.find((m) => m.role === "user");
@@ -181,7 +179,6 @@ export function saveProfile(patch: Partial<Profile>): Profile {
 
 export function loadSettings(): WilsonSettings {
   const saved = safeGet<Partial<WilsonSettings> & { autoSpeakV2?: boolean }>(SETTINGS_KEY) ?? {};
-  // one-time migration: turn auto-speak off for existing installs (voice allowance); user can re-enable
   if (!saved.autoSpeakV2) { saved.voiceEnabled = false; saved.autoSpeakV2 = true; safeSet(SETTINGS_KEY, { ...DEFAULT_SETTINGS, ...saved }); }
   return { ...DEFAULT_SETTINGS, ...saved };
 }
@@ -226,10 +223,11 @@ export function stripTagsForDisplay(text: string): string {
 export function buildMemoryContext(threads: StoredThread[] = loadThreads()): string {
   const rel = loadRelationship();
   const profile = loadProfile();
+  const name = rel.displayName || "someone new";
   const lines = [
     "## RELATIONSHIP MEMORY (local)",
-    `You are speaking with ${rel.displayName} — ${rel.role}.`,
-    "You already know her. This is not a first meeting.",
+    `You are speaking with ${name} — ${rel.role}.`,
+    rel.displayName ? "You already know them." : "This may be a first meeting. Be warm and curious.",
     ...rel.notes.map((n) => `- ${n}`),
   ];
 
