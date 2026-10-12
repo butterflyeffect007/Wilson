@@ -31,13 +31,19 @@ export interface TurnContext {
   speakerName?: string | null;
   emotion?: { tag: string; guidance: string } | null;
   tools?: string;
+  lessons?: string[];
+  newLesson?: string | null;
+  suggest?: boolean;
 }
 
 /** Builds Wilson's one system prompt: identity + principles + turn context. */
 export function buildSystemContext(ctx: TurnContext = {}): string {
   const parts = [WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES];
   if (ctx.memory) parts.push(ctx.memory);
-  if (ctx.recalled?.length) parts.push(`[Long-term memories relevant to this turn]\n${ctx.recalled.map((r) => `- ${r}`).join("\n")}`);
+  if (ctx.lessons?.length) parts.push(`[What Wilson has learned from her — always follow these]\n${ctx.lessons.map((l) => `- ${l}`).join("\n")}`);
+  if (ctx.newLesson) parts.push(`[She just corrected you] New lesson saved: "${ctx.newLesson}". Start your reply with one short, calm line confirming you'll remember it (e.g. "Got it — I'll remember that."), then continue normally.`);
+  if (ctx.recalled?.length) parts.push(`[Things you remember about her life — people, projects, goals, preferences. Weave in only what genuinely fits this moment, naturally, the way a friend would ("How's Charlie doing?"); never list them or say "according to my memory"]\n${ctx.recalled.map((r) => `- ${r}`).join("\n")}`);
+  if (ctx.suggest) parts.push(`[Gentle suggestion allowed this turn] If it fits naturally, end with ONE brief, optional next-step offer tied to her goals, projects, or people (e.g. "Want me to sketch a plan for that?"). Skip it if it would feel forced or she's upset.`);
   if (ctx.speakerName) parts.push(`[Voice recognition] The person speaking right now is ${ctx.speakerName}. Address them by name naturally.`);
   if (ctx.emotion) parts.push(`[Tone heard in their voice: ${ctx.emotion.tag}] ${ctx.emotion.guidance}`);
   let out = parts.join("\n\n");

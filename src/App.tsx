@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
-  Square, Copy, Play, RotateCcw, Volume2, VolumeX,
+  Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import Backdrop from "./components/Backdrop";
@@ -12,6 +12,8 @@ import type { ModelRequest } from "./intelligence";
 import { prepareTools } from "./intelligence";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
+import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
+import { shareChat } from "./lib/shareChat";
 import { IntelligenceRouter } from "./intelligence/IntelligenceRouter";
 import {
   loadThreads, saveThreads, loadActiveThreadId, saveActiveThreadId,
@@ -101,6 +103,8 @@ export default function App() {
   const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
+  const [lessons, setLessons] = useState<Lesson[]>(() => loadLessons());
+  const [shareNote, setShareNote] = useState<string | null>(null);
   const [fieldOpen, setFieldOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>(() => getVoiceStatus());
   useEffect(() => subscribeVoiceStatus(setVoiceStatus), []);
@@ -238,6 +242,12 @@ export default function App() {
           recalled = hits.map((h) => `(${h.ts.slice(0, 10)}) ${h.text}`);
         } catch (e) { console.warn("[memory]", e); }
       }
+      const learned = detectLesson(content);
+      if (learned) setLessons(addLesson(learned) && loadLessons());
+      if (settings.longMemory) {
+        for (const f of extractFacts(content, voiceCtxRef.current.name || displayName))
+          void upsertMemory(f, voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch(() => {});
+      }
       let toolCtx = "";
       try {
         const step = await Promise.race([
@@ -253,6 +263,9 @@ export default function App() {
         speakerName: voiceCtxRef.current.name,
         emotion: emo && EMOTION_GUIDANCE[emo] ? { tag: emo, guidance: EMOTION_GUIDANCE[emo] } : null,
         tools: toolCtx,
+        lessons: loadLessons().map((l) => l.text),
+        newLesson: learned,
+        suggest: settings.suggestions && !learned && shouldSuggest(),
       });
 
       const msgId = "stream-" + newId();
@@ -598,6 +611,17 @@ export default function App() {
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full glass text-[8.5px] whitespace-nowrap text-violet-700/70">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Always with you
             </span>
+            {activeThread && activeThread.messages.some((m) => m.role === "user") && (
+              <button
+                type="button"
+                onClick={() => void shareChat(activeThread.title, activeThread.messages, displayName, document.documentElement.classList.contains("dark")).then((r) => { if (r === "downloaded") { setShareNote("Saved as a web page"); setTimeout(() => setShareNote(null), 2500); } })}
+                className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+                aria-label="Share this conversation"
+                title={shareNote ?? "Share"}
+              >
+                {shareNote ? <Check className="w-[15px] h-[15px]" /> : <Share2 className="w-[15px] h-[15px]" />}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowSettings((v) => !v)}
@@ -654,6 +678,22 @@ export default function App() {
                   <input type="checkbox" checked={settings.longMemory} onChange={(e) => setSettings((s) => ({ ...s, longMemory: e.target.checked }))} />
                   Remember things
                 </label>
+                <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
+                  <input type="checkbox" checked={settings.suggestions} onChange={(e) => setSettings((s) => ({ ...s, suggestions: e.target.checked }))} />
+                  Gentle suggestions (now and then)
+                </label>
+                <div className="text-[12px] text-violet-800/80">
+                  <span className="text-[11px] text-violet-700/60">What Wilson's learned</span>
+                  <div className="mt-1 max-h-32 overflow-y-auto space-y-1">
+                    {lessons.length === 0 && <div className="text-[11px] text-violet-500/60">Nothing yet. Correct him anytime ("call me Jenny", "be shorter about…").</div>}
+                    {lessons.map((l) => (
+                      <div key={l.id} className="flex gap-2 justify-between">
+                        <span className="text-[11px]">{l.text}</span>
+                        <button type="button" className="text-rose-500" aria-label="Delete lesson" onClick={() => setLessons(deleteLesson(l.id))}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <div className="text-[12px] text-violet-800/80">
                   <button type="button" className="underline" onClick={() => void listMemories().then(setMemories).catch(() => setMemories([]))}>{memories ? "Refresh memories" : "View memories"}</button>
                   {" · "}
