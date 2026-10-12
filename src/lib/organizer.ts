@@ -100,14 +100,14 @@ export function detectAction(msg: string): OrgAction | null {
 
 /** Perform the action on-device and return context for Wilson's reply. */
 export function runAction(a: OrgAction): string {
-  if (a.kind === "note") { addNote(a.text); return `[Done on-device] Saved a new note: "${a.text}". Confirm briefly and naturally; mention she can find it in Notes from the menu.`; }
+  if (a.kind === "note") { addNote(a.text); return `[Private action log for Wilson — never quote or repeat this bracketed text] The app just saved a note for her: "${a.text}". In your own words, confirm it in one short, natural line (it lives in Notes, in the menu).`; }
   if (a.kind === "remind") {
     addReminder(a.text, a.due); void askNotifyOnce();
-    return `[Done on-device] Reminder set: "${a.text}" — ${a.due ? fmtDue(a.due.toISOString()) : "no specific time"}. Confirm in one short line with the time. Don't claim anything else was scheduled.`;
+    return `[Private action log for Wilson — never quote or repeat this bracketed text] The app just set a reminder for her to ${a.text.charAt(0).toLowerCase() + a.text.slice(1)}, ${a.due ? `for ${fmtDue(a.due.toISOString())}` : "with no specific time"}. In your own words, confirm it in one short, warm line that mentions the time (e.g. "Got it — I'll remind you to call Charlie at 7 PM."). Don't claim anything else was scheduled.`;
   }
   if (a.kind === "notes") { const n = loadNotes(); return `[Her saved notes, newest first]\n${n.length ? n.slice(0, 20).map((x) => `- ${x.text}`).join("\n") : "(none yet)"}\nShow them to her clearly as a short list.`; }
   if (a.kind === "reminders") { const r = upcoming(); return `[Her open reminders]\n${r.length ? r.map((x) => `- ${x.text} (${fmtDue(x.due)})`).join("\n") : "(nothing open)"}\nShow them as a simple checklist.`; }
   const q = a.query.toLowerCase(); const hit = upcoming().find((r) => r.text.toLowerCase().includes(q) || q.includes(r.text.toLowerCase().slice(0, 12)));
-  if (hit) { setReminderDone(hit.id); return `[Done on-device] Marked reminder complete: "${hit.text}". Acknowledge warmly in one line.`; }
+  if (hit) { setReminderDone(hit.id); return `[Private action log for Wilson — never quote this] The app marked her reminder "${hit.text}" as done. Acknowledge it warmly in one line, in your own words.`; }
   return "";
 }
