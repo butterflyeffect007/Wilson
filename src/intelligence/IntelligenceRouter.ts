@@ -42,6 +42,14 @@ export class IntelligenceRouter {
     private readonly adapters: AdapterRegistry,
   ) {}
 
+  /** Adapter for the single preferred engine (throws if unregistered). */
+  getAdapter(): ModelAdapter {
+    const { provider, model } = getPreferredEngine(this.policy);
+    const adapter = this.adapters.get(provider, model);
+    if (!adapter) throw new Error(`Preferred engine unavailable: ${provider}/${model}`);
+    return adapter;
+  }
+
   async generate(request: ModelRequest): Promise<ModelResponse> {
     const { provider, model } = getPreferredEngine(this.policy);
     const adapter = this.adapters.get(provider, model);

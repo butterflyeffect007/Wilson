@@ -11,7 +11,8 @@ import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAda
 import type { ModelRequest } from "./intelligence";
 import { prepareTools } from "./intelligence";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
-import { WILSON_SYSTEM_CONTEXT } from "./core/wilson/WilsonIdentity";
+import { composeRequest } from "./core/wilson/WilsonCore";
+import { IntelligenceRouter } from "./intelligence/IntelligenceRouter";
 import {
   loadThreads, saveThreads, loadActiveThreadId, saveActiveThreadId,
   loadProfile, saveProfile, loadSettings, saveSettings,
@@ -216,21 +217,25 @@ export default function App() {
         }));
 
       const engine = getPreferredEngine(DEFAULT_WILSON_POLICY);
-      const adapter = new OpenRouterAdapter("", engine.model, WILSON_PROXY_URL);
+      // Interface -> Wilson Core -> Intelligence Router -> Model Adapter -> Model
+      const router = new IntelligenceRouter(DEFAULT_WILSON_POLICY, {
+        get: (p, m) => (p === engine.provider && m === engine.model ? new OpenRouterAdapter("", engine.model, WILSON_PROXY_URL) : undefined),
+      });
+      const adapter = router.getAdapter() as OpenRouterAdapter;
 
       const convo = history
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => ({ role: m.role, content: m.content }));
       // last 10 messages INCLUDING the new user message (parity)
       const windowed = [...convo, { role: "user" as const, content }].slice(-CONTEXT_WINDOW);
-      let recalled = "";
+      let recalled: string[] = [];
       if (settings.longMemory) {
         try {
           const hits = await Promise.race([
             queryMemories(content, voiceCtxRef.current.id),
             new Promise<MemoryItem[]>((r) => setTimeout(() => r([]), 3000)),
           ]);
-          if (hits.length) recalled = `\n\n[Long-term memories relevant to this turn]\n${hits.map((h) => `- (${h.ts.slice(0, 10)}) ${h.text}`).join("\n")}`;
+          recalled = hits.map((h) => `(${h.ts.slice(0, 10)}) ${h.text}`);
         } catch (e) { console.warn("[memory]", e); }
       }
       let toolCtx = "";
@@ -241,17 +246,14 @@ export default function App() {
         ]);
         toolCtx = step.context;
       } catch (e) { console.warn("[tools]", e); }
-      const request: ModelRequest = {
-        userInput: content,
-        conversation: windowed.slice(0, -1),
-        systemContext: `${WILSON_SYSTEM_CONTEXT}\n\n${buildMemoryContext(threadsRef.current)}${recalled}${
-          voiceCtxRef.current.name ? `\n\n[Voice recognition] The person speaking right now is ${voiceCtxRef.current.name}. Address them by name naturally.` : ""
-        }${
-          voiceCtxRef.current.emotion && EMOTION_GUIDANCE[voiceCtxRef.current.emotion]
-            ? `\n\n[Tone heard in their voice: ${voiceCtxRef.current.emotion}] ${EMOTION_GUIDANCE[voiceCtxRef.current.emotion]}` : ""
-        }${toolCtx}`,
-        generation: { temperature: 0.8, maxTokens: 4096 },
-      };
+      const emo = voiceCtxRef.current.emotion;
+      const request: ModelRequest = composeRequest(content, windowed.slice(0, -1), {
+        memory: buildMemoryContext(threadsRef.current),
+        recalled,
+        speakerName: voiceCtxRef.current.name,
+        emotion: emo && EMOTION_GUIDANCE[emo] ? { tag: emo, guidance: EMOTION_GUIDANCE[emo] } : null,
+        tools: toolCtx,
+      });
 
       const msgId = "stream-" + newId();
       let raw = "";
@@ -556,7 +558,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <header className="relative z-10 px-4 pt-5 pb-2">
+      <header className="relative z-10 px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-2 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
         <div className="max-w-lg mx-auto grid grid-cols-[1fr_auto_1fr] items-center">
           <div className="flex items-center">
             <button
@@ -712,12 +714,12 @@ export default function App() {
       <div className="flex-1 overflow-hidden flex flex-col relative z-10">
         <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4">
           {isHome ? (
-            <div className="min-h-full flex flex-col items-center justify-center pt-[clamp(3.5rem,11vh,6rem)] pb-16 max-w-md mx-auto">
+            <div className="min-h-full flex flex-col items-center justify-center pt-[clamp(2rem,8dvh,5rem)] pb-10 max-w-md mx-auto">
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", stiffness: 120, damping: 18 }}
-                className="relative mb-20"
+                className="relative mb-[clamp(2.5rem,8dvh,5rem)]"
               >
                 <div className="relative">
                   <WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={primePlayback} onLongPress={() => { if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (settings.voiceRecognition || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} />
@@ -782,7 +784,7 @@ export default function App() {
                   key={msg.id}
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`group flex gap-3 ${msg.role === "user" ? "justify-end" : "items-start"}`}
+                  className={`group flex gap-3 items-start ${msg.role === "user" ? "justify-end" : ""}`}
                 >
                   {msg.role === "assistant" && <WilsonOrb size="sm" vibe={vibe} isThinking={streamingId === msg.id} />}
                   <div
@@ -834,6 +836,11 @@ export default function App() {
                       )}
                     </div>
                   </div>
+                  {msg.role === "user" && (
+                    <div className="user-avatar w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-[14px] font-light select-none" aria-hidden="true">
+                      {(displayName || "J").trim().charAt(0).toUpperCase()}
+                    </div>
+                  )}
                 </motion.div>
               ))}
 

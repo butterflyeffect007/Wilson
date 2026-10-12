@@ -19,7 +19,7 @@ interface WilsonOrbProps {
 const sizeMap = {
   sm: "w-9 h-9",
   md: "w-16 h-16",
-  lg: "w-[12.5rem] h-[12.5rem]",
+  lg: "w-[clamp(9.5rem,min(44vw,24dvh),12.5rem)] h-[clamp(9.5rem,min(44vw,24dvh),12.5rem)]",
   mdx: "w-24 h-24",
 };
 

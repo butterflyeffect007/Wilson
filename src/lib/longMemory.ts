@@ -65,8 +65,15 @@ const dot = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * (b[i] ??
 export function rankMemories(items: MemoryItem[], q: number[], speakerId: string, k = 4, min = 0.3): MemoryItem[] {
   return items
     .filter((m) => m.speakerId === speakerId)
-    .map((m) => ({ m, s: dot(m.vec, q) }))
-    .filter((x) => x.s >= min)
+    .map((m) => ({ m, sim: dot(m.vec, q) }))
+    .filter((x) => x.sim >= min)
+    // ranked: relevance first, gently boosted by recency (30-day half-life) and emotional weight
+    .map(({ m, sim }) => {
+      const days = Math.max(0, (Date.now() - Date.parse(m.ts)) / 86400000);
+      const recency = Math.pow(0.5, days / 30);
+      const feeling = m.emotion && m.emotion !== "neutral" ? 0.03 : 0;
+      return { m, s: sim + 0.08 * recency + feeling };
+    })
     .sort((a, b) => b.s - a.s)
     .slice(0, k)
     .map((x) => x.m);
