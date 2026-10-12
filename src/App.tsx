@@ -103,6 +103,22 @@ export default function App() {
   const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
+  const [isBeta, setIsBeta] = useState(() => {
+    try { return localStorage.getItem("wilson_beta") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("beta") === "1") {
+        localStorage.setItem("wilson_beta", "1");
+        setIsBeta(true);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("beta");
+        window.history.replaceState({}, "", url.toString());
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const [lessons, setLessons] = useState<Lesson[]>(() => loadLessons());
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [fieldOpen, setFieldOpen] = useState(false);
@@ -586,6 +602,11 @@ export default function App() {
           <div className="flex items-center gap-2">
             <Sparkles className="w-[18px] h-[18px] text-violet-400 wl-title" />
             <h1 className="wl-title text-[19px] tracking-[0.28em] text-violet-900/80">WILSON</h1>
+            {isBeta && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-700 font-medium tracking-wide">
+                BETA
+              </span>
+            )}
           </div>
           <div className="flex items-center justify-end gap-0.5 -mr-1.5">
             <button
@@ -648,6 +669,44 @@ export default function App() {
                 <h3 className="text-sm font-semibold text-violet-950/90">Settings</h3>
                 <button type="button" onClick={() => setShowSettings(false)} className="text-violet-400 hover:text-violet-600" aria-label="Close settings"><X className="w-4 h-4" /></button>
               </div>
+              {isBeta && (
+                <div className="pt-2 border-t border-violet-200/40">
+                  <p className="text-[11px] text-violet-600/70 mb-1.5">Founding Beta tester</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const report = prompt("Describe the problem:");
+                      if (report && report.trim()) {
+                        try {
+                          const reports = JSON.parse(localStorage.getItem("wilson_reports") || "[]");
+                          reports.push({ ts: new Date().toISOString(), text: report.trim(), name: settings.displayName || "anonymous" });
+                          localStorage.setItem("wilson_reports", JSON.stringify(reports.slice(-50)));
+                          alert("Report saved. You can share it with Jenny later.");
+                        } catch { alert("Couldn't save report."); }
+                      }
+                    }}
+                    className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800"
+                  >
+                    Report a problem
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = "https://butterflyeffect007.github.io/Wilson/?beta=1";
+                      const text = "Try Wilson — a calm AI companion. Open this link to join as a Founding Beta tester:\n" + link;
+                      if (navigator.share) {
+                        navigator.share({ title: "Wilson — Founding Beta", text, url: link }).catch(() => {});
+                      } else {
+                        navigator.clipboard.writeText(link).then(() => alert("Beta invite link copied. Send it to a friend.")).catch(() => prompt("Copy this beta invite link:", link));
+                      }
+                    }}
+                    className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800 mt-1.5"
+                  >
+                    Invite a beta tester
+                  </button>
+                </div>
+              )}
+
               {/* Voice + name settings (persisted locally) */}
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
