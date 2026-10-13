@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Markdown } from "./components/Markdown";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AdminPanel } from "./components/AdminPanel";
-import { cachedIsAdmin, verifyAdmin } from "./lib/admin";
+import { cachedIsAdmin, verifyAdmin, nightlyOptIn, setNightlyOptIn, syncLoops, fetchUnseenNote, markNoteSeen } from "./lib/admin";
 import { useDebouncedSave } from "./lib/useDebouncedSave";
 import { loadStateOfYou, recordUserTurn, recordVibe, buildStateOfYouContext, maybeRefreshStateOfYou, editStateSummary, clearStateOfYou, localSignals, type StateOfYou } from "./lib/stateOfYou";
 import { subscribeSaving } from "./lib/saveBus";
@@ -109,6 +109,14 @@ export default function App() {
   const anchorTurnRef = useRef(0);
   const [soy, setSoy] = useState<StateOfYou>(() => loadStateOfYou());
   const [soyOpen, setSoyOpen] = useState(false);
+  const [nightly, setNightly] = useState(() => nightlyOptIn());
+  const [awayNote, setAwayNote] = useState<{ text: string; ts: string } | null>(null);
+  useEffect(() => {
+    const f = (e: Event) => void syncLoops((e as CustomEvent<string>).detail);
+    window.addEventListener("wilson-state-refreshed", f);
+    return () => window.removeEventListener("wilson-state-refreshed", f);
+  }, []);
+  useEffect(() => { if (isAdmin && nightly) { const t = setTimeout(() => void fetchUnseenNote().then(setAwayNote), 2500); return () => clearTimeout(t); } }, [isAdmin, nightly]);
   const [soyDraft, setSoyDraft] = useState<string | null>(null);
   useEffect(() => { const f = () => setSoy(loadStateOfYou()); window.addEventListener("wilson-state-of-you", f); return () => window.removeEventListener("wilson-state-of-you", f); }, []);
   const [playMsg, setPlayMsg] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
@@ -620,6 +628,16 @@ export default function App() {
       )}
       {feedback && <ErrorBoundary label="feedback" compact><FeedbackSheet target={feedback} onClose={() => setFeedback(null)} /></ErrorBoundary>}
       {showAdmin && isAdmin && <ErrorBoundary label="Architect view"><AdminPanel onClose={() => setShowAdmin(false)} onSignOut={() => { setIsAdmin(false); setShowAdmin(false); }} /></ErrorBoundary>}
+      {awayNote && (
+        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[55] w-[min(92vw,30rem)] glass-strong rounded-2xl px-4 py-3 shadow-lg text-[15px] leading-[1.65] text-violet-950/90">
+          <div className="text-[11px] tracking-[0.12em] text-violet-500 mb-1">WHILE YOU WERE AWAY</div>
+          <div className="whitespace-pre-wrap">{awayNote.text}</div>
+          <div className="flex gap-4 mt-2 text-[13px]">
+            <button type="button" className="underline text-violet-700" onClick={() => { markNoteSeen(awayNote.ts); setInput(`About your note: `); setAwayNote(null); }}>Talk about it</button>
+            <button type="button" className="underline text-violet-500" onClick={() => { markNoteSeen(awayNote.ts); setAwayNote(null); }}>Got it</button>
+          </div>
+        </div>
+      )}
       {globalWarn && <div role="status" className="wl-warn fixed top-3 left-1/2 -translate-x-1/2 z-[60] rounded-full px-4 py-2 text-[13px] shadow-lg">{globalWarn}</div>}
 
       {/* Threads drawer (existing glass styling) */}
@@ -795,7 +813,13 @@ export default function App() {
 
               <div className="pt-2 border-t border-violet-200/40">
                 {isAdmin ? (
+                  <>
                   <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
+                  <label className="flex items-start gap-2 text-[12px] text-violet-800/80 mt-2">
+                    <input type="checkbox" className="mt-0.5" checked={nightly} onChange={(e) => { const on = e.target.checked; setNightly(on); setNightlyOptIn(on); if (on) void syncLoops(loadStateOfYou().summary); }} />
+                    <span>Nightly notes — Wilson thinks about your open loops overnight and leaves you a short note. (Shares only your open loops with Wilson's server.)</span>
+                  </label>
+                  </>
                 ) : (
                   <details className="text-[12px] text-violet-700/70">
                     <summary className="cursor-pointer select-none">Architect access</summary>

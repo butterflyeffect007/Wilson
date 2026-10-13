@@ -94,6 +94,7 @@ export async function maybeRefreshStateOfYou(adapter: OpenRouterAdapter, recent:
     const fresh = loadStateOfYou();
     fresh.summary = text.slice(0, 2000); fresh.pending = 0; fresh.updatedAt = Date.now(); fresh.editedByUser = false;
     save(fresh);
+    window.dispatchEvent(new CustomEvent("wilson-state-refreshed", { detail: fresh.summary }));
     return true;
   } catch (e) { console.warn("[state-of-you]", e); return false; } finally { running = false; }
 }
