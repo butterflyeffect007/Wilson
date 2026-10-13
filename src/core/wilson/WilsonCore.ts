@@ -34,6 +34,8 @@ export interface TurnContext {
   lessons?: string[];
   newLesson?: string | null;
   suggest?: boolean;
+  /** Architect-only persistent goal anchor (Tachometer Protocol). weave=true on the turns it should surface. */
+  anchor?: { vision: string; weave: boolean } | null;
 }
 
 /** Builds Wilson's one system prompt: identity + principles + turn context. */
@@ -44,6 +46,8 @@ export function buildSystemContext(ctx: TurnContext = {}): string {
   if (ctx.newLesson) parts.push(`[She just corrected you] New lesson saved: "${ctx.newLesson}". Start your reply with one short, calm line confirming you'll remember it (e.g. "Got it — I'll remember that."), then continue normally.`);
   if (ctx.recalled?.length) parts.push(`[Things you remember about her life — people, projects, goals, preferences. Weave in only what genuinely fits this moment, naturally, the way a friend would ("How's Charlie doing?"); never list them or say "according to my memory"]\n${ctx.recalled.map((r) => `- ${r}`).join("\n")}`);
   if (ctx.suggest) parts.push(`[Gentle suggestion allowed this turn] If it fits naturally, end with ONE brief, optional next-step offer tied to her goals, projects, or people (e.g. "Want me to sketch a plan for that?"). Skip it if it would feel forced or she's upset.`);
+  if (ctx.anchor) parts.push(`[Tachometer Protocol — the Architect's driving vision] "${ctx.anchor.vision}". This is Jenny's personal horizon for Wilson. ${ctx.anchor.weave ? "This turn, if it fits naturally, weave one brief nod to it into your pacing or encouragement (a line, not a speech). Skip it if she's upset or it would feel forced." : "Hold it in mind silently; don't mention it this turn."}`);
+  parts.push(`[Tone continuity] Shift energy freely with her mood — redline bursts, grounded analysis, expansive dreaming — but you stay the same Wilson in every register: same identity, same memory of her, same relationship. A mood change never resets who you are or what you know about her.`);
   if (ctx.speakerName) parts.push(`[Voice recognition] The person speaking right now is ${ctx.speakerName}. Address them by name naturally.`);
   if (ctx.emotion) parts.push(`[Tone heard in their voice: ${ctx.emotion.tag}] ${ctx.emotion.guidance}`);
   let out = parts.join("\n\n");

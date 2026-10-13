@@ -1,4 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Markdown } from "./components/Markdown";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { AdminPanel } from "./components/AdminPanel";
+import { cachedIsAdmin, verifyAdmin } from "./lib/admin";
+import { useDebouncedSave } from "./lib/useDebouncedSave";
+import { subscribeSaving } from "./lib/saveBus";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
@@ -56,23 +62,14 @@ function getThreadGreeting(displayName: string, isReturning: boolean): string {
   ]);
 }
 
-/* ---------- tiny safe inline markdown (bold, italic, code) ---------- */
-function renderInline(text: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
-  return parts.map((p, i) => {
-    if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
-    if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
-    if (p.length > 2 && p.startsWith("`") && p.endsWith("`"))
-      return <code key={i} className="px-1 rounded bg-violet-100/70 text-[0.92em]">{p.slice(1, -1)}</code>;
-    return <span key={i}>{p}</span>;
-  });
-}
 
 function friendlyError(err: unknown): { text: string; retryable: boolean } {
   const status = err instanceof OpenRouterError ? err.status : 0;
   if (status === 429) return { text: "*Whew, lots of people talking at once. Give me a second and ask again.*", retryable: true };
   return { text: "*My brain's a little busy right now. Try again in a moment.*", retryable: true };
 }
+
+const TACHO_VISION = "the tacho climbs past 9,000 RPMs as the browser version stabilizes into unshakeable, native-grade code at the waterfront";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -82,7 +79,33 @@ export default function App() {
     const saved = loadActiveThreadId();
     return saved && loadThreads().some((t) => t.id === saved) ? saved : null;
   });
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => { try { return localStorage.getItem("wilson_draft") || ""; } catch { return ""; } });
+  useDebouncedSave(input, (v) => { try { if (v) localStorage.setItem("wilson_draft", v); else localStorage.removeItem("wilson_draft"); } catch { /* full */ } });
+  const [saving, setSaving] = useState(false);
+  useEffect(() => subscribeSaving(setSaving), []);
+  const [globalWarn, setGlobalWarn] = useState<string | null>(null);
+  useEffect(() => {
+    const onRej = (e: PromiseRejectionEvent) => {
+      if ((e.reason as { name?: string })?.name === "AbortError") return;
+      console.warn("[unhandled]", e.reason);
+      setGlobalWarn("Something didn't go through — Wilson's still here. Try that again.");
+      setTimeout(() => setGlobalWarn(null), 6000);
+    };
+    const onErr = (e: ErrorEvent) => { if (!e.message || /ResizeObserver/.test(e.message)) return; console.warn("[error]", e.message); };
+    const onOff = () => setGlobalWarn("You're offline — your chat and draft are saved on this device.");
+    const onOn = () => setGlobalWarn(null);
+    window.addEventListener("unhandledrejection", onRej);
+    window.addEventListener("error", onErr);
+    window.addEventListener("offline", onOff);
+    window.addEventListener("online", onOn);
+    return () => { window.removeEventListener("unhandledrejection", onRej); window.removeEventListener("error", onErr); window.removeEventListener("offline", onOff); window.removeEventListener("online", onOn); };
+  }, []);
+  const [isAdmin, setIsAdmin] = useState<boolean>(() => cachedIsAdmin());
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [adminKeyDraft, setAdminKeyDraft] = useState("");
+  const [adminMsg, setAdminMsg] = useState<string | null>(null);
+  useEffect(() => { if (cachedIsAdmin()) void verifyAdmin().then((ok) => { if (ok !== null) setIsAdmin(ok); }); }, []);
+  const anchorTurnRef = useRef(0);
   const [playMsg, setPlayMsg] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
   const toggleMessageVoice = (msg: StoredMessage) => {
     if (playMsg?.id === msg.id) { stopSpeaking(); setPlayMsg(null); return; }
@@ -95,6 +118,14 @@ export default function App() {
   const [thinking, setThinking] = useState(false);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [vibe, setVibe] = useState<WilsonVibe>(() => loadProfile().vibe);
+  useEffect(() => {
+    const V: Record<WilsonVibe, [number, string, string]> = {
+      neutral: [1, "9s", "6.5s"], excited: [1.22, "6s", "4.8s"], calm: [0.9, "12s", "8s"], tired: [0.78, "13s", "9s"], dreaming: [1.1, "10.5s", "7.5s"],
+    };
+    const [sat, breathe, float] = V[vibe] ?? V.neutral;
+    const r = document.documentElement.style;
+    r.setProperty("--vibe-sat", String(sat)); r.setProperty("--vibe-breathe", breathe); r.setProperty("--vibe-float", float);
+  }, [vibe]);
   const [settings, setSettings] = useState<WilsonSettings>(() => loadSettings());
   const [voiceProfiles, setVoiceProfiles] = useState<SpeakerProfile[]>(() => loadProfiles());
   const [speaker, setSpeaker] = useState<{ id: string; lowConfidence: boolean; isNew: boolean } | null>(null);
@@ -194,7 +225,7 @@ export default function App() {
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
   /* persistence */
-  useEffect(() => { saveThreads(threads); }, [threads]);
+  useDebouncedSave(threads, saveThreads);
   useEffect(() => { saveActiveThreadId(activeId); }, [activeId]);
   useEffect(() => { saveSettings(settings); }, [settings]);
 
@@ -303,6 +334,7 @@ export default function App() {
         lessons: loadLessons().map((l) => l.text),
         newLesson: learned,
         suggest: settings.suggestions && !learned && shouldSuggest(),
+        anchor: isAdmin ? { vision: TACHO_VISION, weave: ++anchorTurnRef.current % 5 === 0 } : null,
       });
 
       const msgId = "stream-" + newId();
@@ -414,7 +446,7 @@ export default function App() {
       setStreamingId(null);
       inputRef.current?.focus();
     },
-    [settings, updateThread],
+    [settings, updateThread, isAdmin],
   );
 
   const sendMessage = useCallback(
@@ -424,7 +456,7 @@ export default function App() {
       stopSpeaking(); // interrupt any voice on send (parity)
       primePlayback();
       emitRipple();
-      setInput("");
+      setInput(""); try { localStorage.removeItem("wilson_draft"); } catch { /* ignore */ }
       stickToBottom.current = true;
 
       const thread = activeThread ?? createThread();
@@ -550,7 +582,7 @@ export default function App() {
   return (
     <div className="h-[100dvh] flex flex-col relative overflow-hidden">
       <Backdrop chat={!isHome} />
-      {orgTab && <Organizer tab={orgTab} onTab={setOrgTab} onClose={() => setOrgTab(null)} />}
+      {orgTab && <ErrorBoundary label="organizer" compact><Organizer tab={orgTab} onTab={setOrgTab} onClose={() => setOrgTab(null)} /></ErrorBoundary>}
       {dueBanner.length > 0 && !orgTab && (
         <div className="fixed z-[45] left-3 right-3 top-[max(4.25rem,calc(env(safe-area-inset-top)+3.5rem))] max-w-lg mx-auto glass-strong rounded-2xl px-4 py-3 flex items-start gap-3 shadow-lg">
           <Bell className="w-4 h-4 mt-0.5 text-violet-500 flex-shrink-0" />
@@ -560,7 +592,9 @@ export default function App() {
           <button type="button" aria-label="Dismiss" onClick={() => setDueBanner([])} className="text-violet-400"><X className="w-4 h-4" /></button>
         </div>
       )}
-      {feedback && <FeedbackSheet target={feedback} onClose={() => setFeedback(null)} />}
+      {feedback && <ErrorBoundary label="feedback" compact><FeedbackSheet target={feedback} onClose={() => setFeedback(null)} /></ErrorBoundary>}
+      {showAdmin && isAdmin && <ErrorBoundary label="Architect view"><AdminPanel onClose={() => setShowAdmin(false)} onSignOut={() => { setIsAdmin(false); setShowAdmin(false); }} /></ErrorBoundary>}
+      {globalWarn && <div role="status" className="wl-warn fixed top-3 left-1/2 -translate-x-1/2 z-[60] rounded-full px-4 py-2 text-[13px] shadow-lg">{globalWarn}</div>}
 
       {/* Threads drawer (existing glass styling) */}
       <AnimatePresence>
@@ -642,6 +676,11 @@ export default function App() {
               <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-600/80 tracking-wide" title={betaNum ? `Founding Beta #${betaNum}` : "Beta"}>
                 {betaNum ? `β${betaNum}` : "β"}
               </span>
+            )}
+            {isAdmin && (
+              <button type="button" onClick={() => setShowAdmin(true)} className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-500/20 via-violet-500/20 to-amber-400/25 text-violet-700/90 tracking-wide" title="Architect view">
+                ARCHITECT
+              </button>
             )}
           </div>
           <div className="flex items-center justify-end gap-0.5 -mr-1.5">
@@ -727,6 +766,21 @@ export default function App() {
                   </button>
                 </div>
               )}
+
+              <div className="pt-2 border-t border-violet-200/40">
+                {isAdmin ? (
+                  <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
+                ) : (
+                  <details className="text-[12px] text-violet-700/70">
+                    <summary className="cursor-pointer select-none">Architect access</summary>
+                    <form className="flex gap-2 mt-2" onSubmit={(e) => { e.preventDefault(); const k = adminKeyDraft.trim(); if (!k) return; setAdminMsg("Checking…"); void verifyAdmin(k).then((ok) => { setAdminKeyDraft(""); if (ok) { setIsAdmin(true); setAdminMsg(null); } else setAdminMsg(ok === null ? "Couldn't reach Wilson — try again." : "That key didn't work."); }); }}>
+                      <input type="password" autoComplete="off" value={adminKeyDraft} onChange={(e) => setAdminKeyDraft(e.target.value)} placeholder="Architect key" className="flex-1 rounded-xl px-3 py-1.5 text-[13px] bg-white/70 border border-violet-200/60 outline-none text-violet-950" />
+                      <button type="submit" className="px-3 py-1.5 rounded-xl bg-violet-100/80 text-violet-800">Unlock</button>
+                    </form>
+                    {adminMsg && <p className="mt-1">{adminMsg}</p>}
+                  </details>
+                )}
+              </div>
 
               {/* Voice + name settings (persisted locally) */}
               <div className="space-y-2">
@@ -842,7 +896,7 @@ export default function App() {
                 className="relative mb-[clamp(2.5rem,8dvh,5rem)]"
               >
                 <div className="relative">
-                  <WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={primePlayback} onLongPress={() => { if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (settings.voiceRecognition || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} />
+                  <ErrorBoundary label="the orb" compact><WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={primePlayback} onLongPress={() => { if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (settings.voiceRecognition || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} /></ErrorBoundary>
                 </div>
               </motion.div>
 
@@ -918,9 +972,7 @@ export default function App() {
                       </span>
                     )}
                     <div className="text-violet-950/90 whitespace-pre-wrap break-words">
-                      {msg.content.split("\n").map((line, i) => (
-                        <div key={i}>{line ? renderInline(line) : "\u00A0"}</div>
-                      ))}
+                      <ErrorBoundary label="this message" compact><Markdown text={msg.content} /></ErrorBoundary>
                       {streamingId === msg.id && (
                         <span className="inline-block w-1.5 h-4 align-middle bg-violet-400/70 animate-pulse ml-0.5" />
                       )}
@@ -1034,7 +1086,8 @@ export default function App() {
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting until 7 PM Central (daily free limit).</p>
             )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
-            <div className="relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5">
+            <div className={`relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5 ${saving || stt.listening ? "wl-telemetry" : ""}`} title={stt.listening ? "Listening…" : saving ? "Saving…" : undefined}>
+              {(saving || stt.listening) && <span className="sr-only" role="status">{stt.listening ? "Processing voice" : "Saving"}</span>}
               <textarea
                 ref={inputRef}
                 rows={1}

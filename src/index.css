@@ -508,3 +508,46 @@ html.dark .wl-bfly-mini { opacity: .38; }
 .wl-bfly-mini .wl-wing { animation-duration: 1.4s; }
 @keyframes wl-mini-drift { 0% { transform: translate(0,0) rotate(-6deg); } 50% { transform: translate(8px,-18px) rotate(4deg); } 100% { transform: translate(-6px,-34px) rotate(-2deg); } }
 @media (prefers-reduced-motion: reduce) { .wl-bfly-mini, .wl-bfly-mini .wl-wing { animation: none !important; } }
+
+/* ===== Vibe Engine: subtle UI accents bound to Wilson's latest [VIBE] ===== */
+:root { --vibe-sat: 1; --vibe-breathe: 9s; --vibe-float: 6.5s; }
+
+.wl-orb-img { animation-duration: var(--vibe-breathe) !important; }
+.wilson-orb-shell--thinking .wl-orb-img { animation-duration: 2.8s !important; }
+.wilson-orb-float { animation-duration: var(--vibe-float); }
+.wl-orb-img, .wl-title, .wl-bfly-mini { filter: saturate(var(--vibe-sat)); transition: filter 1.5s ease; }
+@media (prefers-reduced-motion: reduce) { :root { --vibe-sat: 1; } }
+
+/* ===== Telemetry pulse (saving / voice-to-text processing) ===== */
+.wl-telemetry { position: relative; }
+.wl-telemetry::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 1px hsl(var(--wilson-vibe-hue, 290) 80% 70% / .55), 0 0 14px hsl(var(--wilson-vibe-hue, 290) 80% 70% / .35);
+  animation: wl-tele 1.6s ease-in-out infinite; }
+@keyframes wl-tele { 0%,100% { opacity: .15; } 50% { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) { .wl-telemetry::after { animation: none; opacity: .5; } }
+.wl-tele-dot { width: 6px; height: 6px; border-radius: 9999px; background: hsl(var(--wilson-vibe-hue, 290) 80% 65%); animation: wl-tele 1.6s ease-in-out infinite; }
+
+/* ===== Error / warning ===== */
+.wl-warn { background: rgba(255, 237, 242, .85); color: #7a2140; border: 1px solid rgba(244, 114, 182, .35); }
+html.dark .wl-warn { background: rgba(60, 14, 40, .75); color: #fbcfe8; border-color: rgba(244, 114, 182, .35); }
+
+/* ===== Instrument-grade markdown ===== */
+.md-h { font-weight: 600; letter-spacing: .01em; margin: .55em 0 .2em; color: rgb(76 29 149 / .95); }
+.md-h1 { font-size: 1.2em; } .md-h2 { font-size: 1.1em; } .md-h3, .md-h4 { font-size: 1em; text-transform: uppercase; letter-spacing: .08em; font-size: .82em; opacity: .85; }
+html.dark .md-h { color: #e9d5ff; }
+.md-list { margin: .2em 0; } .md-li { display: flex; gap: .55em; } .md-bullet { color: rgb(139 92 246); min-width: 1em; font-variant-numeric: tabular-nums; }
+.md-quote { border-left: 3px solid rgb(167 139 250 / .6); padding-left: .75em; margin: .35em 0; opacity: .9; font-style: italic; }
+.md-hr { border: 0; height: 1px; margin: .7em 0; background: linear-gradient(90deg, transparent, rgb(167 139 250 / .55), transparent); }
+.md-link { color: rgb(124 58 237); text-decoration: underline; text-underline-offset: 2px; } html.dark .md-link { color: #c4b5fd; }
+.md-code-inline { padding: 0 .3em; border-radius: .35em; font-size: .9em; background: rgb(237 233 254 / .8); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+html.dark .md-code-inline { background: rgb(76 29 149 / .45); color: #f5d0fe; }
+.md-block { margin: .5em 0; border-radius: .9rem; border: 1px solid rgb(167 139 250 / .35); background: rgb(250 245 255 / .85); overflow: hidden; white-space: normal; }
+html.dark .md-block { background: rgb(12 6 28 / .8); border-color: rgb(167 139 250 / .3); box-shadow: inset 0 0 18px rgb(139 92 246 / .12); }
+.md-block-label { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; padding: .35em .9em; color: rgb(124 58 237); border-bottom: 1px solid rgb(167 139 250 / .25); }
+html.dark .md-block-label { color: #f0abfc; }
+.md-block pre { margin: 0; padding: .7em .9em; overflow-x: auto; font-size: 13.5px; line-height: 1.55; white-space: pre; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.md-table-wrap { overflow-x: auto; margin: .5em 0; border-radius: .8rem; border: 1px solid rgb(167 139 250 / .3); white-space: normal; }
+.md-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.md-table th { text-align: left; font-weight: 600; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: rgb(237 233 254 / .7); padding: .45em .7em; }
+.md-table td { padding: .4em .7em; border-top: 1px solid rgb(167 139 250 / .2); vertical-align: top; }
+html.dark .md-table th { background: rgb(76 29 149 / .35); color: #e9d5ff; }

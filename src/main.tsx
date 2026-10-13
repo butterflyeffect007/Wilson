@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import "@fontsource/lexend/300.css";
 import "@fontsource/lexend/400.css";
 import "@fontsource/lexend/500.css";
@@ -10,7 +11,9 @@ import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary label="Wilson">
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>
 );
 

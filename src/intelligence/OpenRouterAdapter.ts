@@ -149,6 +149,7 @@ export class OpenRouterAdapter implements ModelAdapter {
         signal,
       });
       if (!response.ok) await this.fail(response);
+      try { const m = response.headers.get("X-Wilson-Model"); if (m) localStorage.setItem("wilson_last_model", m); } catch { /* ignore */ }
       if (!response.body) throw new OpenRouterError("Empty response body", 502);
 
       const reader = response.body.getReader();
