@@ -4,6 +4,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AdminPanel } from "./components/AdminPanel";
 import { cachedIsAdmin, verifyAdmin } from "./lib/admin";
 import { useDebouncedSave } from "./lib/useDebouncedSave";
+import { loadStateOfYou, recordUserTurn, recordVibe, buildStateOfYouContext, maybeRefreshStateOfYou, editStateSummary, clearStateOfYou, localSignals, type StateOfYou } from "./lib/stateOfYou";
 import { subscribeSaving } from "./lib/saveBus";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -106,6 +107,10 @@ export default function App() {
   const [adminMsg, setAdminMsg] = useState<string | null>(null);
   useEffect(() => { if (cachedIsAdmin()) void verifyAdmin().then((ok) => { if (ok !== null) setIsAdmin(ok); }); }, []);
   const anchorTurnRef = useRef(0);
+  const [soy, setSoy] = useState<StateOfYou>(() => loadStateOfYou());
+  const [soyOpen, setSoyOpen] = useState(false);
+  const [soyDraft, setSoyDraft] = useState<string | null>(null);
+  useEffect(() => { const f = () => setSoy(loadStateOfYou()); window.addEventListener("wilson-state-of-you", f); return () => window.removeEventListener("wilson-state-of-you", f); }, []);
   const [playMsg, setPlayMsg] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
   const toggleMessageVoice = (msg: StoredMessage) => {
     if (playMsg?.id === msg.id) { stopSpeaking(); setPlayMsg(null); return; }
@@ -214,6 +219,20 @@ export default function App() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottom = useRef(true);
   const threadsRef = useRef(threads);
+  /* State-of-you: one summary at session end (tab hidden) if enough new messages */
+  const activeIdRef = useRef(activeId); activeIdRef.current = activeId;
+  const longMemRef = useRef(settings.longMemory); longMemRef.current = settings.longMemory;
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState !== "hidden" || !longMemRef.current) return;
+      const t = threadsRef.current.find((x) => x.id === activeIdRef.current);
+      if (!t) return;
+      const ad = new OpenRouterAdapter("", getPreferredEngine(DEFAULT_WILSON_POLICY).model, WILSON_PROXY_URL);
+      void maybeRefreshStateOfYou(ad, t.messages, { force: true });
+    };
+    document.addEventListener("visibilitychange", onHide);
+    return () => document.removeEventListener("visibilitychange", onHide);
+  }, []);
   threadsRef.current = threads;
 
   const busy = thinking || streamingId !== null;
@@ -308,6 +327,7 @@ export default function App() {
           recalled = hits.map((h) => `(${h.ts.slice(0, 10)}) ${h.text}`);
         } catch (e) { console.warn("[memory]", e); }
       }
+      if (settings.longMemory) recordUserTurn(content);
       const learned = detectLesson(content);
       if (learned) setLessons(addLesson(learned) && loadLessons());
       if (settings.longMemory) {
@@ -334,6 +354,7 @@ export default function App() {
         lessons: loadLessons().map((l) => l.text),
         newLesson: learned,
         suggest: settings.suggestions && !learned && shouldSuggest(),
+        stateOfYou: settings.longMemory ? buildStateOfYouContext() : "",
         anchor: isAdmin ? { vision: TACHO_VISION, weave: ++anchorTurnRef.current % 5 === 0 } : null,
       });
 
@@ -413,6 +434,7 @@ export default function App() {
           if (newVibe) {
             setVibe(newVibe);
             saveProfile({ vibe: newVibe });
+            if (settings.longMemory) recordVibe(newVibe);
           }
           if (dream) saveProfile({ dream });
 
@@ -420,6 +442,10 @@ export default function App() {
             void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
           }
           if (result.finishReason !== "aborted" && clean && speech) speech.finish(clean);
+          if (result.finishReason !== "aborted" && clean && settings.longMemory) {
+            const recentMsgs: StoredMessage[] = [...history, { id: "u", role: "user", content, timestamp: "" }, { id: "a", role: "assistant", content: clean, timestamp: "" }];
+            setTimeout(() => void maybeRefreshStateOfYou(adapter, recentMsgs), 1500);
+          }
           break;
         } catch (err) {
           const fe = friendlyError(err);
@@ -812,6 +838,27 @@ export default function App() {
                   <input type="checkbox" checked={settings.longMemory} onChange={(e) => setSettings((s) => ({ ...s, longMemory: e.target.checked }))} />
                   Remember things
                 </label>
+                <div className="pt-2">
+                  <button type="button" className="underline text-[12px] text-violet-700/80" onClick={() => setSoyOpen((o) => !o)}>{soyOpen ? "Hide" : "What Wilson knows about how you're doing"}</button>
+                  {soyOpen && (
+                    <div className="mt-2 rounded-xl bg-violet-100/50 p-3 text-[14px] leading-[1.7] text-violet-950/90 space-y-2">
+                      <p className="text-[12px] text-violet-700/70">Kept only on this device. Wilson uses it to match your energy, not to repeat it back. Updates about every 12 messages and when you leave.</p>
+                      {soyDraft === null ? (
+                        <div className="whitespace-pre-wrap">{soy.summary || "Nothing yet — it fills in as you talk."}</div>
+                      ) : (
+                        <textarea value={soyDraft} onChange={(e) => setSoyDraft(e.target.value)} rows={9} className="w-full rounded-lg p-2 text-[14px] leading-[1.7] bg-white/80 border border-violet-200/60 text-violet-950" />
+                      )}
+                      {localSignals(soy).length > 0 && <div className="text-[12px] text-violet-700/70">Right now: {localSignals(soy).join(" ")}</div>}
+                      {soy.updatedAt && <div className="text-[11px] text-violet-500/70">Updated {new Date(soy.updatedAt).toLocaleString()}{soy.editedByUser ? " · edited by you" : ""}</div>}
+                      <div className="flex gap-3 text-[13px]">
+                        {soyDraft === null
+                          ? <button type="button" className="underline" onClick={() => setSoyDraft(soy.summary)}>Edit</button>
+                          : <><button type="button" className="underline" onClick={() => { editStateSummary(soyDraft); setSoyDraft(null); }}>Save</button><button type="button" className="underline" onClick={() => setSoyDraft(null)}>Cancel</button></>}
+                        <button type="button" className="underline text-rose-500" onClick={() => { if (confirm("Clear everything Wilson knows about how you're doing?")) { clearStateOfYou(); setSoyDraft(null); } }}>Clear</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input type="checkbox" checked={settings.suggestions} onChange={(e) => setSettings((s) => ({ ...s, suggestions: e.target.checked }))} />
                   Gentle suggestions (now and then)
