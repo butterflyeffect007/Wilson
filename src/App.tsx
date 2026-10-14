@@ -4,6 +4,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { AdminPanel } from "./components/AdminPanel";
 import { cachedIsAdmin, verifyAdmin, nightlyOptIn, setNightlyOptIn, syncLoops, fetchUnseenNote, markNoteSeen } from "./lib/admin";
 import { useDebouncedSave } from "./lib/useDebouncedSave";
+import { enablePush, disablePush, pushEnabled, pushSupported, isIOS, isStandalone, startReminderSync } from "./lib/push";
 import { loadStateOfYou, recordUserTurn, recordVibe, buildStateOfYouContext, maybeRefreshStateOfYou, editStateSummary, clearStateOfYou, localSignals, type StateOfYou } from "./lib/stateOfYou";
 import { subscribeSaving } from "./lib/saveBus";
 import { motion, AnimatePresence } from "framer-motion";
@@ -111,6 +112,22 @@ export default function App() {
   const [soyOpen, setSoyOpen] = useState(false);
   const [nightly, setNightly] = useState(() => nightlyOptIn());
   const [awayNote, setAwayNote] = useState<{ text: string; ts: string } | null>(null);
+  const [pushOn, setPushOn] = useState(() => { try { return pushEnabled(); } catch { return false; } });
+  const [pushMsg, setPushMsg] = useState<string | null>(null);
+  useEffect(() => startReminderSync(), []);
+  useEffect(() => { if (!navigator.onLine) setGlobalWarn("You're offline — your chats and notes are right here. Wilson will answer once you're back online."); }, []);
+  /* Notification taps: ?open=note | ?open=reminders (cold start) or a message from the service worker (warm). */
+  useEffect(() => {
+    const handle = (href: string) => {
+      const open = new URL(href, location.href).searchParams.get("open");
+      if (open === "reminders") { setOrgTab("reminders"); setDueBanner([]); }
+      if (open === "note") void fetchUnseenNote().then((n) => n && setAwayNote(n));
+    };
+    if (/[?&]open=/.test(location.search)) { handle(location.href); const u = new URL(location.href); u.searchParams.delete("open"); history.replaceState(null, "", u.pathname + u.search + u.hash); }
+    const onMsg = (e: MessageEvent) => { if (e.data?.type === "wilson-open") handle(e.data.url); };
+    navigator.serviceWorker?.addEventListener("message", onMsg);
+    return () => navigator.serviceWorker?.removeEventListener("message", onMsg);
+  }, []);
   useEffect(() => {
     const f = (e: Event) => void syncLoops((e as CustomEvent<string>).detail);
     window.addEventListener("wilson-state-refreshed", f);
@@ -830,6 +847,20 @@ export default function App() {
                     {adminMsg && <p className="mt-1">{adminMsg}</p>}
                   </details>
                 )}
+              </div>
+
+              <div className="pt-2 border-t border-violet-200/40 text-[13px] text-violet-800/90">
+                <label className="flex items-start gap-2">
+                  <input type="checkbox" className="mt-1" checked={pushOn} onChange={(e) => {
+                    const on = e.target.checked; setPushMsg(on ? "Turning on…" : null);
+                    if (on) void enablePush().then((err) => { setPushOn(!err); setPushMsg(err); });
+                    else void disablePush().then(() => setPushOn(false));
+                  }} />
+                  <span>Notifications from Wilson — reminders{isAdmin ? " and nightly notes" : ""}, even when the app is closed.</span>
+                </label>
+                {isIOS() && !isStandalone() && <p className="text-[12px] text-violet-700/70 mt-1 leading-[1.6]">On iPhone (iOS 16.4 or newer): tap Share → Add to Home Screen, open Wilson from the Home Screen, then turn this on.</p>}
+                {!pushSupported() && !isIOS() && <p className="text-[12px] text-violet-700/70 mt-1">This browser can't show notifications.</p>}
+                {pushMsg && <p className="text-[12px] text-violet-700/80 mt-1 leading-[1.6]">{pushMsg}</p>}
               </div>
 
               {/* Voice + name settings (persisted locally) */}

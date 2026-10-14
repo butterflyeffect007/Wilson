@@ -1,16 +1,19 @@
 {
+  "id": "/Wilson/",
   "name": "Wilson",
   "short_name": "Wilson",
   "description": "Always with you.",
-  "start_url": "./",
+  "start_url": "./?source=homescreen",
   "scope": "./",
   "display": "standalone",
-  "display_override": ["standalone", "fullscreen"],
+  "display_override": ["standalone"],
   "orientation": "portrait",
   "background_color": "#f3ecff",
   "theme_color": "#efe4ff",
+  "categories": ["lifestyle", "productivity"],
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }

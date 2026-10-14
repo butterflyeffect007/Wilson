@@ -35,7 +35,8 @@ export function checkDue(): Reminder[] {
   for (const r of all) if (!r.done && !r.notified && r.due && Date.parse(r.due) <= Date.now()) { r.notified = true; fired.push(r); }
   if (!fired.length) return [];
   saveReminders(all);
-  if ("Notification" in window && Notification.permission === "granted")
+  const serverPush = !!localStorage.getItem("wilson_push_id"); // worker already sends these as push
+  if (!serverPush && "Notification" in window && Notification.permission === "granted")
     for (const r of fired) { try { new Notification("Wilson reminder", { body: r.text, tag: r.id, icon: "./favicon.svg" }); } catch { /* iOS non-PWA */ } }
   return fired;
 }
