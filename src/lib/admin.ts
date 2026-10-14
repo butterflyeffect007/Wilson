@@ -19,7 +19,7 @@ export async function verifyAdmin(key = storedAdminKey()): Promise<boolean | nul
 }
 
 export type Telemetry = {
-  beta: { count: number; limit: number; latest: { number: number; ts: string }[] };
+  beta: { count: number; limit: number; latest: { number: number; ts: string }[]; roster?: { number: number; ts: string }[] };
   reports: { count: number; recent: { id: string; type: string; ts: string; message: string; beta: number | null; issue: string | null }[] };
   usage: Record<string, Record<string, number>>;
   config: { chat: string; voice: string };

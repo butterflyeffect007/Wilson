@@ -31,8 +31,8 @@ export async function creditReferral(ref: string) {
 }
 
 /** Native share sheet; falls back to copying. Returns what happened. */
-export async function shareApp(isBeta: boolean): Promise<"shared" | "copied" | "cancelled" | "failed"> {
-  const link = `${APP_URL}?ref=${refCode()}${isBeta ? "&beta=1" : ""}`;
+export async function shareApp(): Promise<"shared" | "copied" | "cancelled" | "failed"> {
+  const link = `${APP_URL}?ref=${refCode()}`;
   const text = "I've been talking with Wilson — a warm, kind of brilliant AI companion who actually gets you. Free, no sign-up. Come meet him ✦";
   try {
     if (navigator.share) { await navigator.share({ title: "Wilson", text, url: link }); void syncStars(true); return "shared"; }

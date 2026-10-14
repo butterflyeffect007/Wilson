@@ -171,21 +171,17 @@ export default function App() {
   const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
-  const [isBeta, setIsBeta] = useState(() => {
-    try { return localStorage.getItem("wilson_beta") === "1"; } catch { return false; }
-  });
+  /* Voice-recognition consent (voiceprints are computed + stored on this device only). */
+  const [voiceConsent, setVoiceConsent] = useState<string | null>(() => { try { return localStorage.getItem("wilson_voiceprint_consent"); } catch { return null; } });
+  const [askVoiceConsent, setAskVoiceConsent] = useState(false);
+  const recordConsent = (v: "yes" | "no") => { try { localStorage.setItem("wilson_voiceprint_consent", v); localStorage.setItem("wilson_voiceprint_consent_at", new Date().toISOString()); } catch { /* ignore */ } setVoiceConsent(v); };
+  const voiceId = settings.voiceRecognition && voiceConsent === "yes";
+  const eraseVoiceData = () => { setVoiceProfiles([]); saveProfiles([]); setSpeaker(null); voiceCtxRef.current.name = ""; voiceCtxRef.current.id = "default"; };
+  /* Founders: the first 100 unique devices to open Wilson are added automatically (no signup, no link). */
   useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("beta") === "1") {
-        localStorage.setItem("wilson_beta", "1");
-        setIsBeta(true);
-        void joinBeta().then((n) => { if (typeof n === "number") setBetaNum(n); else if (n === "full") setBetaFull(true); });
-        const url = new URL(window.location.href);
-        url.searchParams.delete("beta");
-        window.history.replaceState({}, "", url.toString());
-      }
-    } catch { /* ignore */ }
+    try { if (new URLSearchParams(location.search).has("beta")) { const u = new URL(location.href); u.searchParams.delete("beta"); history.replaceState({}, "", u.toString()); } } catch { /* ignore */ }
+    if (betaNumber() || localStorage.getItem("wilson_founders_full")) return;
+    void joinBeta().then((n) => { if (typeof n === "number") setBetaNum(n); else if (n === "full") { setBetaFull(true); try { localStorage.setItem("wilson_founders_full", "1"); } catch { /* ignore */ } } });
   }, []);
 
   const [betaNum, setBetaNum] = useState<number | null>(() => betaNumber());
@@ -206,12 +202,11 @@ export default function App() {
     document.addEventListener("visibilitychange", vis);
     return () => document.removeEventListener("visibilitychange", vis);
   }, []);
-  const doShare = () => void shareApp(localStorage.getItem("wilson_beta") === "1").then((r) => {
+  const doShare = () => void shareApp().then((r) => {
     const m = r === "shared" ? "Thank you for sharing Wilson ✦ You'll earn a star when your friend opens it." : r === "copied" ? "Link copied — paste it to a friend. You'll earn a star when they open it ✦" : r === "failed" ? "Couldn't share right now — try again." : null;
     setShareMsg(m); if (m) setTimeout(() => setShareMsg(null), 5000);
   });
-  const [betaFull, setBetaFull] = useState(false);
-  useEffect(() => { if (isBeta && !betaNumber()) void joinBeta().then((n) => { if (typeof n === "number") setBetaNum(n); else if (n === "full") setBetaFull(true); }); }, [isBeta]);
+  const [, setBetaFull] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackTarget | null>(null);
   const [orgTab, setOrgTab] = useState<OrgTab | null>(null);
   const [dueBanner, setDueBanner] = useState<string[]>([]);
@@ -606,7 +601,7 @@ export default function App() {
         try { setVibe(v); } catch { /* ignore */ }
       }
     }
-    if (settings.voiceRecognition) {
+    if (voiceId) {
       const emb = await embedSpeaker(samples);
       setVoiceProfiles((prev) => {
         const r = identify(prev, emb, DEFAULT_THRESHOLD);
@@ -616,15 +611,15 @@ export default function App() {
         return r.profiles;
       });
     }
-  }, [settings.emotionDetection, settings.voiceRecognition]);
+  }, [settings.emotionDetection, voiceId]);
 
   const onFinalSpeech = useCallback(async (t: string) => {
-    if (settings.voiceRecognition || settings.emotionDetection) {
+    if (voiceId || settings.emotionDetection) {
       // wait briefly for on-device analysis (first run downloads the model; don't block on that)
       await Promise.race([analyzeUtterance(t).catch((e) => console.warn("[voice]", e)), new Promise((r) => setTimeout(r, 2500))]);
     }
     void sendMessage(t);
-  }, [sendMessage, analyzeUtterance, settings.voiceRecognition, settings.emotionDetection]);
+  }, [sendMessage, analyzeUtterance, voiceId, settings.emotionDetection]);
 
   const nameSpeaker = useCallback((name: string) => {
     const n = name.trim();
@@ -700,6 +695,18 @@ export default function App() {
         </div>
       )}
       {(starMoment || shareMsg) && <div role="status" className="fixed top-14 left-1/2 -translate-x-1/2 z-[61] glass-strong rounded-2xl px-4 py-2.5 text-[14px] text-violet-900 shadow-lg max-w-[92vw] text-center">{starMoment ?? shareMsg}</div>}
+      {askVoiceConsent && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-violet-950/20 p-3" role="dialog" aria-label="Voice recognition">
+          <div className="w-full max-w-md glass-strong rounded-3xl p-5 text-violet-950/90 text-[16px] leading-[1.7]">
+            <p className="mb-2 font-medium">Can Wilson learn your voice?</p>
+            <p>He learns how your voice sounds so he knows it's you. That voice data is made and kept only on this device — it's never uploaded. You can turn it off or erase it anytime in Settings.</p>
+            <div className="flex gap-3 mt-4">
+              <button type="button" className="flex-1 py-2.5 rounded-xl bg-violet-500 text-white" onClick={() => { recordConsent("yes"); setAskVoiceConsent(false); setTimeout(() => (document.querySelector('[aria-label="Talk to type"]') as HTMLButtonElement | null)?.click(), 50); }}>OK</button>
+              <button type="button" className="flex-1 py-2.5 rounded-xl bg-violet-100/80 text-violet-800" onClick={() => { recordConsent("no"); setSettings((s) => ({ ...s, voiceRecognition: false })); setAskVoiceConsent(false); setTimeout(() => (document.querySelector('[aria-label="Talk to type"]') as HTMLButtonElement | null)?.click(), 50); }}>Not now</button>
+            </div>
+          </div>
+        </div>
+      )}
       {globalWarn && <div role="status" className="wl-warn fixed top-3 left-1/2 -translate-x-1/2 z-[60] rounded-full px-4 py-2 text-[13px] shadow-lg">{globalWarn}</div>}
 
       {/* Threads drawer (existing glass styling) */}
@@ -790,9 +797,9 @@ export default function App() {
           <div className="flex items-center gap-2">
             <Sparkles className="w-[18px] h-[18px] text-violet-400 wl-title" />
             <h1 className="wl-title text-[19px] tracking-[0.28em] text-violet-900/80">WILSON</h1>
-            {isBeta && (
-              <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-600/80 tracking-wide" title={betaNum ? `Founding Beta #${betaNum}` : "Beta"}>
-                {betaNum ? `β${betaNum}` : "β"}
+            {betaNum && (
+              <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-600/80 tracking-wide" title={`Founder #${betaNum}`}>
+                {`β${betaNum}`}
               </span>
             )}
             {stars > 0 && <span className="text-[11px] text-amber-500 tracking-wide" title={`${stars} friend${stars === 1 ? "" : "s"} joined from your link`} aria-label={`${stars} stars`}>✦{stars > 1 ? stars : ""}</span>}
@@ -916,26 +923,7 @@ export default function App() {
               </div>
 
 
-              {isBeta && (
-                <div className="pt-2 border-t border-violet-200/40">
-                  <p className="mb-2"><span className="inline-block text-[11px] px-2 py-0.5 rounded-full bg-gradient-to-r from-pink-200/70 via-violet-200/70 to-sky-200/70 text-violet-800">✦ Founding Beta {betaNum ? `#${betaNum}` : betaFull ? "(all 100 spots taken)" : ""}</span></p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const link = "https://butterflyeffect007.github.io/Wilson/?beta=1";
-                      const text = "Try Wilson — a calm AI companion. Open this link to join as a Founding Beta tester:\n" + link;
-                      if (navigator.share) {
-                        navigator.share({ title: "Wilson — Founding Beta", text, url: link }).catch(() => {});
-                      } else {
-                        navigator.clipboard.writeText(link).then(() => alert("Beta invite link copied. Send it to a friend.")).catch(() => prompt("Copy this beta invite link:", link));
-                      }
-                    }}
-                    className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800 mt-1.5"
-                  >
-                    Invite a beta tester
-                  </button>
-                </div>
-              )}
+              {betaNum && <p><span className="inline-block text-[12px] px-2 py-0.5 rounded-full bg-gradient-to-r from-pink-200/70 via-violet-200/70 to-sky-200/70 text-violet-800">✦ Founder #{betaNum} — one of Wilson's first 100</span></p>}
 
               {/* Voice + name settings (persisted locally) */}
               <div className="space-y-2">
@@ -956,9 +944,12 @@ export default function App() {
                   />
                 </label>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
-                  <input type="checkbox" checked={settings.voiceRecognition} onChange={(e) => setSettings((s) => ({ ...s, voiceRecognition: e.target.checked }))} />
+                  <input type="checkbox" checked={voiceId} onChange={(e) => { const on = e.target.checked; if (on) recordConsent("yes"); setSettings((s) => ({ ...s, voiceRecognition: on })); }} />
                   Know who's talking
                 </label>
+                {(voiceProfiles.length > 0 || voiceConsent) && (
+                  <button type="button" className="text-[12px] underline text-rose-500 text-left" onClick={() => { if (confirm("Erase the voice data Wilson saved on this device?")) eraseVoiceData(); }}>Erase my voice data</button>
+                )}
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input type="checkbox" checked={settings.emotionDetection} onChange={(e) => setSettings((s) => ({ ...s, emotionDetection: e.target.checked }))} />
                   Notice my mood
@@ -1084,7 +1075,7 @@ export default function App() {
                 className="relative mb-[clamp(2.5rem,8dvh,5rem)]"
               >
                 <div className="relative">
-                  <ErrorBoundary label="the orb" compact><WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={primePlayback} onLongPress={() => { if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (settings.voiceRecognition || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} /></ErrorBoundary>
+                  <ErrorBoundary label="the orb" compact><WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={primePlayback} onLongPress={() => { if (!stt.listening && stt.supported && settings.voiceRecognition && voiceConsent === null) { setAskVoiceConsent(true); return; } if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (voiceId || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} /></ErrorBoundary>
                 </div>
               </motion.div>
 
@@ -1246,7 +1237,7 @@ export default function App() {
 
         <div className="relative z-30 px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="max-w-lg mx-auto">
-            {settings.voiceRecognition && speaker && (speaker.isNew || correcting) && (
+            {voiceId && speaker && (speaker.isNew || correcting) && (
               <form onSubmit={(e) => { e.preventDefault(); correcting ? correctSpeaker(nameDraft) : nameSpeaker(nameDraft); }} className="flex items-center gap-2 mb-1.5 px-2 text-[12px] text-violet-700/80">
                 <span>{correcting ? "Who is this, then?" : "Who am I talking to?"}</span>
                 <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="Name" className="flex-1 min-w-0 rounded-full px-2 py-0.5 bg-white/70 border border-violet-200/60 outline-none" />
@@ -1254,7 +1245,7 @@ export default function App() {
                 <button type="button" onClick={() => { setSpeaker(null); setCorrecting(false); }} className="text-violet-400">✕</button>
               </form>
             )}
-            {settings.voiceRecognition && speaker && speakerProfile?.name && speaker.lowConfidence && !speaker.isNew && !correcting && (
+            {voiceId && speaker && speakerProfile?.name && speaker.lowConfidence && !speaker.isNew && !correcting && (
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">
                 I think this is {speakerProfile.name}?{" "}
                 <button type="button" className="underline" onClick={() => setSpeaker({ ...speaker, lowConfidence: false })}>Yes</button>{" · "}
@@ -1294,10 +1285,11 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  if (!stt.listening && settings.voiceRecognition && voiceConsent === null) { setAskVoiceConsent(true); return; }
                   primePlayback(); stopSpeaking();
                   const iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
                   // iOS can't share the mic between getUserMedia and speech recognition reliably: skip voice ID capture there
-                  if (!iOS && !stt.listening && (settings.voiceRecognition || settings.emotionDetection)) void startCapture().catch((e) => console.warn("[capture]", e));
+                  if (!iOS && !stt.listening && (voiceId || settings.emotionDetection)) void startCapture().catch((e) => console.warn("[capture]", e));
                   if (!iOS && stt.listening) setTimeout(() => void stopCapture(), 3000);
                   stt.toggle();
                 }}
