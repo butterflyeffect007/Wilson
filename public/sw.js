@@ -40,7 +40,7 @@ self.addEventListener("fetch", (e) => {
     );
     return;
   }
-  if (url.pathname.endsWith("/sw.js")) return;
+  if (url.pathname.endsWith("/sw.js") || url.pathname.endsWith("/version.json")) return;
   // Hashed assets, fonts, icons: cache-first; anything else same-origin: stale-while-revalidate.
   const immutable = url.pathname.includes("/assets/");
   e.respondWith(

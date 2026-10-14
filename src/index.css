@@ -551,3 +551,9 @@ html.dark .md-block-label { color: #f0abfc; }
 .md-table th { text-align: left; font-weight: 600; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: rgb(237 233 254 / .7); padding: .45em .7em; }
 .md-table td { padding: .4em .7em; border-top: 1px solid rgb(167 139 250 / .2); vertical-align: top; }
 html.dark .md-table th { background: rgb(76 29 149 / .35); color: #e9d5ff; }
+
+/* ===== Search highlights ===== */
+mark.wl-hit { background: rgb(253 224 71 / .55); color: inherit; border-radius: .2em; padding: 0 .05em; }
+mark.wl-hit-cur { background: rgb(251 146 60 / .85); box-shadow: 0 0 0 2px rgb(251 146 60 / .5); }
+html.dark mark.wl-hit { background: rgb(217 70 239 / .45); color: #fff; }
+html.dark mark.wl-hit-cur { background: rgb(250 204 21 / .9); color: #1a1033; box-shadow: 0 0 0 2px rgb(250 204 21 / .5); }

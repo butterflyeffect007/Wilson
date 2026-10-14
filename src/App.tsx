@@ -12,6 +12,7 @@ import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
+  Search as SearchIcon, ChevronUp, MessageSquareWarning,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import Backdrop from "./components/Backdrop";
@@ -22,7 +23,7 @@ import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonP
 import { composeRequest } from "./core/wilson/WilsonCore";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
-import { joinBeta, betaNumber } from "./lib/beta";
+import { joinBeta, betaNumber, APP_VERSION } from "./lib/beta";
 import Organizer, { type OrgTab } from "./components/Organizer";
 import { detectAction, runAction, checkDue, dueNow } from "./lib/organizer";
 import FeedbackSheet, { type FeedbackTarget } from "./components/FeedbackSheet";
@@ -121,6 +122,7 @@ export default function App() {
     const handle = (href: string) => {
       const open = new URL(href, location.href).searchParams.get("open");
       if (open === "reminders") { setOrgTab("reminders"); setDueBanner([]); }
+      if (open === "admin" && cachedIsAdmin()) setShowAdmin(true);
       if (open === "note") void fetchUnseenNote().then((n) => n && setAwayNote(n));
     };
     if (/[?&]open=/.test(location.search)) { handle(location.href); const u = new URL(location.href); u.searchParams.delete("open"); history.replaceState(null, "", u.pathname + u.search + u.hash); }
@@ -263,6 +265,26 @@ export default function App() {
   const busy = thinking || streamingId !== null;
   const activeThread = threads.find((t) => t.id === activeId) ?? null;
   const messages = activeThread?.messages ?? [];
+  /* ---------- search: in-thread find + thread-list filter ---------- */
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQ, setFindQ] = useState("");
+  const [findIdx, setFindIdx] = useState(0);
+  const [findCount, setFindCount] = useState(0);
+  const findTerm = findOpen && findQ.trim().length >= 2 ? findQ.trim() : "";
+  useEffect(() => {
+    const el = scrollRef.current; if (!el) return;
+    const hits = Array.from(el.querySelectorAll<HTMLElement>("mark.wl-hit"));
+    setFindCount(hits.length);
+    hits.forEach((h) => h.classList.remove("wl-hit-cur"));
+    if (!hits.length) return;
+    const i = ((findIdx % hits.length) + hits.length) % hits.length;
+    hits[i].classList.add("wl-hit-cur");
+    hits[i].scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [findTerm, findIdx, activeId, messages.length]);
+  useEffect(() => { setFindIdx(0); }, [findTerm, activeId]);
+  const [threadQ, setThreadQ] = useState("");
+  const tq = threadQ.trim().toLowerCase();
+  const shownThreads = tq ? threads.filter((t) => t.title.toLowerCase().includes(tq) || t.messages.some((m) => m.content.toLowerCase().includes(tq))) : threads;
   const displayName = settings.displayName || "";
 
   const hour = new Date().getHours();
@@ -691,12 +713,23 @@ export default function App() {
                 <button type="button" onClick={() => { setSidebarOpen(false); setOrgTab("notes"); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><StickyNote className="w-4 h-4" />Notes</button>
                 <button type="button" onClick={() => { setSidebarOpen(false); setOrgTab("reminders"); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><Bell className="w-4 h-4" />Reminders</button>
               </div>
+              <div className="px-3 pb-2">
+                <button type="button" onClick={() => { setSidebarOpen(false); setFeedback({ type: "problem" }); }} className="w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><MessageSquareWarning className="w-4 h-4" />Send feedback to Jenny</button>
+              </div>
               <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
+                <div className="px-1 pb-2">
+                  <div className="flex items-center gap-2 rounded-xl px-3 py-2 bg-white/60 border border-violet-200/60">
+                    <SearchIcon className="w-4 h-4 text-violet-400 shrink-0" />
+                    <input value={threadQ} onChange={(e) => setThreadQ(e.target.value)} placeholder="Search chats" aria-label="Search chats" className="flex-1 min-w-0 bg-transparent outline-none text-[15px] text-violet-950" />
+                    {threadQ && <button type="button" onClick={() => setThreadQ("")} aria-label="Clear search" className="text-violet-400"><X className="w-4 h-4" /></button>}
+                  </div>
+                </div>
                 {threads.length === 0 && <p className="text-[12px] text-violet-700/50 px-3 py-4">No threads yet.</p>}
-                {threads.map((t) => (
+                {tq && shownThreads.length === 0 && <p className="text-[13px] text-violet-700/60 px-3 py-3">No chats mention "{threadQ.trim()}".</p>}
+                {shownThreads.map((t) => (
                   <div
                     key={t.id}
-                    onClick={() => { setActiveId(t.id); setSidebarOpen(false); }}
+                    onClick={() => { setActiveId(t.id); setSidebarOpen(false); if (tq) { setFindQ(threadQ.trim()); setFindOpen(true); } }}
                     className={`group flex items-center gap-2 rounded-xl px-3 py-2.5 cursor-pointer text-[13px] text-violet-950/85 ${
                       t.id === activeId ? "bg-white/70" : "hover:bg-white/50"
                     }`}
@@ -768,6 +801,11 @@ export default function App() {
             <span className={`${activeThread ? "hidden min-[430px]:flex" : "flex"} items-center gap-1 px-1.5 py-0.5 rounded-full glass text-[8.5px] whitespace-nowrap text-violet-700/70`}>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Always with you
             </span>
+            {activeThread && activeThread.messages.length > 1 && (
+              <button type="button" onClick={() => { setFindOpen((o) => !o); }} className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Search this chat" title="Search this chat">
+                <SearchIcon className="w-[15px] h-[15px]" />
+              </button>
+            )}
             {activeThread && activeThread.messages.some((m) => m.role === "user") && (
               <button
                 type="button"
@@ -805,11 +843,53 @@ export default function App() {
                 <h3 className="text-sm font-semibold text-violet-950/90">Settings</h3>
                 <button type="button" onClick={() => setShowSettings(false)} className="text-violet-400 hover:text-violet-600" aria-label="Close settings"><X className="w-4 h-4" /></button>
               </div>
+              <div className="space-y-1.5">
+                <p className="text-[12px] text-violet-700/70">Tell Jenny what's working and what isn't — she reads every one.</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "problem" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-500 text-white">Report a problem</button>
+                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "suggestion" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Suggest an idea</button>
+                </div>
+                <p className="text-[11px] text-violet-500/70">Wilson {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
+              </div>
+              <div className="pt-2">
+                {isAdmin ? (
+                  <>
+                  <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
+                  <label className="flex items-start gap-2 text-[12px] text-violet-800/80 mt-2">
+                    <input type="checkbox" className="mt-0.5" checked={nightly} onChange={(e) => { const on = e.target.checked; setNightly(on); setNightlyOptIn(on); if (on) void syncLoops(loadStateOfYou().summary); }} />
+                    <span>Nightly notes — Wilson thinks about your open loops overnight and leaves you a short note. (Shares only your open loops with Wilson's server.)</span>
+                  </label>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-violet-200/60 p-3">
+                    <p className="text-[13px] text-violet-900/90 mb-2">✦ Architect access (Jenny)</p>
+                    <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const k = adminKeyDraft.trim(); if (!k) return; setAdminMsg("Checking…"); void verifyAdmin(k).then((ok) => { setAdminKeyDraft(""); if (ok) { setIsAdmin(true); setAdminMsg(null); setShowSettings(false); setShowAdmin(true); } else setAdminMsg(ok === null ? "Couldn't reach Wilson — try again." : "That key didn't work."); }); }}>
+                      <input type="password" autoComplete="off" aria-label="Architect key" value={adminKeyDraft} onChange={(e) => setAdminKeyDraft(e.target.value)} placeholder="Architect key" className="flex-1 min-w-0 rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none text-violet-950" />
+                      <button type="submit" className="px-3 py-2 rounded-xl bg-violet-500 text-white text-[13px]">Unlock</button>
+                    </form>
+                    {adminMsg && <p className="mt-1 text-[12px] text-violet-700/80">{adminMsg}</p>}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-violet-200/40 text-[13px] text-violet-800/90">
+                <label className="flex items-start gap-2">
+                  <input type="checkbox" className="mt-1" checked={pushOn} onChange={(e) => {
+                    const on = e.target.checked; setPushMsg(on ? "Turning on…" : null);
+                    if (on) void enablePush().then((err) => { setPushOn(!err); setPushMsg(err); });
+                    else void disablePush().then(() => setPushOn(false));
+                  }} />
+                  <span>Notifications from Wilson — reminders{isAdmin ? " and nightly notes" : ""}, even when the app is closed.</span>
+                </label>
+                {isIOS() && !isStandalone() && <p className="text-[12px] text-violet-700/70 mt-1 leading-[1.6]">On iPhone (iOS 16.4 or newer): tap Share → Add to Home Screen, open Wilson from the Home Screen, then turn this on.</p>}
+                {!pushSupported() && !isIOS() && <p className="text-[12px] text-violet-700/70 mt-1">This browser can't show notifications.</p>}
+                {pushMsg && <p className="text-[12px] text-violet-700/80 mt-1 leading-[1.6]">{pushMsg}</p>}
+              </div>
+
+
               {isBeta && (
                 <div className="pt-2 border-t border-violet-200/40">
                   <p className="mb-2"><span className="inline-block text-[11px] px-2 py-0.5 rounded-full bg-gradient-to-r from-pink-200/70 via-violet-200/70 to-sky-200/70 text-violet-800">✦ Founding Beta {betaNum ? `#${betaNum}` : betaFull ? "(all 100 spots taken)" : ""}</span></p>
-                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "problem" }); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Report a problem</button>
-                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "suggestion" }); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800 mt-1.5">Send a suggestion</button>
                   <button
                     type="button"
                     onClick={() => {
@@ -827,41 +907,6 @@ export default function App() {
                   </button>
                 </div>
               )}
-
-              <div className="pt-2 border-t border-violet-200/40">
-                {isAdmin ? (
-                  <>
-                  <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
-                  <label className="flex items-start gap-2 text-[12px] text-violet-800/80 mt-2">
-                    <input type="checkbox" className="mt-0.5" checked={nightly} onChange={(e) => { const on = e.target.checked; setNightly(on); setNightlyOptIn(on); if (on) void syncLoops(loadStateOfYou().summary); }} />
-                    <span>Nightly notes — Wilson thinks about your open loops overnight and leaves you a short note. (Shares only your open loops with Wilson's server.)</span>
-                  </label>
-                  </>
-                ) : (
-                  <details className="text-[12px] text-violet-700/70">
-                    <summary className="cursor-pointer select-none">Architect access</summary>
-                    <form className="flex gap-2 mt-2" onSubmit={(e) => { e.preventDefault(); const k = adminKeyDraft.trim(); if (!k) return; setAdminMsg("Checking…"); void verifyAdmin(k).then((ok) => { setAdminKeyDraft(""); if (ok) { setIsAdmin(true); setAdminMsg(null); } else setAdminMsg(ok === null ? "Couldn't reach Wilson — try again." : "That key didn't work."); }); }}>
-                      <input type="password" autoComplete="off" value={adminKeyDraft} onChange={(e) => setAdminKeyDraft(e.target.value)} placeholder="Architect key" className="flex-1 rounded-xl px-3 py-1.5 text-[13px] bg-white/70 border border-violet-200/60 outline-none text-violet-950" />
-                      <button type="submit" className="px-3 py-1.5 rounded-xl bg-violet-100/80 text-violet-800">Unlock</button>
-                    </form>
-                    {adminMsg && <p className="mt-1">{adminMsg}</p>}
-                  </details>
-                )}
-              </div>
-
-              <div className="pt-2 border-t border-violet-200/40 text-[13px] text-violet-800/90">
-                <label className="flex items-start gap-2">
-                  <input type="checkbox" className="mt-1" checked={pushOn} onChange={(e) => {
-                    const on = e.target.checked; setPushMsg(on ? "Turning on…" : null);
-                    if (on) void enablePush().then((err) => { setPushOn(!err); setPushMsg(err); });
-                    else void disablePush().then(() => setPushOn(false));
-                  }} />
-                  <span>Notifications from Wilson — reminders{isAdmin ? " and nightly notes" : ""}, even when the app is closed.</span>
-                </label>
-                {isIOS() && !isStandalone() && <p className="text-[12px] text-violet-700/70 mt-1 leading-[1.6]">On iPhone (iOS 16.4 or newer): tap Share → Add to Home Screen, open Wilson from the Home Screen, then turn this on.</p>}
-                {!pushSupported() && !isIOS() && <p className="text-[12px] text-violet-700/70 mt-1">This browser can't show notifications.</p>}
-                {pushMsg && <p className="text-[12px] text-violet-700/80 mt-1 leading-[1.6]">{pushMsg}</p>}
-              </div>
 
               {/* Voice + name settings (persisted locally) */}
               <div className="space-y-2">
@@ -988,6 +1033,18 @@ export default function App() {
       </AnimatePresence>
 
       <div className="flex-1 overflow-hidden flex flex-col relative z-10">
+        {findOpen && activeThread && (
+          <div className="relative z-20 px-4 pb-2">
+            <div className="max-w-2xl mx-auto flex items-center gap-2 rounded-2xl glass-strong px-3 py-2">
+              <SearchIcon className="w-4 h-4 text-violet-400 shrink-0" />
+              <input autoFocus value={findQ} onChange={(e) => setFindQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setFindIdx((i) => i + (e.shiftKey ? -1 : 1)); } if (e.key === "Escape") setFindOpen(false); }} placeholder="Find in this chat" aria-label="Find in this chat" className="flex-1 min-w-0 bg-transparent outline-none text-[16px] text-violet-950" />
+              <span className="text-[13px] text-violet-700/70 tabular-nums whitespace-nowrap" aria-live="polite">{findTerm ? (findCount ? `${(((findIdx % findCount) + findCount) % findCount) + 1} of ${findCount}` : "No matches") : ""}</span>
+              <button type="button" disabled={!findCount} onClick={() => setFindIdx((i) => i - 1)} aria-label="Previous match" className="p-1.5 rounded-full text-violet-500 disabled:opacity-30"><ChevronUp className="w-5 h-5" /></button>
+              <button type="button" disabled={!findCount} onClick={() => setFindIdx((i) => i + 1)} aria-label="Next match" className="p-1.5 rounded-full text-violet-500 disabled:opacity-30"><ChevronDown className="w-5 h-5" /></button>
+              <button type="button" onClick={() => { setFindOpen(false); setFindQ(""); }} aria-label="Close search" className="p-1.5 rounded-full text-violet-400"><X className="w-4 h-4" /></button>
+            </div>
+          </div>
+        )}
         <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4">
           {isHome ? (
             <div className="min-h-full flex flex-col items-center justify-center pt-[clamp(2rem,8dvh,5rem)] pb-10 max-w-md mx-auto">
@@ -1074,7 +1131,7 @@ export default function App() {
                       </span>
                     )}
                     <div className="text-violet-950/90 whitespace-pre-wrap break-words">
-                      <ErrorBoundary label="this message" compact><Markdown text={msg.content} /></ErrorBoundary>
+                      <ErrorBoundary label="this message" compact><Markdown text={msg.content} highlight={findTerm} /></ErrorBoundary>
                       {streamingId === msg.id && (
                         <span className="inline-block w-1.5 h-4 align-middle bg-violet-400/70 animate-pulse ml-0.5" />
                       )}

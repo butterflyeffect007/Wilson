@@ -1,15 +1,24 @@
 import React from "react";
 
 /** Instrument-grade markdown: headings, lists, quotes, tables, fenced code — no deps, no HTML injection. */
+let HL = ""; // active search term (set by <Markdown highlight>)
+const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function hl(t: string): React.ReactNode {
+  if (!HL) return t;
+  const parts = t.split(new RegExp(`(${esc(HL)})`, "gi"));
+  if (parts.length === 1) return t;
+  return parts.map((x, i) => (i % 2 ? <mark key={i} className="wl-hit">{x}</mark> : x));
+}
+
 export function renderInline(text: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g);
   return parts.map((p, i) => {
-    if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
-    if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
-    if (p.length > 2 && p.startsWith("`") && p.endsWith("`")) return <code key={i} className="md-code-inline">{p.slice(1, -1)}</code>;
+    if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{hl(p.slice(2, -2))}</strong>;
+    if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <em key={i}>{hl(p.slice(1, -1))}</em>;
+    if (p.length > 2 && p.startsWith("`") && p.endsWith("`")) return <code key={i} className="md-code-inline">{hl(p.slice(1, -1))}</code>;
     const link = p.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
     if (link) return <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" className="md-link">{link[1]}</a>;
-    return <React.Fragment key={i}>{p}</React.Fragment>;
+    return <React.Fragment key={i}>{hl(p)}</React.Fragment>;
   });
 }
 
@@ -17,7 +26,8 @@ const isTableRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
 const isSep = (l: string) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
 const cells = (l: string) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
 
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, highlight = "" }: { text: string; highlight?: string }) {
+  HL = highlight.trim().length >= 2 ? highlight.trim() : "";
   const lines = text.split("\n");
   const out: React.ReactNode[] = [];
   let i = 0, k = 0;
@@ -31,7 +41,7 @@ export function Markdown({ text }: { text: string }) {
       out.push(
         <div key={k++} className="md-block">
           {fence[1] && <div className="md-block-label">{fence[1]}</div>}
-          <pre><code>{body.join("\n")}</code></pre>
+          <pre><code>{hl(body.join("\n"))}</code></pre>
         </div>,
       );
       continue;
