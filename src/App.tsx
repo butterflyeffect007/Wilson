@@ -794,7 +794,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <Sparkles className="w-[18px] h-[18px] text-violet-400 wl-title" />
-            <h1 className="wl-title text-[19px] tracking-[0.28em] text-violet-900/80">WILSON</h1>
+            <h1 className="wl-title leading-none text-violet-900/80" aria-label="Wilson + The Only One"><span className="block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75">+ THE ONLY ONE</span></h1>
             {betaNum && (
               <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-600/80 tracking-wide" title={`Founder #${betaNum}`}>
                 {`β${betaNum}`}
@@ -884,7 +884,8 @@ export default function App() {
                 </div>
                 <button type="button" onClick={doShare} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
                 {!isInstalled() && <button type="button" onClick={() => { setShowSettings(false); setInstallOpen(true); }} className="w-full text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Add Wilson to your Home Screen</button>}
-                <p className="text-[11px] text-violet-500/70">Wilson {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
+                <p className="text-[12px] text-violet-700/80">Wilson + The Only One · <span className="italic">Imagination becomes intelligence™</span></p>
+                <p className="text-[11px] text-violet-500/70">Version {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
               </div>
               <div className="pt-2">
                 {isAdmin ? (

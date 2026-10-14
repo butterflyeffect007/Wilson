@@ -15,7 +15,7 @@ export function buildShowcaseHtml(title: string, messages: Msg[], userName: stri
 .w{max-width:680px;margin:0 auto;padding:32px 18px 48px}h1{font-weight:300;letter-spacing:.35em;text-align:center;margin:0 0 4px}
 .sub{text-align:center;opacity:.65;font-size:14px;margin-bottom:28px}.m{background:${card};backdrop-filter:blur(14px);border:1px solid rgba(167,139,250,.35);border-radius:18px;padding:14px 16px;margin:12px 0;line-height:1.6;max-width:88%}
 .m.user{margin-left:auto;background:${dark ? "rgba(88,28,135,.45)" : "rgba(237,233,254,.85)"}}.who{font-size:12px;letter-spacing:.06em;opacity:.6;margin-bottom:4px}
-.f{text-align:center;opacity:.55;font-size:12px;margin-top:28px}</style></head><body><div class="w"><h1>✦ WILSON</h1><div class="sub">${esc(title)}</div>${rows}
+.f{text-align:center;opacity:.55;font-size:12px;margin-top:28px}</style></head><body><div class="w"><h1>✦ WILSON + THE ONLY ONE</h1><div class="sub">${esc(title)}</div>${rows}
 <div class="f">Shared from Wilson · butterflyeffect007.github.io/Wilson</div></div></body></html>`;
 }
 
