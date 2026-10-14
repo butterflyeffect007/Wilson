@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Markdown } from "./components/Markdown";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import InstallCard, { isInstalled } from "./components/InstallCard";
 import { AdminPanel } from "./components/AdminPanel";
 import { cachedIsAdmin, verifyAdmin, nightlyOptIn, setNightlyOptIn, syncLoops, fetchUnseenNote, markNoteSeen } from "./lib/admin";
 import { useDebouncedSave } from "./lib/useDebouncedSave";
@@ -225,16 +226,10 @@ export default function App() {
   useEffect(() => subscribeVoiceStatus(setVoiceStatus), []);
   const [voiceDebug, setVoiceDebug] = useState<VoiceDebug>(() => getVoiceDebug());
   useEffect(() => subscribeVoiceDebug(setVoiceDebug), []);
-  const [showInstallHint, setShowInstallHint] = useState(() => {
-    try {
-      const ua = navigator.userAgent;
-      const iOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const safari = /Safari/.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
-      const standalone = (navigator as any).standalone === true || window.matchMedia("(display-mode: standalone)").matches;
-      return iOS && safari && !standalone && !localStorage.getItem("wilson_install_hint_seen");
-    } catch { return false; }
-  });
-  const dismissInstallHint = () => { setShowInstallHint(false); try { localStorage.setItem("wilson_install_hint_seen", "1"); } catch { /* ignore */ } };
+  /* Add-to-Home-Screen card: once, after Wilson's first reply (never before), hidden when installed. */
+  const [installOpen, setInstallOpen] = useState(false);
+  const [installSeen, setInstallSeen] = useState(() => { try { return !!localStorage.getItem("wilson_install_card_seen"); } catch { return true; } });
+  const dismissInstallHint = () => { setInstallOpen(false); setInstallSeen(true); try { localStorage.setItem("wilson_install_card_seen", "1"); } catch { /* ignore */ } };
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     try {
       const t = localStorage.getItem("wilson_theme");
@@ -282,6 +277,8 @@ export default function App() {
   const busy = thinking || streamingId !== null;
   const activeThread = threads.find((t) => t.id === activeId) ?? null;
   const messages = activeThread?.messages ?? [];
+  const hadFirstReply = messages.some((m, i) => m.role === "assistant" && messages.slice(0, i).some((u) => u.role === "user"));
+  const showInstallHint = installOpen || (!installSeen && hadFirstReply && !thinking && !streamingId && !isInstalled());
   /* ---------- search: in-thread find + thread-list filter ---------- */
   const [findOpen, setFindOpen] = useState(false);
   const [findQ, setFindQ] = useState("");
@@ -746,6 +743,7 @@ export default function App() {
               <div className="px-3 pb-2">
                 <button type="button" onClick={() => { setSidebarOpen(false); setFeedback({ type: "problem" }); }} className="w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><MessageSquareWarning className="w-4 h-4" />Send feedback to Jenny</button>
                 <button type="button" onClick={() => { setSidebarOpen(false); doShare(); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800 text-[14px]"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
+                {!isInstalled() && <button type="button" onClick={() => { setSidebarOpen(false); setInstallOpen(true); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]">Add to Home Screen</button>}
               </div>
               <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
                 <div className="px-1 pb-2">
@@ -885,6 +883,7 @@ export default function App() {
                   <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "suggestion" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Suggest an idea</button>
                 </div>
                 <button type="button" onClick={doShare} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
+                {!isInstalled() && <button type="button" onClick={() => { setShowSettings(false); setInstallOpen(true); }} className="w-full text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Add Wilson to your Home Screen</button>}
                 <p className="text-[11px] text-violet-500/70">Wilson {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
               </div>
               <div className="pt-2">
@@ -1255,12 +1254,7 @@ export default function App() {
             {settings.showHeard && settings.emotionDetection && heard && (
               <p className="mb-1 px-2 text-[11px] text-violet-500/60">Heard: {heard.tag} ({Math.round(heard.confidence * 100)}%)</p>
             )}
-            {showInstallHint && (
-              <div className="mb-2 mx-1 flex items-center gap-2 rounded-2xl glass px-3 py-2 text-[13px] text-violet-800/80">
-                <span className="flex-1">Add Wilson to your Home Screen: tap Share, then “Add to Home Screen”.</span>
-                <button type="button" onClick={dismissInstallHint} aria-label="Dismiss" className="text-violet-400"><X className="w-4 h-4" /></button>
-              </div>
-            )}
+            {showInstallHint && <InstallCard onClose={dismissInstallHint} />}
             {voiceStatus.state === "resting" && (
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting until 7 PM Central (daily free limit).</p>
             )}

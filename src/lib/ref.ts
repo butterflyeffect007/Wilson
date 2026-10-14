@@ -35,7 +35,7 @@ export async function shareApp(): Promise<"shared" | "copied" | "cancelled" | "f
   const link = `${APP_URL}?ref=${refCode()}`;
   const text = "I've been talking with Wilson — a warm, kind of brilliant AI companion who actually gets you. Free, no sign-up. Come meet him ✦";
   try {
-    if (navigator.share) { await navigator.share({ title: "Wilson", text, url: link }); void syncStars(true); return "shared"; }
+    if (navigator.share) { await navigator.share({ title: "Wilson", url: link }); /* URL only: iMessage shows the rich preview */ void syncStars(true); return "shared"; }
     await navigator.clipboard.writeText(`${text}\n${link}`); void syncStars(true); return "copied";
   } catch (e) {
     if ((e as Error)?.name === "AbortError") return "cancelled";
