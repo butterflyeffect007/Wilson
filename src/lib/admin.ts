@@ -23,6 +23,7 @@ export type Telemetry = {
   reports: { count: number; recent: { id: string; type: string; ts: string; message: string; beta: number | null; issue: string | null }[] };
   usage: Record<string, Record<string, number>>;
   config: { chat: string; voice: string };
+  referrals?: { shares: number; opens: number; sharers: number; top: { code: string; stars: number }[] };
 };
 export async function fetchTelemetry(): Promise<Telemetry | null> {
   try {

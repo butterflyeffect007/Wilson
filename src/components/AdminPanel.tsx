@@ -54,6 +54,10 @@ export function AdminPanel({ onClose, onSignOut }: { onClose: () => void; onSign
                 </div>
               ))}
             </section>
+            {t.referrals && <section>
+              <h4 className="md-h md-h4">Sharing</h4>
+              <p>{t.referrals.shares} shares · {t.referrals.opens} friends opened from a link · {t.referrals.sharers} people with stars{t.referrals.top.length ? ` · top: ${t.referrals.top.map((x) => `✦${x.stars}`).join(", ")}` : ""}</p>
+            </section>}
             <section>
               <h4 className="md-h md-h4">Newest testers</h4>
               <p>{t.beta.latest.length ? t.beta.latest.map((m) => `#${m.number} (${m.ts.slice(0, 10)})`).join(", ") : "None yet."}</p>

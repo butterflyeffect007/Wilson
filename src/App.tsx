@@ -12,7 +12,7 @@ import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
-  Search as SearchIcon, ChevronUp, MessageSquareWarning,
+  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import Backdrop from "./components/Backdrop";
@@ -24,6 +24,7 @@ import { composeRequest } from "./core/wilson/WilsonCore";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
 import { joinBeta, betaNumber, APP_VERSION } from "./lib/beta";
+import { shareApp, syncStars, starsSeen, markStarsSeen, creditReferral } from "./lib/ref";
 import Organizer, { type OrgTab } from "./components/Organizer";
 import { detectAction, runAction, checkDue, dueNow } from "./lib/organizer";
 import FeedbackSheet, { type FeedbackTarget } from "./components/FeedbackSheet";
@@ -188,6 +189,27 @@ export default function App() {
   }, []);
 
   const [betaNum, setBetaNum] = useState<number | null>(() => betaNumber());
+  /* ---------- Share Wilson + referral stars ---------- */
+  const [stars, setStars] = useState(() => starsSeen());
+  const [starMoment, setStarMoment] = useState<string | null>(null);
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+  useEffect(() => {
+    try { const ref = new URLSearchParams(location.search).get("ref"); if (ref) { void creditReferral(ref); const u = new URL(location.href); u.searchParams.delete("ref"); history.replaceState({}, "", u.toString()); } } catch { /* ignore */ }
+    const check = () => void syncStars().then((n) => {
+      if (n === null) return;
+      const seen = starsSeen();
+      if (n > seen) { setStarMoment(n - seen === 1 ? "A friend opened Wilson from your link — you earned a star ✦" : `${n - seen} friends opened Wilson from your link — you earned ${n - seen} stars ✦`); setTimeout(() => setStarMoment(null), 7000); }
+      markStarsSeen(n); setStars(n);
+    });
+    if (localStorage.getItem("wilson_ref_code")) check();
+    const vis = () => { if (document.visibilityState === "visible" && localStorage.getItem("wilson_ref_code")) check(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => document.removeEventListener("visibilitychange", vis);
+  }, []);
+  const doShare = () => void shareApp(localStorage.getItem("wilson_beta") === "1").then((r) => {
+    const m = r === "shared" ? "Thank you for sharing Wilson ✦ You'll earn a star when your friend opens it." : r === "copied" ? "Link copied — paste it to a friend. You'll earn a star when they open it ✦" : r === "failed" ? "Couldn't share right now — try again." : null;
+    setShareMsg(m); if (m) setTimeout(() => setShareMsg(null), 5000);
+  });
   const [betaFull, setBetaFull] = useState(false);
   useEffect(() => { if (isBeta && !betaNumber()) void joinBeta().then((n) => { if (typeof n === "number") setBetaNum(n); else if (n === "full") setBetaFull(true); }); }, [isBeta]);
   const [feedback, setFeedback] = useState<FeedbackTarget | null>(null);
@@ -677,6 +699,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {(starMoment || shareMsg) && <div role="status" className="fixed top-14 left-1/2 -translate-x-1/2 z-[61] glass-strong rounded-2xl px-4 py-2.5 text-[14px] text-violet-900 shadow-lg max-w-[92vw] text-center">{starMoment ?? shareMsg}</div>}
       {globalWarn && <div role="status" className="wl-warn fixed top-3 left-1/2 -translate-x-1/2 z-[60] rounded-full px-4 py-2 text-[13px] shadow-lg">{globalWarn}</div>}
 
       {/* Threads drawer (existing glass styling) */}
@@ -715,6 +738,7 @@ export default function App() {
               </div>
               <div className="px-3 pb-2">
                 <button type="button" onClick={() => { setSidebarOpen(false); setFeedback({ type: "problem" }); }} className="w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><MessageSquareWarning className="w-4 h-4" />Send feedback to Jenny</button>
+                <button type="button" onClick={() => { setSidebarOpen(false); doShare(); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800 text-[14px]"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
               </div>
               <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
                 <div className="px-1 pb-2">
@@ -771,6 +795,7 @@ export default function App() {
                 {betaNum ? `β${betaNum}` : "β"}
               </span>
             )}
+            {stars > 0 && <span className="text-[11px] text-amber-500 tracking-wide" title={`${stars} friend${stars === 1 ? "" : "s"} joined from your link`} aria-label={`${stars} stars`}>✦{stars > 1 ? stars : ""}</span>}
             {isAdmin && (
               <button type="button" onClick={() => setShowAdmin(true)} className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-500/20 via-violet-500/20 to-amber-400/25 text-violet-700/90 tracking-wide" title="Architect view">
                 ARCHITECT
@@ -801,6 +826,9 @@ export default function App() {
             <span className={`${activeThread ? "hidden min-[430px]:flex" : "flex"} items-center gap-1 px-1.5 py-0.5 rounded-full glass text-[8.5px] whitespace-nowrap text-violet-700/70`}>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Always with you
             </span>
+            <button type="button" onClick={doShare} className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Share Wilson with a friend" title="Share Wilson with a friend">
+              <Gift className="w-[15px] h-[15px]" />
+            </button>
             {activeThread && activeThread.messages.length > 1 && (
               <button type="button" onClick={() => { setFindOpen((o) => !o); }} className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Search this chat" title="Search this chat">
                 <SearchIcon className="w-[15px] h-[15px]" />
@@ -849,6 +877,7 @@ export default function App() {
                   <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "problem" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-500 text-white">Report a problem</button>
                   <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "suggestion" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Suggest an idea</button>
                 </div>
+                <button type="button" onClick={doShare} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
                 <p className="text-[11px] text-violet-500/70">Wilson {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
               </div>
               <div className="pt-2">
