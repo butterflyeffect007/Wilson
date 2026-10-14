@@ -168,7 +168,7 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
     return (
       <div
         ref={ref}
-        className={`wilson-orb-shell wilson-orb-shell--${intensity} ${sizeMap[size]} relative flex-shrink-0`}
+        className={`wilson-orb-shell wilson-orb-shell--${intensity} wilson-orb-size-${size} ${sizeMap[size]} relative flex-shrink-0`}
         style={
           {
             "--wilson-vibe-hue": `${vibeHue[vibe]}`,

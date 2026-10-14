@@ -40,6 +40,7 @@ export interface WilsonSettings {
   showHeard: boolean;
   dyslexiaFont: boolean;
   suggestions: boolean;
+  wakeWord?: boolean;
 }
 
 const LEGACY_CONVO_KEY = "wilson_conversation_v1";

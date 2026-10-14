@@ -4,7 +4,10 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import InstallCard, { isInstalled } from "./components/InstallCard";
 import { AdminPanel } from "./components/AdminPanel";
 import { cachedIsAdmin, verifyAdmin, nightlyOptIn, setNightlyOptIn, syncLoops, fetchUnseenNote, markNoteSeen } from "./lib/admin";
+import { emitRipple } from "./lib/listeningBus";
 import { useDebouncedSave } from "./lib/useDebouncedSave";
+import { wakeSupport, startWake, stopWake, pauseWake } from "./lib/wakeWord";
+import { useWilsonAudio } from "./hooks/useWilsonAudio";
 import { enablePush, disablePush, pushEnabled, pushSupported, isIOS, isStandalone, startReminderSync } from "./lib/push";
 import { loadStateOfYou, recordUserTurn, recordVibe, buildStateOfYouContext, maybeRefreshStateOfYou, editStateSummary, clearStateOfYou, localSignals, type StateOfYou } from "./lib/stateOfYou";
 import { subscribeSaving } from "./lib/saveBus";
@@ -37,7 +40,6 @@ import {
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
 import { startSpeechStream, speakMessage, voiceTest, subscribeVoiceDebug, getVoiceDebug, type VoiceDebug, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
-import { emitRipple } from "./lib/listeningBus";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
 import { identify, loadProfiles, saveProfiles, renameProfile, mergeProfiles, splitLast, DEFAULT_THRESHOLD, type SpeakerProfile } from "./lib/speakerMatch";
@@ -111,6 +113,7 @@ export default function App() {
   const [adminMsg, setAdminMsg] = useState<string | null>(null);
   useEffect(() => { if (cachedIsAdmin()) void verifyAdmin().then((ok) => { if (ok !== null) setIsAdmin(ok); }); }, []);
   const anchorTurnRef = useRef(0);
+  const wakeSpeakRef = useRef(false);
   const [soy, setSoy] = useState<StateOfYou>(() => loadStateOfYou());
   const [soyOpen, setSoyOpen] = useState(false);
   const [nightly, setNightly] = useState(() => nightlyOptIn());
@@ -438,7 +441,8 @@ export default function App() {
         });
       };
 
-      const speech = settings.voiceEnabled ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"]) : null;
+      const speakIt = settings.voiceEnabled || wakeSpeakRef.current; wakeSpeakRef.current = false;
+      const speech = speakIt ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"]) : null;
       let attempt = 0;
       for (;;) {
         try {
@@ -646,6 +650,24 @@ export default function App() {
   }, [speaker]);
   const onInterimSpeech = useCallback((t: string) => setInput(t), []);
   const stt = useSpeechToText(onFinalSpeech, onInterimSpeech);
+
+  /* ---------- "Hey Wilson" wake word (foreground, opt-in) ---------- */
+  const { speaking: wilsonSpeaking } = useWilsonAudio();
+  const wakeOk = wakeSupport();
+  const wakeOn = !!settings.wakeWord && wakeOk.ok;
+  const wakeCtx = useRef({ onFinalSpeech, stt });
+  wakeCtx.current = { onFinalSpeech, stt };
+  useEffect(() => {
+    if (!wakeOn) { stopWake(); return; }
+    startWake((rest) => {
+      emitRipple();
+      wakeSpeakRef.current = true;
+      if (rest) void wakeCtx.current.onFinalSpeech(rest);
+      else wakeCtx.current.stt.start();
+    });
+    return () => stopWake();
+  }, [wakeOn]);
+  useEffect(() => { if (wakeOn) pauseWake(stt.listening || wilsonSpeaking || thinking); }, [wakeOn, stt.listening, wilsonSpeaking, thinking]);
 
   /* ---------- global shortcuts ---------- */
   useEffect(() => {
@@ -950,6 +972,22 @@ export default function App() {
                 {(voiceProfiles.length > 0 || voiceConsent) && (
                   <button type="button" className="text-[12px] underline text-rose-500 text-left" onClick={() => { if (confirm("Erase the voice data Wilson saved on this device?")) eraseVoiceData(); }}>Erase my voice data</button>
                 )}
+                <label className={`flex items-start gap-2 text-[12px] ${wakeOk.ok ? "text-violet-800/80" : "text-violet-800/40"}`}>
+                  <input type="checkbox" className="mt-0.5" disabled={!wakeOk.ok} checked={wakeOn} onChange={(e) => { const on = e.target.checked; if (on && voiceConsent === null) setAskVoiceConsent(true); setSettings((s) => ({ ...s, wakeWord: on })); }} />
+                  <span>Listen for “Hey Wilson” (while Wilson is open on screen){wakeOk.ok ? " — uses your browser's speech recognition; in Chrome, Google processes the audio." : ""}</span>
+                </label>
+                {!wakeOk.ok && <p className="text-[12px] text-violet-700/70 leading-[1.6]">{wakeOk.reason}</p>}
+                <details className="text-[12px] text-violet-800/80 leading-[1.7]">
+                  <summary className="cursor-pointer select-none">Use Siri to open Wilson (iPhone)</summary>
+                  <ol className="list-decimal pl-5 mt-1 space-y-0.5">
+                    <li>Open the <b>Shortcuts</b> app.</li>
+                    <li>Tap <b>+</b> to make a new shortcut.</li>
+                    <li>Tap <b>Add Action</b>, search <b>Open URLs</b>, and add it.</li>
+                    <li>Set the URL to <b>https://butterflyeffect007.github.io/Wilson/</b></li>
+                    <li>Name the shortcut <b>Wilson</b> and tap Done.</li>
+                    <li>Now say <b>“Hey Siri, Wilson”</b> to open him.</li>
+                  </ol>
+                </details>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input type="checkbox" checked={settings.emotionDetection} onChange={(e) => setSettings((s) => ({ ...s, emotionDetection: e.target.checked }))} />
                   Notice my mood

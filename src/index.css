@@ -557,3 +557,7 @@ mark.wl-hit { background: rgb(253 224 71 / .55); color: inherit; border-radius: 
 mark.wl-hit-cur { background: rgb(251 146 60 / .85); box-shadow: 0 0 0 2px rgb(251 146 60 / .5); }
 html.dark mark.wl-hit { background: rgb(217 70 239 / .45); color: #fff; }
 html.dark mark.wl-hit-cur { background: rgb(250 204 21 / .9); color: #1a1033; box-shadow: 0 0 0 2px rgb(250 204 21 / .5); }
+
+/* ===== "Hey Wilson" armed: tiny breathing dot on the orb ===== */
+body.wl-wake-armed .wilson-orb-size-lg .wilson-orb-float::after, body.wl-wake-armed .wilson-orb-size-mdx .wilson-orb-float::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 6px; height: 6px; margin-left: -3px; border-radius: 9999px;
+  background: hsl(var(--wilson-vibe-hue, 290) 85% 65%); box-shadow: 0 0 8px hsl(var(--wilson-vibe-hue, 290) 85% 65%); animation: wl-tele 2.4s ease-in-out infinite; pointer-events: none; }
