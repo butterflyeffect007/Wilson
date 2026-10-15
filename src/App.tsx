@@ -702,7 +702,7 @@ export default function App() {
         </div>
       )}
       {feedback && <ErrorBoundary label="feedback" compact><FeedbackSheet target={feedback} onClose={() => setFeedback(null)} /></ErrorBoundary>}
-      {showAdmin && isAdmin && <ErrorBoundary label="Architect view"><AdminPanel onClose={() => setShowAdmin(false)} onSignOut={() => { setIsAdmin(false); setShowAdmin(false); }} /></ErrorBoundary>}
+      {showAdmin && isAdmin && <ErrorBoundary label="Architect view"><AdminPanel messages={activeThread?.messages ?? []} busy={busy} onSend={(x) => void sendMessage(x)} onClose={() => setShowAdmin(false)} onSignOut={() => { setIsAdmin(false); setShowAdmin(false); }} /></ErrorBoundary>}
       {awayNote && (
         <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[55] w-[min(92vw,30rem)] glass-strong rounded-2xl px-4 py-3 shadow-lg text-[15px] leading-[1.65] text-violet-950/90">
           <div className="text-[11px] tracking-[0.12em] text-violet-500 mb-1">WHILE YOU WERE AWAY</div>
