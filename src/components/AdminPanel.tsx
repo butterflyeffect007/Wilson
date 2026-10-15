@@ -24,7 +24,7 @@ export function AdminPanel({ onClose, onSignOut }: { onClose: () => void; onSign
         {t && (
           <div className="space-y-4 text-[13px]">
             <div className="grid grid-cols-3 gap-2">
-              <Stat label="Founders" value={`${t.beta.count}/${t.beta.limit}`} />
+              <Stat label="OG 100" value={`${t.beta.count}/${t.beta.limit}`} />
               <Stat label="Reports" value={String(t.reports.count)} />
               <Stat label="Last model (you)" value={lastModel.replace(/^.*\//, "")} small />
             </div>
@@ -59,7 +59,7 @@ export function AdminPanel({ onClose, onSignOut }: { onClose: () => void; onSign
               <p>{t.referrals.shares} shares · {t.referrals.opens} friends opened from a link · {t.referrals.sharers} people with stars{t.referrals.top.length ? ` · top: ${t.referrals.top.map((x) => `✦${x.stars}`).join(", ")}` : ""}</p>
             </section>}
             <section>
-              <h4 className="md-h md-h4">Founders roster ({t.beta.count}/{t.beta.limit})</h4>
+              <h4 className="md-h md-h4">OG 100 roster ({t.beta.count}/{t.beta.limit})</h4>
               {(t.beta.roster ?? t.beta.latest).length ? (
                 <div className="md-table-wrap max-h-56 overflow-y-auto"><table className="md-table"><thead><tr><th>#</th><th>Joined</th></tr></thead>
                   <tbody>{[...(t.beta.roster ?? t.beta.latest)].sort((a, b) => a.number - b.number).map((m) => <tr key={m.number}><td>{m.number}</td><td>{new Date(m.ts).toLocaleString()}</td></tr>)}</tbody></table></div>

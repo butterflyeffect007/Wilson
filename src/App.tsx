@@ -764,6 +764,10 @@ export default function App() {
               </div>
               <div className="px-3 pb-2">
                 <button type="button" onClick={() => { setSidebarOpen(false); setFeedback({ type: "problem" }); }} className="w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><MessageSquareWarning className="w-4 h-4" />Send feedback to Jenny</button>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={() => { setSidebarOpen(false); setShowSettings(true); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 bg-white/50 text-violet-800 text-[14px]"><SettingsIcon className="w-4 h-4" />Settings</button>
+                  <button type="button" onClick={() => { setSidebarOpen(false); if (isAdmin) setShowAdmin(true); else { setShowSettings(true); setTimeout(() => (document.querySelector('[aria-label="Architect key"]') as HTMLInputElement | null)?.focus(), 300); } }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 bg-white/50 text-violet-800 text-[14px]">✦ Architect access</button>
+                </div>
                 <button type="button" onClick={() => { setSidebarOpen(false); doShare(); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800 text-[14px]"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
                 {!isInstalled() && <button type="button" onClick={() => { setSidebarOpen(false); setInstallOpen(true); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]">Add to Home Screen</button>}
               </div>
@@ -802,84 +806,73 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <header className="relative z-10 px-4 pt-[max(1.25rem,env(safe-area-inset-top))] pb-2 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-        <div className="max-w-lg mx-auto grid grid-cols-[1fr_auto_1fr] items-center">
-          <div className="flex items-center">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen(true)}
-              className="p-1.5 -ml-1.5 rounded-full text-violet-500/70 hover:bg-violet-50/80 touch-manipulation"
-              aria-label="Open threads"
-            >
-              <Menu className="w-[18px] h-[18px]" />
-            </button>
+      <header className="relative z-10 pt-[max(0.75rem,env(safe-area-inset-top))] pb-1 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]">
+        <div className="max-w-lg mx-auto flex items-center gap-2">
+          <button type="button" onClick={() => setSidebarOpen(true)} className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Open menu">
+            <Menu className="w-[22px] h-[22px]" />
+          </button>
+          <div className="flex-1 min-w-0 flex items-center justify-center gap-2">
+            <Sparkles className="shrink-0 w-[18px] h-[18px] text-violet-400 wl-title" />
+            <h1 className="wl-title leading-none text-violet-900/80 min-w-0" aria-label="Wilson + The Only One"><span className="block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></h1>
           </div>
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-[18px] h-[18px] text-violet-400 wl-title" />
-            <h1 className="wl-title leading-none text-violet-900/80" aria-label="Wilson + The Only One"><span className="block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75">+ THE ONLY ONE</span></h1>
+          <button type="button" onClick={() => setShowSettings((v) => !v)} className="shrink-0 min-w-11 h-11 px-1 flex flex-col items-center justify-center rounded-2xl text-violet-600/90 hover:bg-violet-50/80 touch-manipulation" aria-label="Settings" title="Settings">
+            <SettingsIcon className="w-[20px] h-[20px]" />
+            <span className="text-[9px] leading-none mt-0.5 tracking-wide">Settings</span>
+          </button>
+        </div>
+        <div className="max-w-lg mx-auto mt-1 flex items-center justify-between gap-1 flex-wrap">
+          <div className="flex items-center gap-1.5 min-w-0">
             {betaNum && (
-              <span className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-600/80 tracking-wide" title={`Founder #${betaNum}`}>
-                {`β${betaNum}`}
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-700/90 tracking-wide whitespace-nowrap" title={`OG 100 #${betaNum}`}>
+                {`OG·${betaNum}`}
               </span>
             )}
-            {stars > 0 && <span className="text-[11px] text-amber-500 tracking-wide" title={`${stars} friend${stars === 1 ? "" : "s"} joined from your link`} aria-label={`${stars} stars`}>✦{stars > 1 ? stars : ""}</span>}
+            {stars > 0 && <span className="text-[12px] text-amber-500 tracking-wide" title={`${stars} friend${stars === 1 ? "" : "s"} joined from your link`} aria-label={`${stars} stars`}>✦{stars > 1 ? stars : ""}</span>}
             {isAdmin && (
-              <button type="button" onClick={() => setShowAdmin(true)} className="text-[8.5px] px-1.5 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-500/20 via-violet-500/20 to-amber-400/25 text-violet-700/90 tracking-wide" title="Architect view">
+              <button type="button" onClick={() => setShowAdmin(true)} className="text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-500/20 via-violet-500/20 to-amber-400/25 text-violet-700/90 tracking-wide" title="Architect view">
                 ARCHITECT
               </button>
             )}
           </div>
-          <div className="flex items-center justify-end gap-0.5 -mr-1.5">
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="wl-theme-toggle relative w-[23px] h-[23px] rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
-              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              title={theme === "dark" ? "Light theme" : "Dark theme"}
-              data-theme={theme}
-            >
-              <Sun className="wl-tt-sun absolute inset-0 m-auto w-[15px] h-[15px]" />
-              <Moon className="wl-tt-moon absolute inset-0 m-auto w-[15px] h-[15px]" />
-            </button>
-            <button
-              type="button"
-              onClick={() => { primePlayback(); if (settings.voiceEnabled) stopSpeaking(); setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled })); }}
-              className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
-              aria-label={settings.voiceEnabled ? "Mute Wilson's voice" : "Turn on Wilson's voice"}
-              title={settings.voiceEnabled ? "Voice on" : "Voice off"}
-            >
-              {settings.voiceEnabled ? <Volume2 className="w-[15px] h-[15px]" /> : <VolumeX className="w-[15px] h-[15px]" />}
-            </button>
-            <span className={`${activeThread ? "hidden min-[430px]:flex" : "flex"} items-center gap-1 px-1.5 py-0.5 rounded-full glass text-[8.5px] whitespace-nowrap text-violet-700/70`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />Always with you
-            </span>
-            <button type="button" onClick={doShare} className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Share Wilson with a friend" title="Share Wilson with a friend">
-              <Gift className="w-[15px] h-[15px]" />
-            </button>
+          <div className="flex items-center gap-0.5 ml-auto">
             {activeThread && activeThread.messages.length > 1 && (
-              <button type="button" onClick={() => { setFindOpen((o) => !o); }} className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Search this chat" title="Search this chat">
-                <SearchIcon className="w-[15px] h-[15px]" />
+              <button type="button" onClick={() => { setFindOpen((o) => !o); }} className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Search this chat" title="Search this chat">
+                <SearchIcon className="w-[18px] h-[18px]" />
               </button>
             )}
             {activeThread && activeThread.messages.some((m) => m.role === "user") && (
               <button
                 type="button"
                 onClick={() => void shareChat(activeThread.title, activeThread.messages, displayName, document.documentElement.classList.contains("dark")).then((r) => { if (r === "downloaded") { setShareNote("Saved as a web page"); setTimeout(() => setShareNote(null), 2500); } })}
-                className="p-1 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+                className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
                 aria-label="Share this conversation"
                 title={shareNote ?? "Share"}
               >
-                {shareNote ? <Check className="w-[15px] h-[15px]" /> : <Share2 className="w-[15px] h-[15px]" />}
+                {shareNote ? <Check className="w-[18px] h-[18px]" /> : <Share2 className="w-[18px] h-[18px]" />}
               </button>
             )}
+            <button type="button" onClick={doShare} className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Share Wilson with a friend" title="Share Wilson with a friend">
+              <Gift className="w-[18px] h-[18px]" />
+            </button>
             <button
               type="button"
-              onClick={() => setShowSettings((v) => !v)}
-              className="p-1 rounded-full text-violet-400/70 hover:bg-violet-50/80 touch-manipulation"
-              aria-label="Settings"
-              title="Settings"
+              onClick={() => { primePlayback(); if (settings.voiceEnabled) stopSpeaking(); setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled })); }}
+              className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+              aria-label={settings.voiceEnabled ? "Mute Wilson's voice" : "Turn on Wilson's voice"}
+              title={settings.voiceEnabled ? "Voice on" : "Voice off"}
             >
-              <SettingsIcon className="w-[15px] h-[15px]" />
+              {settings.voiceEnabled ? <Volume2 className="w-[18px] h-[18px]" /> : <VolumeX className="w-[18px] h-[18px]" />}
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="wl-theme-toggle relative w-9 h-9 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={theme === "dark" ? "Light theme" : "Dark theme"}
+              data-theme={theme}
+            >
+              <Sun className="wl-tt-sun absolute inset-0 m-auto w-[18px] h-[18px]" />
+              <Moon className="wl-tt-moon absolute inset-0 m-auto w-[18px] h-[18px]" />
             </button>
           </div>
         </div>
@@ -898,18 +891,7 @@ export default function App() {
                 <h3 className="text-sm font-semibold text-violet-950/90">Settings</h3>
                 <button type="button" onClick={() => setShowSettings(false)} className="text-violet-400 hover:text-violet-600" aria-label="Close settings"><X className="w-4 h-4" /></button>
               </div>
-              <div className="space-y-1.5">
-                <p className="text-[12px] text-violet-700/70">Tell Jenny what's working and what isn't — she reads every one.</p>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "problem" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-500 text-white">Report a problem</button>
-                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "suggestion" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Suggest an idea</button>
-                </div>
-                <button type="button" onClick={doShare} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
-                {!isInstalled() && <button type="button" onClick={() => { setShowSettings(false); setInstallOpen(true); }} className="w-full text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Add Wilson to your Home Screen</button>}
-                <p className="text-[12px] text-violet-700/80">Wilson + The Only One · <span className="italic">Imagination becomes intelligence™</span></p>
-                <p className="text-[11px] text-violet-500/70">Version {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
-              </div>
-              <div className="pt-2">
+              <div>
                 {isAdmin ? (
                   <>
                   <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
@@ -930,6 +912,18 @@ export default function App() {
                 )}
               </div>
 
+
+              <div className="space-y-1.5">
+                <p className="text-[12px] text-violet-700/70">Tell Jenny what's working and what isn't — she reads every one.</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "problem" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-500 text-white">Report a problem</button>
+                  <button type="button" onClick={() => { setShowSettings(false); setFeedback({ type: "suggestion" }); }} className="flex-1 text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Suggest an idea</button>
+                </div>
+                <button type="button" onClick={doShare} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
+                {!isInstalled() && <button type="button" onClick={() => { setShowSettings(false); setInstallOpen(true); }} className="w-full text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Add Wilson to your Home Screen</button>}
+                <p className="text-[12px] text-violet-700/80">Wilson + The Only One · <span className="italic">Imagination becomes intelligence™</span></p>
+                <p className="text-[11px] text-violet-500/70">Version {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
+              </div>
               <div className="pt-2 border-t border-violet-200/40 text-[13px] text-violet-800/90">
                 <label className="flex items-start gap-2">
                   <input type="checkbox" className="mt-1" checked={pushOn} onChange={(e) => {
@@ -945,7 +939,7 @@ export default function App() {
               </div>
 
 
-              {betaNum && <p><span className="inline-block text-[12px] px-2 py-0.5 rounded-full bg-gradient-to-r from-pink-200/70 via-violet-200/70 to-sky-200/70 text-violet-800">✦ Founder #{betaNum} — one of Wilson's first 100</span></p>}
+              {betaNum && <p><span className="inline-block text-[12px] px-2 py-0.5 rounded-full bg-gradient-to-r from-pink-200/70 via-violet-200/70 to-sky-200/70 text-violet-800">✦ OG 100 #{betaNum}, one of Wilson's first 100</span></p>}
 
               {/* Voice + name settings (persisted locally) */}
               <div className="space-y-2">
