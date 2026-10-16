@@ -8,7 +8,7 @@ import type { ModelAdapter } from "../ModelAdapter";
 export type ToolName =
   | "apod" | "donki" | "asteroids" | "mars" | "cern" | "launches" | "spacex" | "iss"
   | "starlink" | "swpc" | "quakes" | "weather" | "wikipedia" | "arxiv"
-  | "country" | "fx" | "books" | "news" | "place";
+  | "country" | "fx" | "books" | "news" | "place" | "web";
 export interface ToolCall { name: ToolName; params?: Record<string, string> }
 export interface ToolSource { title: string; url: string }
 export interface ToolResult { name: ToolName; ok: boolean; data?: unknown; sources: ToolSource[]; error?: string }
@@ -32,6 +32,7 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   fx: "Currency exchange rates, ECB reference (params: q = base ISO code e.g. USD, to = comma ISO codes e.g. EUR,JPY)",
   books: "Open Library book/author search (params: q)",
   news: "Recent tech headlines (Hacker News) + space news; optional topic (params: q). Not general world news.",
+  web: "General web search (Brave) — ONLY for open-web/current questions no other tool covers (params: q = concise search query)",
   place: "Find a place/address on OpenStreetMap: coordinates + map link (params: q)",
 };
 
@@ -102,6 +103,7 @@ export async function runTool(baseUrl: string, call: ToolCall, location?: { lat:
 
 /** Formats tool output as system context for the final answer, with citation instructions. */
 export function toolContext(results: ToolResult[]): string {
+  results = results.filter((r) => !(r.name === "web" && /not configured/.test(r.error ?? ""))); // inert until BRAVE_API_KEY is set
   if (!results.length) return "";
   const body = results.map((r) => r.ok
     ? `[${r.name}] ${JSON.stringify(r.data).slice(0, 2500)}\nSources: ${r.sources.slice(0, 3).map((s) => `${s.title} <${s.url}>`).join("; ")}`
