@@ -58,7 +58,11 @@ export class OpenRouterAdapter implements ModelAdapter {
   }
 
   private headers(): Record<string, string> {
-    if (this.url !== OPENROUTER_URL) return { "Content-Type": "application/json" };
+    if (this.url !== OPENROUTER_URL) {
+      // Architect device: send the admin key so the worker can attach live app stats (verified server-side).
+      let k = ""; try { if (localStorage.getItem("wilson_is_admin") === "1") k = localStorage.getItem("wilson_architect_key") || ""; } catch { /* ignore */ }
+      return k ? { "Content-Type": "application/json", Authorization: `Bearer ${k}` } : { "Content-Type": "application/json" };
+    }
     return {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
