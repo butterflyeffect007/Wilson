@@ -7,7 +7,8 @@ import type { ModelAdapter } from "../ModelAdapter";
 
 export type ToolName =
   | "apod" | "donki" | "asteroids" | "mars" | "cern" | "launches" | "spacex" | "iss"
-  | "starlink" | "swpc" | "quakes" | "weather" | "wikipedia" | "arxiv";
+  | "starlink" | "swpc" | "quakes" | "weather" | "wikipedia" | "arxiv"
+  | "country" | "fx" | "books" | "news" | "place";
 export interface ToolCall { name: ToolName; params?: Record<string, string> }
 export interface ToolSource { title: string; url: string }
 export interface ToolResult { name: ToolName; ok: boolean; data?: unknown; sources: ToolSource[]; error?: string }
@@ -27,6 +28,11 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   weather: "Open-Meteo weather forecast (params: place)",
   wikipedia: "Wikipedia search + summary (params: q)",
   arxiv: "arXiv paper search (params: q)",
+  country: "Country facts from Wikidata: population, capital, area, currency (params: q = English country name, e.g. Japan)",
+  fx: "Currency exchange rates, ECB reference (params: q = base ISO code e.g. USD, to = comma ISO codes e.g. EUR,JPY)",
+  books: "Open Library book/author search (params: q)",
+  news: "Recent tech headlines (Hacker News) + space news; optional topic (params: q). Not general world news.",
+  place: "Find a place/address on OpenStreetMap: coordinates + map link (params: q)",
 };
 
 const RULES: [RegExp, (m: string) => ToolCall][] = [
@@ -42,6 +48,8 @@ const RULES: [RegExp, (m: string) => ToolCall][] = [
   [/\b(earthquakes?|quakes?|seismic)\b/i, () => ({ name: "quakes" })],
   [/\bcern\b|\blhc\b|\b(cms|atlas|alice|lhcb) (data|dataset)/i, (m) => ({ name: "cern", params: { q: topic(m, /\b(cern|open data|data(sets?)?|search|find|on|about|for|the)\b/gi) || "higgs" } })],
   [/\barxiv\b|\b(papers?|preprints?|research) (on|about)\b/i, (m) => ({ name: "arxiv", params: { q: topic(m, /\b(arxiv|papers?|preprints?|research|latest|recent|find|search|on|about|any|me|show)\b/gi) } })],
+  [/\b(news|headlines)\b/i, (m) => ({ name: "news", params: (() => { const q = topic(m, /\b(news|headlines|latest|recent|today|about|on|any|me|show|top)\b/gi); return q ? { q } : ({} as Record<string, string>); })() })],
+  [/\bexchange rates?\b|\b(usd|eur|gbp|jpy|cad|aud|mxn|dollars?|euros?|pounds?|yen) (to|in) /i, () => ({ name: "fx" })],
   [/\b(weather|forecast|temperature|rain(ing)?|snow(ing)?)\b/i, (m) => ({ name: "weather", params: placeOf(m) })],
 ];
 
@@ -64,7 +72,7 @@ export function detectTools(message: string): ToolCall[] {
 
 /** Ask the model for a JSON tool request when keywords miss but the turn sounds factual/current. */
 export async function planWithModel(adapter: ModelAdapter, message: string): Promise<ToolCall[]> {
-  if (!/\b(latest|current|now|today|tonight|right now|news|recent|look up|search|real[- ]time|live)\b/i.test(message)) return [];
+  if (!/\b(latest|current|now|today|tonight|right now|news|recent|look up|search|real[- ]time|live|population|capital|currency|exchange|convert|book|author|novel|where is|address|map|located|how (many|big|far)|area of)\b/i.test(message)) return [];
   const list = Object.entries(TOOL_DESCRIPTIONS).map(([k, v]) => `- ${k}: ${v}`).join("\n");
   try {
     const r = await adapter.generate({
