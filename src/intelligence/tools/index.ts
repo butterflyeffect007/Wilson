@@ -8,7 +8,7 @@ import type { ModelAdapter } from "../ModelAdapter";
 export type ToolName =
   | "apod" | "donki" | "asteroids" | "mars" | "cern" | "launches" | "spacex" | "iss"
   | "starlink" | "swpc" | "quakes" | "weather" | "wikipedia" | "arxiv"
-  | "country" | "fx" | "books" | "news" | "place" | "web";
+  | "country" | "fx" | "books" | "news" | "place" | "web" | "quantum";
 export interface ToolCall { name: ToolName; params?: Record<string, string> }
 export interface ToolSource { title: string; url: string }
 export interface ToolResult { name: ToolName; ok: boolean; data?: unknown; sources: ToolSource[]; error?: string }
@@ -33,10 +33,12 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   books: "Open Library book/author search (params: q)",
   news: "Recent tech headlines (Hacker News) + space news; optional topic (params: q). Not general world news.",
   web: "General web search (Brave) — ONLY for open-web/current questions no other tool covers (params: q = concise search query)",
+  quantum: "Saved result of a real IBM quantum computer run (Bell state) with date + backend — NOT a live run",
   place: "Find a place/address on OpenStreetMap: coordinates + map link (params: q)",
 };
 
 const RULES: [RegExp, (m: string) => ToolCall][] = [
+  [/\bquantum (computer|computing|result|experiment|job|demo)s?\b|\bibm quantum\b|\bbell state\b|\bqubits?\b/i, () => ({ name: "quantum" })],
   [/\b(iss|international space station|space station)\b/i, () => ({ name: "iss" })],
   [/\bstarlink|satellites? (over|above|near)\b/i, () => ({ name: "starlink" })],
   [/\bspace ?x|falcon|starship\b/i, () => ({ name: "spacex" })],
