@@ -14,6 +14,19 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
   const endRef = useRef<HTMLDivElement>(null);
   const load = () => { setState("loading"); void fetchTelemetry().then((d) => { setT(d); setState(d ? "ok" : "error"); }); };
   useEffect(load, []);
+  // Exit paths: Escape key, and the phone's back gesture/button (history entry popped).
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeRef.current(); };
+    let popped = false;
+    const onPop = () => { popped = true; closeRef.current(); };
+    try { history.pushState({ wilsonArchitect: 1 }, ""); } catch { /* ignore */ }
+    window.addEventListener("keydown", onKey); window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("keydown", onKey); window.removeEventListener("popstate", onPop);
+      if (!popped && history.state?.wilsonArchitect) { try { history.back(); } catch { /* ignore */ } }
+    };
+  }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages]);
   const days = t ? Object.keys(t.usage).sort().reverse().slice(0, 7) : [];
   const lastModel = (() => { try { return localStorage.getItem("wilson_last_model") || "—"; } catch { return "—"; } })();
@@ -28,8 +41,8 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
   const send = () => { const s = draft.trim(); if (!s || busy || !onSend) return; onSend(s); setDraft(""); };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center p-3 sm:p-6 bg-black/30 backdrop-blur-sm" onClick={onClose}>
-      <div className="glass-strong rounded-3xl w-full max-w-3xl h-[calc(100dvh-1.5rem)] sm:h-[90dvh] flex overflow-hidden text-violet-950/90" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/30 backdrop-blur-sm pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:p-6" role="dialog" aria-modal="true" aria-label="Architect view" onClick={onClose}>
+      <div className="glass-strong rounded-3xl w-full max-w-3xl h-full sm:h-[90dvh] flex overflow-hidden text-violet-950/90" onClick={(e) => e.stopPropagation()}>
         {side && (
           <aside className="w-[40%] max-w-[15rem] shrink-0 bg-violet-100/50 border-r border-violet-300/30 overflow-y-auto p-3 text-[12px] space-y-4">
             <button type="button" onClick={() => setSide(false)} className="flex items-center text-[11px] font-semibold tracking-[0.12em] text-violet-800"><ChevronLeft className="w-3.5 h-3.5" />CORE</button>
@@ -80,15 +93,15 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
             <button type="button" onClick={() => { forgetAdmin(); onSignOut(); }} className="text-[11px] text-violet-500 underline underline-offset-2">Sign out of Architect mode</button>
           </aside>
         )}
-        <main className="flex-1 min-w-0 flex flex-col p-4">
+        <main className="flex-1 min-w-0 flex flex-col p-4 pr-3">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-1">
               {!side && <button type="button" onClick={() => setSide(true)} aria-label="Open sidebar" className="text-violet-500"><ChevronRight className="w-4 h-4" /></button>}
               <h3 className="text-sm font-semibold tracking-[0.12em]">ARCHITECT</h3>
             </div>
-            <div className="flex gap-3 pt-0.5">
-              <button type="button" onClick={load} aria-label="Refresh" className="text-violet-400 hover:text-violet-600"><RefreshCw className={`w-4 h-4 ${state === "loading" ? "animate-spin" : ""}`} /></button>
-              <button type="button" onClick={onClose} aria-label="Close" className="text-violet-400 hover:text-violet-600"><X className="w-4 h-4" /></button>
+            <div className="flex items-center gap-3">
+              <button type="button" onClick={load} aria-label="Refresh" className="p-2 -m-2 text-violet-400 hover:text-violet-600"><RefreshCw className={`w-4 h-4 ${state === "loading" ? "animate-spin" : ""}`} /></button>
+              <button type="button" onClick={onClose} aria-label="Close Architect view" className="-mt-2 shrink-0 flex items-center justify-center w-11 h-11 rounded-full bg-violet-600 text-white shadow active:scale-95"><X className="w-5 h-5" /></button>
             </div>
           </div>
           <div className="flex justify-end -mt-1"><Tach rpm={rpm} /></div>
