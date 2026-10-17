@@ -2,7 +2,7 @@
  * Intelligence layer barrel export.
  *
  * Public surface: contracts (ModelAdapter, ModelRequest, ModelResponse),
- * the router, the registry, and the OpenRouter adapter.
+ * the router, the registry, the OpenRouter adapter, and the MCP gateway.
  */
 
 export type { ModelAdapter, ModelCapabilities, ModelStatus } from "./ModelAdapter";
@@ -15,3 +15,4 @@ export { OpenRouterAdapter } from "./OpenRouterAdapter";
 export { prepareTools } from "./IntelligenceRouter";
 export type { ToolStep } from "./IntelligenceRouter";
 export * from "./tools";
+export * from "./mcp";
