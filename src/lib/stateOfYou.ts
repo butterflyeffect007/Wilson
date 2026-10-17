@@ -56,11 +56,16 @@ export function localSignals(s = loadStateOfYou()): string[] {
   const nowH = new Date().getHours(); if (nowH >= 23 || nowH < 5) out.push("It's late for her right now.");
   const today = s.turns.filter((t) => t.ts > now - 3 * 3_600_000);
   if (today.length >= 25) out.push(`Long streak: ${today.length} messages in the last 3 hours.`);
-  const last5 = s.turns.slice(-5);
-  if (last5.length === 5 && last5.every((t) => t.len < 25)) out.push("Her last few messages are very short — possible fatigue or low bandwidth.");
+  // (Removed: short messages were read as "fatigue / low bandwidth" and made his replies shorter. Short texts are not a request for short answers.)
   const days = new Set(s.turns.map((t) => new Date(t.ts).toDateString())).size;
   if (days >= 4) out.push(`She's shown up ${days} of the last 7 days.`);
   return out;
+}
+
+/** Older notes may say "keep it brief/short"; drop those lines so mood never shortens his answers. */
+const BREVITY = /\b(brief|briefer|briefly|concise|shorter|short (?:replies|answers|responses)|keep (?:it|things|replies|answers) (?:short|tight|simple)|low bandwidth|straight to the point|to the point|less text|fewer words)\b/i;
+export function stripBrevity(note: string): string {
+  return (note || "").split("\n").map((line) => !BREVITY.test(line) ? line : (line.match(/(?:[^.;]|\.(?=\d))+[.;]?/g) || []).map((p) => p.trim()).filter((p) => p && !BREVITY.test(p)).join(" ")).filter((l) => l.trim()).join("\n");
 }
 
 /** Compact block for the system prompt. */
@@ -69,8 +74,8 @@ export function buildStateOfYouContext(): string {
   const sig = localSignals(s);
   if (!s.summary && !sig.length) return "";
   return [
-    "[State of her — your shared recent history. Let this quietly shape your tone, pacing and energy (e.g. gentler and briefer if she's worn down, match momentum if she's on a roll, follow up on open loops when natural). Never recite it, list it, or say you're tracking her.]",
-    s.summary,
+    "[State of her — your shared recent history. Let this quietly shape your tone, pacing and energy (e.g. gentler and warmer if she's worn down, match momentum if she's on a roll, follow up on open loops when natural). This shapes tone only, never length: don't shorten answers based on her mood. Never recite it, list it, or say you're tracking her.]",
+    stripBrevity(s.summary),
     sig.length ? `Signals: ${sig.join(" ")}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -86,7 +91,7 @@ export async function maybeRefreshStateOfYou(adapter: OpenRouterAdapter, recent:
   running = true;
   try {
     const r = await adapter.generate({
-      systemContext: "You maintain a private, compact 'state of her' note for Wilson, a companion app. Update the previous note using the new conversation. Output ONLY the note, 150-220 words, plain short lines, no preamble, under these headings exactly:\nMood & energy:\nGrinding on:\nOpen loops:\nLife context:\nHow to meet her now:\nKeep durable facts from the previous note unless contradicted; drop stale items; be specific; no diagnoses; never invent facts." + MEMORY_SUMMARY_ADDON,
+      systemContext: "You maintain a private, compact 'state of her' note for Wilson, a companion app. Update the previous note using the new conversation. Output ONLY the note, 150-220 words, plain short lines, no preamble, under these headings exactly:\nMood & energy:\nGrinding on:\nOpen loops:\nLife context:\nHow to meet her now:\nUnder 'How to meet her now' describe tone and warmth only; never suggest shorter, briefer or more concise replies unless she explicitly asked for that. Keep durable facts from the previous note unless contradicted; drop stale items; be specific; no diagnoses; never invent facts." + MEMORY_SUMMARY_ADDON,
       userInput: `PREVIOUS NOTE:\n${s.summary || "(none yet)"}\n\nPREVIOUS MEMORY:\n${memoryForSummary()}\n\nLOCAL SIGNALS:\n${localSignals(s).join(" ") || "(none)"}\n\nNEW CONVERSATION (most recent last):\n${convo}`,
       generation: { temperature: 0.3, maxTokens: 900 },
       metadata: { task: "summary" },

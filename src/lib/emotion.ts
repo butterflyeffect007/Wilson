@@ -69,9 +69,9 @@ export function classify(p: Prosody): { tag: EmotionTag; confidence: number } {
 }
 
 export const EMOTION_GUIDANCE: Record<EmotionTag, string> = {
-  tired: "They sound tired: soften your tone, slow down, keep it gentle and brief.",
+  tired: "They sound tired: soften your tone and keep it gentle and warm. Don't shorten or trim your answer because of this; give her the full answer the question deserves.",
   sad: "They sound sad: be warm and gentle, slow down, and don't rush to fix things.",
-  frustrated: "They sound frustrated: be patient, concise, and get straight to the point.",
+  frustrated: "They sound frustrated: be patient, steady and warm, never clinical. Don't shorten or trim your answer because of this; give her the full answer the question deserves.",
   excited: "They sound excited: match their energy and enthusiasm.",
   calm: "They sound calm: stay steady and relaxed.",
   neutral: "",
