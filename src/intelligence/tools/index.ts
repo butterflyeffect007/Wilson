@@ -8,7 +8,7 @@ import type { ModelAdapter } from "../ModelAdapter";
 export type ToolName =
   | "apod" | "donki" | "asteroids" | "mars" | "cern" | "launches" | "spacex" | "iss"
   | "starlink" | "swpc" | "quakes" | "weather" | "wikipedia" | "arxiv"
-  | "country" | "fx" | "books" | "news" | "place" | "web" | "quantum";
+  | "country" | "fx" | "books" | "news" | "place" | "web" | "quantum" | "scholar" | "wikidata" | "gdelt" | "flights" | "nearby";
 export interface ToolCall { name: ToolName; params?: Record<string, string> }
 export interface ToolSource { title: string; url: string }
 export interface ToolResult { name: ToolName; ok: boolean; data?: unknown; sources: ToolSource[]; error?: string }
@@ -34,11 +34,19 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   news: "Recent tech headlines (Hacker News) + space news; optional topic (params: q). Not general world news.",
   web: "General web search (Brave) — ONLY for open-web/current questions no other tool covers (params: q = concise search query)",
   quantum: "Saved result of a real IBM quantum computer run (Bell state) with date + backend — NOT a live run",
+  scholar: "Peer-reviewed paper search (Semantic Scholar / OpenAlex / Crossref) with citations (params: q)",
+  wikidata: "Structured facts about a person, place, organization or thing from Wikidata (params: q = name)",
+  gdelt: "Worldwide news articles from the last 3 days (GDELT) on a topic (params: q = topic)",
+  flights: "Live aircraft overhead near a place (ADS-B) (params: place)",
+  nearby: "Nearby amenities from OpenStreetMap, e.g. library, cafe, pharmacy, hospital (params: place, q = amenity)",
   place: "Find a place/address on OpenStreetMap: coordinates + map link (params: q)",
 };
 
 const RULES: [RegExp, (m: string) => ToolCall][] = [
   [/\bquantum (computer|computing|result|experiment|job|demo)s?\b|\bibm quantum\b|\bbell state\b|\bqubits?\b/i, () => ({ name: "quantum" })],
+  [/\b(planes?|flights?|aircraft|airplanes?|jets?) (overhead|above|near|over|flying|around)\b|\bwhat(?:'s| is) flying\b/i, (m) => ({ name: "flights", params: placeOf(m) })],
+  [/\b(peer[- ]reviewed|scientific|scholarly|academic|journal) (papers?|articles?|studies|research)\b|\bstud(y|ies) (on|about)\b/i, (m) => ({ name: "scholar", params: { q: topic(m, /\b(peer[- ]reviewed|scientific|scholarly|academic|journal|papers?|articles?|studies|study|research|latest|recent|find|search|on|about|any|me|show)\b/gi) } })],
+  [/\b(libraries|library|cafes?|coffee shops?|pharmac(y|ies)|hospitals?|parks?) (near|in|around)\b/i, (m) => ({ name: "nearby", params: { ...placeOf(m), q: (m.match(/\b(librar|cafe|coffee|pharmac|hospital|park)/i)?.[1] || "cafe").toLowerCase().replace(/^librar$/, "library").replace(/^coffee$/, "cafe").replace(/^pharmac$/, "pharmacy") } })],
   [/\b(iss|international space station|space station)\b/i, () => ({ name: "iss" })],
   [/\bstarlink|satellites? (over|above|near)\b/i, () => ({ name: "starlink" })],
   [/\bspace ?x|falcon|starship\b/i, () => ({ name: "spacex" })],
