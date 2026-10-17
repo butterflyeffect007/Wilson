@@ -4,6 +4,7 @@
  * optional model JSON planning) and formats results for the final answer.
  */
 import type { ModelAdapter } from "../ModelAdapter";
+import { hasDirect, runDirect } from "./direct";
 
 export type ToolName =
   | "apod" | "donki" | "asteroids" | "mars" | "cern" | "launches" | "spacex" | "iss"
@@ -114,15 +115,22 @@ export async function planWithModel(adapter: ModelAdapter, message: string): Pro
 export async function runTool(baseUrl: string, call: ToolCall, location?: { lat: number; lon: number }): Promise<ToolResult> {
   const params = { ...(call.params ?? {}) };
   if ((call.name === "starlink" || (call.name === "weather" && !params.place)) && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
+  if (call.name === "nearby" && !params.place && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
+  // Some free upstreams block Cloudflare but allow CORS: try them from the browser first, worker as fallback.
+  let directErr = "";
+  if (hasDirect(call.name)) {
+    try { const d = await runDirect(call, params); return { name: call.name, ok: true, data: d.data, sources: d.sources }; }
+    catch (e) { directErr = String((e as Error)?.message ?? e); }
+  }
   const qs = new URLSearchParams(params).toString();
   try {
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 12000);
     const r = await fetch(`${baseUrl.replace(/\/$/, "")}/tools/${call.name}${qs ? "?" + qs : ""}`, { signal: ctl.signal });
     clearTimeout(to);
     const d = await r.json();
-    if (!r.ok || d.error) return { name: call.name, ok: false, sources: [], error: d.error ?? `HTTP ${r.status}` };
+    if (!r.ok || d.error) return { name: call.name, ok: false, sources: [], error: (d.error ?? `HTTP ${r.status}`) + (directErr ? `; direct: ${directErr}` : "") };
     return { name: call.name, ok: true, data: d.data, sources: d.sources ?? [] };
-  } catch (e) { return { name: call.name, ok: false, sources: [], error: String(e) }; }
+  } catch (e) { return { name: call.name, ok: false, sources: [], error: String(e) + (directErr ? `; direct: ${directErr}` : "") }; }
 }
 
 /** Formats tool output as system context for the final answer, with citation instructions. */
