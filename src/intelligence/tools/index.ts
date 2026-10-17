@@ -9,7 +9,8 @@ import { hasDirect, runDirect } from "./direct";
 export type ToolName =
   | "apod" | "donki" | "asteroids" | "mars" | "cern" | "launches" | "spacex" | "iss"
   | "starlink" | "swpc" | "quakes" | "weather" | "wikipedia" | "arxiv"
-  | "country" | "fx" | "books" | "news" | "place" | "web" | "quantum" | "scholar" | "wikidata" | "gdelt" | "flights" | "nearby";
+  | "country" | "fx" | "books" | "news" | "place" | "web" | "quantum" | "scholar" | "wikidata" | "gdelt" | "flights" | "nearby"
+  | "disasters" | "alerts" | "airquality" | "crypto" | "dictionary" | "holidays" | "grants";
 export interface ToolCall { name: ToolName; params?: Record<string, string> }
 export interface ToolSource { title: string; url: string }
 export interface ToolResult { name: ToolName; ok: boolean; data?: unknown; sources: ToolSource[]; error?: string }
@@ -41,9 +42,41 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   flights: "Live aircraft overhead near a place (ADS-B) (params: place)",
   nearby: "Nearby amenities from OpenStreetMap, e.g. library, cafe, pharmacy, hospital (params: place, q = amenity)",
   place: "Find a place/address on OpenStreetMap: coordinates + map link (params: q)",
+  disasters: "Current major disaster alerts worldwide (GDACS: cyclones, floods, quakes, volcanoes, wildfires; last 7 days)",
+  alerts: "Active US National Weather Service alerts/warnings for a US place (params: place)",
+  airquality: "Air quality index (AQI, PM2.5, ozone) for a place (params: place)",
+  crypto: "Cryptocurrency prices (params: q = coin names e.g. bitcoin,ethereum; to = fiat e.g. usd)",
+  dictionary: "Dictionary definition of an English word (params: q = the word)",
+  holidays: "Public holidays for a country (params: q = country name or ISO code, date = optional year)",
+  grants: "Open US federal grant opportunities from Grants.gov (params: q = topic, e.g. community gardens)",
 };
 
+const CUR: Record<string, string> = { dollar: "USD", dollars: "USD", buck: "USD", bucks: "USD", euro: "EUR", euros: "EUR", pound: "GBP", pounds: "GBP", quid: "GBP", yen: "JPY", peso: "MXN", pesos: "MXN", rupee: "INR", rupees: "INR", yuan: "CNY", renminbi: "CNY", franc: "CHF", francs: "CHF", real: "BRL", reais: "BRL", rand: "ZAR", lira: "TRY", zloty: "PLN", krona: "SEK", kronor: "SEK", krone: "NOK" };
+const ISO = new Set("AUD BGN BRL CAD CHF CNY CZK DKK EUR GBP HKD HUF IDR ILS INR ISK JPY KRW MXN MYR NOK NZD PHP PLN RON SEK SGD THB TRY USD ZAR".split(" "));
+const curOf = (w: string) => { const u = w.toUpperCase(); return ISO.has(u) ? u : CUR[w.toLowerCase()] || ""; };
+const CUR_WORDS = `${[...ISO].join("|")}|dollars?|bucks?|euros?|pounds?|quid|yen|pesos?|rupees?|yuan|renminbi|francs?|reais|real|rand|lira|zloty|kron[aoe]r?`;
+const FX_RE = new RegExp(`(?:(\\d[\\d,]*(?:\\.\\d+)?)\\s*)?\\b(${CUR_WORDS})\\b\\s+(?:to|in|into|vs\\.?|versus)\\s+(${CUR_WORDS})\\b`, "i");
+function fxParams(m: string): Record<string, string> {
+  const x = m.match(FX_RE); if (!x) return { q: "USD" };
+  const from = curOf(x[2]), to = curOf(x[3]);
+  if (!from) return { q: "USD" };
+  return { q: from, ...(to && to !== from ? { to } : {}), ...(x[1] ? { amount: x[1].replace(/,/g, "") } : {}) };
+}
+const COINS = /\b(bitcoin|btc|ethereum|ether|eth|dogecoin|doge|solana|xrp|ripple|cardano|litecoin|ltc|shiba inu|shib|tether|usdt|usdc|polkadot|avalanche|avax|chainlink|stellar|tron|toncoin|pepe)\b/gi;
+function dictWord(m: string): string {
+  const x = m.match(/\b(?:define|definition of|meaning of|what does|what's the meaning of|what is the meaning of|how do you spell|synonyms? (?:of|for))\s+(?:the word\s+)?["'“]?([a-z][a-z'-]{1,40})/i);
+  return x ? x[1].toLowerCase() : "";
+}
+
 const RULES: [RegExp, (m: string) => ToolCall][] = [
+  [/^\s*(?:hey wilson,?\s*)?(?:please\s+)?define\s+\w|\b(definition|meaning) of (?:the word )?["'“]?(?!life\b)[a-z'-]+["'”]?\s*\??$|\bwhat does ["'“]?[a-z'-]+["'”]? mean\b|\bsynonyms? (?:of|for)\b/i, (m) => ({ name: "dictionary", params: { q: dictWord(m) } })],
+  [/\b(bitcoin|btc|ethereum|dogecoin|solana|xrp|cardano|litecoin|crypto(?:currency|currencies)?|shiba inu|tether|usdt|chainlink|polkadot)\b|\b(eth|doge|sol|ada|ltc) (price|to usd)\b/i, (m) => ({ name: "crypto", params: { q: [...new Set((m.match(COINS) || []).map((c) => c.toLowerCase().replace(/\s+/g, "")))].slice(0, 4).join(",") || "bitcoin,ethereum" } })],
+  [/\b(grants?|funding opportunit(?:y|ies))\b.{0,30}\b(for|about|on|to fund|supporting|related to)\b|\b(find|search|look for|any|list|open|federal|available|new)\b.{0,20}\b(grants?|funding opportunit(?:y|ies))\b/i, (m) => ({ name: "grants", params: { q: topic(m, /\b(grants?|funding|opportunit(y|ies)|find|search|look|for|about|on|to|fund|supporting|related|any|list|open|federal|available|new|me|show|apply|applying|get|i|we|my|our|could|that|there|the|a|an|help|write|writing|proposal)\b/gi) || "community" } })],
+  [/\b(weather|storm|tornado|flood|severe weather|heat|winter|hurricane|fire) (alerts?|warnings?|watch(?:es)?|advisor(?:y|ies))\b|\bnws alerts?\b|\b(?:any )?alerts? (?:in|for|near) [A-Z]/i, (m) => ({ name: "alerts", params: placeOf(m) })],
+  [/\b(air quality|aqi|smog|air pollution|pm ?2\.?5|wildfire smoke)\b/i, (m) => ({ name: "airquality", params: placeOf(m) })],
+  [/\b(public|bank|national|federal) holidays?\b|\bholidays? (?:in|for) [A-Z]|\bnext (?:public |bank |federal )?holiday\b|\bwhen is the next holiday\b/i, (m) => ({ name: "holidays", params: (() => { const p = placeOf(m); const y = m.match(/\b(20\d\d)\b/); return { ...(p.place ? { q: p.place } : {}), ...(y ? { date: y[1] } : {}) } as Record<string, string>; })() })],
+  [/\b(natural )?disasters?\b|\b(any|current|active|latest|ongoing)\b.{0,15}\b(cyclones?|hurricanes?|typhoons?|tropical storms?|floods?|flooding|wildfires?|volcan(?:o|oes|ic)|eruptions?|tsunamis?|droughts?)\b|\b(cyclones?|hurricanes?|typhoons?|floods?|wildfires?|volcan(?:o|oes)|eruptions?|tsunamis?)\b.{0,25}\b(now|today|right now|this week|happening)\b/i, () => ({ name: "disasters" })],
+  [/\bbooks? (by|about|on|like)\b|\bnovels? (by|about)\b|\bwho wrote\b/i, (m) => ({ name: "books", params: { q: topic(m, /\b(books?|novels?|by|about|on|like|who|wrote|recommend|good|best|some|find|me|any)\b/gi) } })],
   [/\bquantum (computer|computing|result|experiment|job|demo)s?\b|\bibm quantum\b|\bbell state\b|\bqubits?\b/i, () => ({ name: "quantum" })],
   [/\b(planes?|flights?|aircraft|airplanes?|jets?)\b[\w\s]{0,14}\b(overhead|above|near|over|flying|around)\b|\bwhat(?:'s| is) flying\b/i, (m) => ({ name: "flights", params: placeOf(m) })],
   [/\b(peer[- ]reviewed|scientific|scholarly|academic|journal) (papers?|articles?|studies|research)\b|\bstud(y|ies) (on|about)\b/i, (m) => ({ name: "scholar", params: { q: topic(m, /\b(peer[- ]reviewed|scientific|scholarly|academic|journal|papers?|articles?|studies|study|research|latest|recent|find|search|on|about|any|me|show)\b/gi) } })],
@@ -51,7 +84,7 @@ const RULES: [RegExp, (m: string) => ToolCall][] = [
   [/\b(iss|international space station|space station)\b/i, () => ({ name: "iss" })],
   [/\bstarlink|satellites? (over|above|near)\b/i, () => ({ name: "starlink" })],
   [/\bspace ?x|falcon|starship\b/i, () => ({ name: "spacex" })],
-  [/\b(rocket )?launch(es)?\b.*\b(next|upcoming|today|week|soon)\b|\bnext launch\b/i, () => ({ name: "launches" })],
+  [/\b(rocket )?launch(es)?\b.*\b(next|upcoming|today|week|soon)\b|\b(next|upcoming) (rocket |space )?launch(es)?\b|\brocket launch(es)? (this|today|tonight)\b/i, () => ({ name: "launches" })],
   [/\b(kp|aurora|northern lights|geomagnetic|solar wind|space weather)\b/i, () => ({ name: "swpc" })],
   [/\b(solar flares?|cme|coronal mass)\b/i, () => ({ name: "donki" })],
   [/\b(asteroids?|near[- ]earth|neo)\b/i, () => ({ name: "asteroids" })],
@@ -61,7 +94,8 @@ const RULES: [RegExp, (m: string) => ToolCall][] = [
   [/\bcern\b|\blhc\b|\b(cms|atlas|alice|lhcb) (data|dataset)/i, (m) => ({ name: "cern", params: { q: topic(m, /\b(cern|open data|data(sets?)?|search|find|on|about|for|the)\b/gi) || "higgs" } })],
   [/\barxiv\b|\b(papers?|preprints?|research) (on|about)\b/i, (m) => ({ name: "arxiv", params: { q: topic(m, /\b(arxiv|papers?|preprints?|research|latest|recent|find|search|on|about|any|me|show)\b/gi) } })],
   [/\b(news|headlines)\b/i, (m) => ({ name: "news", params: (() => { const q = topic(m, /\b(news|headlines|latest|recent|today|about|on|any|me|show|top)\b/gi); return q ? { q } : ({} as Record<string, string>); })() })],
-  [/\bexchange rates?\b|\b(usd|eur|gbp|jpy|cad|aud|mxn|dollars?|euros?|pounds?|yen) (to|in) /i, () => ({ name: "fx" })],
+  [/\bexchange rates?\b|\bconvert\b.{0,20}\b(usd|eur|gbp|jpy|dollars?|euros?|pounds?|yen|pesos?)\b/i, (m) => ({ name: "fx", params: fxParams(m) })],
+  [FX_RE, (m) => ({ name: "fx", params: fxParams(m) })],
   [/\b(weather|forecast|temperature|rain(ing)?|snow(ing)?)\b/i, (m) => ({ name: "weather", params: placeOf(m) })],
 ];
 
@@ -117,6 +151,7 @@ export async function runTool(baseUrl: string, call: ToolCall, location?: { lat:
   const params = { ...(call.params ?? {}) };
   if ((call.name === "starlink" || (call.name === "weather" && !params.place)) && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
   if (call.name === "nearby" && !params.place && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
+  if ((call.name === "alerts" || call.name === "airquality") && !params.place && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
   // Some free upstreams block Cloudflare but allow CORS: try them from the browser first, worker as fallback.
   let directErr = "";
   if (hasDirect(call.name)) {
