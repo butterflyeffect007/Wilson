@@ -1,9 +1,8 @@
 /**
  * Intelligence layer barrel export.
  *
- * Public surface: contracts (ModelAdapter, ModelRequest, ModelResponse),
- * the router, the registry, the OpenRouter adapter, the OmniRoute gateway
- * adapter, and the MCP gateway + server.
+ * Public surface: contracts, router, registry, OpenRouter, OmniRoute,
+ * MCP gateway + server, and the one-call setup.
  */
 
 export type { ModelAdapter, ModelCapabilities, ModelStatus } from "./ModelAdapter";
@@ -19,3 +18,5 @@ export { prepareTools } from "./IntelligenceRouter";
 export type { ToolStep } from "./IntelligenceRouter";
 export * from "./tools";
 export * from "./mcp";
+export { setupWilsonIntelligence } from "./setup";
+export type { WilsonIntelligenceSetup, WilsonIntelligence } from "./setup";
