@@ -561,3 +561,143 @@ html.dark mark.wl-hit-cur { background: rgb(250 204 21 / .9); color: #1a1033; bo
 /* ===== "Hey Wilson" armed: tiny breathing dot on the orb ===== */
 body.wl-wake-armed .wilson-orb-size-lg .wilson-orb-float::after, body.wl-wake-armed .wilson-orb-size-mdx .wilson-orb-float::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 6px; height: 6px; margin-left: -3px; border-radius: 9999px;
   background: hsl(var(--wilson-vibe-hue, 290) 85% 65%); box-shadow: 0 0 8px hsl(var(--wilson-vibe-hue, 290) 85% 65%); animation: wl-tele 2.4s ease-in-out infinite; pointer-events: none; }
+
+
+/* ===================== W22 LOGO THEME (day2 / night2, approved Oct 17 2026) =====================
+   Sampled from /workspace/w22.jpg: violet #6E21B0, purple #8B29A7, magenta #D13BB2,
+   rose #DB5669, coral #EB7B59, amber #F39F5F, ember-gold #FCBC7E, azure #38B2DA, plum #491F56 */
+:root {
+  --w-violet: #6E21B0; --w-purple: #8B29A7; --w-magenta: #D13BB2; --w-rose: #DB5669;
+  --w-coral: #EB7B59; --w-amber: #F39F5F; --w-ember: #FCBC7E; --w-azure: #38B2DA; --w-plum: #491F56;
+  --wl-sky: linear-gradient(180deg, #FCF7FF 0%, #F2E9FF 45%, #F8F0FB 100%) !important;
+  --wl-text: #2A1240 !important;
+  --wl-text-soft: rgba(73, 31, 86, .62) !important;
+  --wl-glass: rgba(255, 255, 255, .48) !important;
+  --wl-glass-strong: rgba(255, 255, 255, .62) !important;
+  --wl-glass-border: rgba(255, 255, 255, .9) !important;
+  --wl-card-glow: 0 0 0 1px rgba(255,255,255,.65) inset, 0 10px 32px -10px rgba(110, 33, 176, .32), 0 0 18px rgba(255,255,255,.45) !important;
+  --wl-glow: 0 0 16px rgba(209, 59, 178, .28) !important;
+  --wl-rim: rgba(139, 41, 167, .45) !important;
+  --wl-mood: rgba(209, 59, 178, .38) !important;
+}
+html.dark {
+  --wl-sky: #07040D !important;
+  --wl-text: #F6EEFF !important;
+  --wl-text-soft: rgba(232, 214, 255, .62) !important;
+  --wl-glass: rgba(30, 12, 46, .42) !important;
+  --wl-glass-strong: rgba(36, 14, 54, .55) !important;
+  --wl-glass-border: rgba(160, 110, 230, .30) !important;
+  --wl-card-glow: 0 0 0 1px rgba(139,41,167,.18) inset, 0 0 22px -6px rgba(139, 41, 167, .45), 0 0 1px rgba(252, 188, 126, .4) !important;
+  --wl-glow: 0 0 18px rgba(209, 59, 178, .75) !important;
+  --wl-rim: rgba(209, 59, 178, .7) !important;
+  --wl-mood: rgba(209, 59, 178, .55) !important;
+}
+
+/* Day: soft dawn wash — light, never a heavy fill */
+html:not(.dark) .wl-bgimg::after {
+  background:
+    radial-gradient(55% 32% at 70% 6%, rgba(252,188,126,.22), rgba(252,188,126,0) 70%),
+    radial-gradient(60% 40% at 8% 18%, rgba(209,59,178,.10), rgba(209,59,178,0) 70%),
+    linear-gradient(rgba(252,248,255,.42), rgba(252,248,255,.42)),
+    radial-gradient(70% 60% at 50% 40%, rgba(253,248,255,.5), rgba(253,248,255,0) 75%) !important;
+}
+/* Night: logo swoosh — violet-to-magenta aurora, one small ember behind the orb */
+html.dark .wl-bgimg::after { content: ""; position: absolute; inset: 0;
+  background:
+    radial-gradient(28% 16% at 52% 40%, rgba(243,159,95,.10), rgba(243,159,95,0) 70%),
+    radial-gradient(70% 35% at 10% 70%, rgba(110,33,176,.22), rgba(110,33,176,0) 70%),
+    radial-gradient(60% 30% at 90% 85%, rgba(209,59,178,.16), rgba(209,59,178,0) 70%); }
+
+/* Orb + butterflies */
+html:not(.dark) .wl-ob { filter: drop-shadow(0 0 5px rgba(255,255,255,.95)) drop-shadow(0 0 8px rgba(209,59,178,.35)) !important; }
+html.dark .wl-ob { filter: drop-shadow(0 0 6px rgba(209,59,178,.7)) !important; }
+.wl-orb-ring { background: conic-gradient(from 200deg, rgba(209,59,178,0), rgba(139,41,167,.35), rgba(56,178,218,.22), rgba(252,188,126,.28), rgba(209,59,178,0)) !important;
+  border-color: rgba(255,255,255,.6) !important; }
+html.dark .wl-orb-ring { border-color: rgba(209,59,178,.45) !important; }
+.wilson-field-particles { filter: hue-rotate(35deg) saturate(.9); }
+
+/* Type & icons */
+.wl-title { color: var(--w-plum) !important; }
+html.dark .wl-title { color: #F6EEFF !important; }
+header [class*="text-violet-4"], header [class*="text-violet-5"], header [class*="text-violet-6"] { color: var(--w-violet) !important; }
+html.dark header [class*="text-violet-4"], html.dark header [class*="text-violet-5"], html.dark header [class*="text-violet-6"] { color: #E7D2FF !important; }
+header svg.lucide-sparkles, .wl-title.lucide { color: var(--w-magenta) !important; }
+[class*="text-pink-4"] { color: var(--w-coral) !important; }
+html.dark [class*="text-pink-4"] { color: var(--w-ember) !important; }
+h2[class*="text-violet-950"] { color: #2A1240 !important; }
+p[class*="text-violet-700"] { color: rgba(110,33,176,.62) !important; }
+textarea { color: #2A1240 !important; } textarea::placeholder { color: rgba(110,33,176,.45) !important; }
+html.dark textarea::placeholder { color: rgba(232,214,255,.45) !important; }
+.wl-theme-toggle[data-theme="dark"] .wl-tt-sun { color: var(--w-ember) !important; filter: drop-shadow(0 0 5px rgba(243,159,95,.75)) !important; }
+
+/* Send: violet -> magenta with only a coral tip (no gold fill) */
+button[aria-label="Send"] { background: linear-gradient(135deg, #6E21B0 0%, #A92FB8 55%, #E0628A 100%) !important;
+  box-shadow: 0 6px 18px -6px rgba(110,33,176,.55) !important; }
+html.dark button[aria-label="Send"] { box-shadow: 0 0 18px rgba(209,59,178,.55) !important; }
+
+/* ===================== ROUND 2: full logo spectrum ===================== */
+:root {
+  --w-spectrum: linear-gradient(120deg, #38B2DA 0%, #6E21B0 26%, #D13BB2 50%, #DB5669 68%, #EB7B59 84%, #FCBC7E 100%);
+  --w-spectrum-soft: linear-gradient(120deg, rgba(56,178,218,.55), rgba(110,33,176,.45) 28%, rgba(209,59,178,.42) 52%, rgba(235,123,89,.42) 78%, rgba(252,188,126,.5));
+  --wl-mood: rgba(235, 123, 89, .30) !important;
+}
+html.dark { --w-spectrum-soft: linear-gradient(120deg, rgba(56,178,218,.6), rgba(110,33,176,.55) 28%, rgba(209,59,178,.55) 52%, rgba(235,123,89,.5) 78%, rgba(252,188,126,.55)); --wl-mood: rgba(209,59,178,.5) !important; }
+
+/* Day: soft multi-hue dawn — lilac top, peach on the sun ray, sky azure low */
+html:not(.dark) .wl-bgimg::after {
+  background:
+    radial-gradient(50% 28% at 66% 4%, rgba(252,188,126,.26), rgba(252,188,126,0) 70%),
+    radial-gradient(40% 22% at 100% 18%, rgba(235,123,89,.12), rgba(235,123,89,0) 70%),
+    radial-gradient(55% 30% at 95% 75%, rgba(56,178,218,.12), rgba(56,178,218,0) 70%),
+    radial-gradient(55% 30% at 0% 35%, rgba(110,33,176,.08), rgba(110,33,176,0) 70%),
+    linear-gradient(rgba(252,248,255,.36), rgba(252,248,255,.36)),
+    radial-gradient(70% 55% at 50% 40%, rgba(253,248,255,.45), rgba(253,248,255,0) 75%) !important;
+}
+/* Night: violet / magenta / ember / azure aurora */
+html.dark .wl-bgimg::after {
+  background:
+    radial-gradient(26% 14% at 50% 40%, rgba(243,159,95,.10), rgba(243,159,95,0) 70%),
+    radial-gradient(45% 18% at 78% 74%, rgba(243,159,95,.10), rgba(243,159,95,0) 70%),
+    radial-gradient(40% 20% at 88% 16%, rgba(56,178,218,.12), rgba(56,178,218,0) 70%),
+    radial-gradient(70% 32% at 6% 62%, rgba(110,33,176,.24), rgba(110,33,176,0) 70%),
+    radial-gradient(60% 28% at 70% 92%, rgba(209,59,178,.16), rgba(209,59,178,0) 70%) !important;
+}
+.wilson-field-particles { filter: none !important; }
+
+/* Butterfly glows match each wing */
+html:not(.dark) .wl-ob { filter: drop-shadow(0 0 4px rgba(255,255,255,.95)) drop-shadow(0 0 7px rgba(110,33,176,.22)) !important; }
+html.dark .wl-ob-0 { filter: drop-shadow(0 0 6px rgba(56,178,218,.75)) !important; }
+html.dark .wl-ob-1 { filter: drop-shadow(0 0 6px rgba(252,188,126,.6)) !important; }
+html.dark .wl-ob-2 { filter: drop-shadow(0 0 6px rgba(235,123,89,.65)) !important; }
+html.dark .wl-ob-3 { filter: drop-shadow(0 0 6px rgba(209,59,178,.7)) !important; }
+html.dark .wl-ob-4 { filter: drop-shadow(0 0 6px rgba(243,159,95,.6)) !important; }
+
+/* Orb ring: full spectrum hairline */
+.wl-orb-ring { background: conic-gradient(from 210deg, rgba(56,178,218,.45), rgba(110,33,176,.45), rgba(209,59,178,.42), rgba(235,123,89,.42), rgba(252,188,126,.45), rgba(56,178,218,.45)) !important; border-color: rgba(255,255,255,.5) !important; }
+html.dark .wl-orb-ring { border-color: rgba(255,255,255,.18) !important; }
+
+/* Glass cards & composer: hairline multi-hue edge (gradient border via mask, no fill change) */
+.glass, .glass-strong, .msg-wilson { border-color: transparent !important; }
+.glass:not(.fixed):not(.absolute):not(.sticky), .glass-strong:not(.fixed):not(.absolute):not(.sticky), .msg-wilson { position: relative; }
+.glass::before, .glass-strong::before, .msg-wilson::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: var(--w-spectrum-soft);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+html:not(.dark) .glass, html:not(.dark) .glass-strong, html:not(.dark) .msg-wilson { --wl-card-glow: 0 10px 30px -12px rgba(110,33,176,.28), 0 6px 22px -14px rgba(235,123,89,.35) !important; }
+html.dark .glass, html.dark .glass-strong, html.dark .msg-wilson { box-shadow: 0 0 26px -8px rgba(110,33,176,.6), 0 0 18px -10px rgba(56,178,218,.5), 0 0 18px -10px rgba(243,159,95,.35) !important; }
+
+/* Title: WILSON in a restrained spectrum (azure -> violet -> magenta -> coral) */
+header h1 > span:first-child { background: linear-gradient(90deg, #2E80E4 0%, #6E21B0 35%, #A92FB8 65%, #DB5669 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+html.dark header h1 > span:first-child { background: linear-gradient(90deg, #8FD3EE 0%, #CDB4FF 35%, #F2A6E2 65%, #FCBC7E 100%); -webkit-background-clip: text; background-clip: text; }
+header svg.lucide-sparkles { color: #EB7B59 !important; }
+html.dark header svg.lucide-sparkles { color: #FCBC7E !important; }
+[class*="text-pink-4"] { color: #EB7B59 !important; }
+p[class*="text-violet-700"] { background: linear-gradient(90deg, #6E21B0, #DB5669); -webkit-background-clip: text; background-clip: text; color: transparent !important; opacity: .75; }
+html.dark p[class*="text-violet-700"] { background: linear-gradient(90deg, #A7DCF0, #E2C8FF 50%, #FCD2A8); -webkit-background-clip: text; background-clip: text; }
+
+/* Send: sunrise sweep violet -> magenta -> coral; mic gets an azure-violet ring */
+button[aria-label="Send"] { background: linear-gradient(135deg, #6E21B0 0%, #B4309F 50%, #EB7B59 100%) !important;
+  box-shadow: 0 6px 18px -6px rgba(235,123,89,.55), 0 0 0 1px rgba(255,255,255,.35) inset !important; }
+html.dark button[aria-label="Send"] { box-shadow: 0 0 18px rgba(209,59,178,.45), 0 0 10px rgba(243,159,95,.35) !important; }
+button[aria-label="Talk to type"] { box-shadow: 0 0 0 1.5px rgba(56,178,218,.45), 0 0 0 3px rgba(110,33,176,.12) !important; color: #2E80E4 !important; }
+html.dark button[aria-label="Talk to type"] { color: #8FD3EE !important; box-shadow: 0 0 0 1px rgba(56,178,218,.55), 0 0 12px rgba(56,178,218,.3) !important; }
