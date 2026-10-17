@@ -78,14 +78,22 @@ Wilson Core          (src/core/wilson)
   ↓
 Intelligence Router  (src/intelligence)
   ↓
-Model Adapter
+Model Adapter        + MCP Gateway (optional)
   ↓
-Model
+Model / MCP Servers
 ```
 
 The visual layer — Orb, Field, glass system, and home experience — does not contain model logic.
 
 Wilson’s identity and principles belong to the core layer rather than individual UI components or model providers.
+
+### MCP layer
+
+`src/intelligence/mcp` is the translation layer for Model Context Protocol servers.
+
+- `McpGateway` connects to one or more Streamable HTTP MCP servers, aggregates their tools, and normalizes call results into the shape Wilson’s existing tool step already understands.
+- It does not replace the built-in public-data tools. It is an additional path so Wilson can talk to databases, internal services, or any other MCP server without per-service glue.
+- Example server: `examples/mcp-wilson-server.ts` (run with `npm run mcp:example`).
 
 ## Wilson Core
 
@@ -168,3 +176,9 @@ npm run dev
 ```
 
 Open the local URL (usually http://localhost:5173).
+
+Optional MCP example server:
+
+```bash
+npm run mcp:example
+```
