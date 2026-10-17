@@ -11,7 +11,7 @@
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
  */
 import { attachAudio, detachAudio, setSpeakingFlag } from "./audioBus";
-import { ensurePuck, getPuckState, puckCancel, puckIsSlow, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
+import { ensurePuck, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
 
 /** Load Puck in an idle moment (never blocks the app or the tap that triggered it). */
 function schedulePuck() {
@@ -56,7 +56,8 @@ function audioEl(): HTMLAudioElement {
 }
 
 export type SpeakResult = "success" | "skipped" | "error";
-export type VoiceStatus = { state: "idle" | "ready" | "resting" | "preparing"; progress: number; reason?: string };
+/** "unavailable": a reply couldn't be voiced (Puck not on this phone + Aura resting/offline); shown as a small note. */
+export type VoiceStatus = { state: "idle" | "ready" | "resting" | "preparing" | "unavailable"; progress: number; reason?: string };
 let status: VoiceStatus = { state: "idle", progress: 0 };
 const statusListeners = new Set<(s: VoiceStatus) => void>();
 function setStatus(s: Partial<VoiceStatus>) { status = { ...status, ...s }; statusListeners.forEach((l) => l(status)); }
@@ -80,6 +81,13 @@ export function primePlayback(): void {
   } catch (e) { dbg("unlock threw", e); }
 }
 
+/* "Wilson is in the middle of a spoken reply" (from the first request until the last sentence ends, gaps included). */
+let active = false;
+const activeListeners = new Set<(a: boolean) => void>();
+function setActive(a: boolean) { if (a !== active) { active = a; activeListeners.forEach((l) => l(a)); } }
+export function isVoiceActive() { return active; }
+export function subscribeVoiceActive(l: (a: boolean) => void) { activeListeners.add(l); return () => { activeListeners.delete(l); }; }
+
 export function stopSpeaking(): void {
   generation++;
   puckCancel(generation);
@@ -89,6 +97,7 @@ export function stopSpeaking(): void {
   if (el) detachAudio(el);
   setSpeakingFlag(false);
   setPending(false);
+  setActive(false);
   const e = endCurrent; endCurrent = null; e?.();
 }
 
@@ -100,19 +109,46 @@ function playBlob(blob: Blob, my: number): Promise<void> {
     if (currentUrl) URL.revokeObjectURL(currentUrl);
     currentUrl = URL.createObjectURL(blob);
     let settled = false;
+    let stall: ReturnType<typeof setTimeout> | null = null;
+    let resumed = 0;
+    const cleanup = () => {
+      a.removeEventListener("ended", done); a.removeEventListener("error", onErr);
+      a.removeEventListener("pause", onPause); a.removeEventListener("loadedmetadata", armStall);
+      if (stall) clearTimeout(stall);
+    };
     const done = () => {
       if (settled) return; settled = true;
-      a.removeEventListener("ended", done); a.removeEventListener("error", onErr);
+      cleanup();
       if (finishCurrentClip === done) finishCurrentClip = null;
       resolve();
     };
     const onErr = () => { dbg("audio element error", a.error ? { name: "MediaError", message: `code ${a.error.code} ${a.error.message ?? ""}` } : "unknown"); done(); };
+    // iOS can pause the element on its own (notification sound, Siri, audio-session hiccup) and then never fire
+    // "ended", which used to leave the rest of the reply stuck. Resume it, and never wait forever on one clip.
+    const onPause = () => {
+      if (settled || my !== generation || a.ended) return;
+      if (resumed++ < 2) setTimeout(() => { if (!settled && my === generation && a.paused && !a.ended) a.play().catch(() => done()); }, 250);
+      else done();
+    };
+    const armStall = () => {
+      if (stall) clearTimeout(stall);
+      const secs = isFinite(a.duration) && a.duration > 0 ? a.duration : 60;
+      stall = setTimeout(() => { dbg("clip never ended, moving on"); done(); }, secs * 1000 + 5000);
+    };
     finishCurrentClip = done;
     a.addEventListener("ended", done); a.addEventListener("error", onErr);
+    a.addEventListener("pause", onPause); a.addEventListener("loadedmetadata", armStall);
     a.src = currentUrl;
     attachAudio(a);
-    const p = a.play();
-    if (p && typeof p.then === "function") p.then(() => dbg(`playing ${(blob.size / 1024).toFixed(0)} KB`), (e) => { dbg("play() rejected", e); done(); });
+    armStall();
+    const tryPlay = (retry: boolean) => {
+      const p = a.play();
+      if (p && typeof p.then === "function") p.then(() => dbg(`playing ${(blob.size / 1024).toFixed(0)} KB`), (e) => {
+        dbg("play() rejected", e);
+        if (retry && !settled && my === generation) setTimeout(() => tryPlay(false), 300); else done();
+      });
+    };
+    tryPlay(true);
   });
 }
 
@@ -135,6 +171,8 @@ export function toSpeakable(text: string): string {
 const MAX_PARALLEL = 2;
 const MERGE_MAX = 250;
 const CLIP_TIMEOUT_MS = 20000;
+/** How long a reply waits for Puck to finish downloading (~92 MB) when the server voice can't help. */
+const PUCK_WAIT_MS = 240000;
 let pending = false;
 const pendingListeners = new Set<(p: boolean) => void>();
 function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListeners.forEach((l) => l(p)); } }
@@ -147,9 +185,17 @@ export function warmVoice(): void { schedulePuck(); }
 // Once Puck is ready, the Aura daily limit no longer silences Wilson.
 subscribePuck(() => {
   const p = getPuckState();
-  if (p === "ready" && (status.state === "resting" || status.state === "preparing")) setStatus({ state: "ready" });
-  if (p === "failed" && status.state === "preparing") setStatus({ state: isVoiceResting() ? "resting" : "idle" });
+  if (p === "ready" && (status.state === "resting" || status.state === "preparing" || status.state === "unavailable")) setStatus({ state: "ready", reason: undefined });
+  else if (p === "loading" && status.state === "preparing") setStatus({ progress: getPuckProgress() });
+  else if (p === "failed" && status.state === "preparing") setStatus(noVoiceStatus());
 });
+
+/** What to show when a reply can't be voiced right now. */
+function noVoiceStatus(): Partial<VoiceStatus> {
+  const why = puckBlockedReason() || (getPuckState() === "failed" ? "the on-device voice couldn't start" : "");
+  if (isVoiceResting()) return { state: why ? "unavailable" : "resting", reason: why || undefined };
+  return { state: "unavailable", reason: why || "the voice server didn't answer" };
+}
 
 /* ---- client-side clip cache (IndexedDB) so replays don't spend the daily voice allowance ---- */
 const IDB_NAME = "wilson-voice", IDB_STORE = "clips";
@@ -185,8 +231,10 @@ async function cachePut(key: string, blob: Blob) {
 }
 
 /** Daily free voice limit hit (worker 429): stay quiet until the reset. */
-let restingUntil = 0;
+const REST_KEY = "wilson-aura-resting-until";
+let restingUntil = (() => { try { return Number(localStorage.getItem(REST_KEY)) || 0; } catch { return 0; } })();
 function nextResetUtcMidnight() { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); }
+function markResting() { restingUntil = nextResetUtcMidnight(); try { localStorage.setItem(REST_KEY, String(restingUntil)); } catch { /* ignore */ } }
 export function isVoiceResting() { return Date.now() < restingUntil; }
 class VoiceLimitError extends Error { constructor() { super("daily voice limit reached"); this.name = "VoiceLimit"; } }
 
@@ -202,7 +250,7 @@ async function fetchOnce(text: string, speed: number, timeoutMs: number): Promis
       body: JSON.stringify({ text, speed }), signal: ctrl.signal,
     });
     if (res.status === 503) { serverDown = true; throw new Error("voice server not configured (503)"); }
-    if (res.status === 429) { restingUntil = nextResetUtcMidnight(); if (getPuckState() !== "ready") setStatus({ state: "resting" }); throw new VoiceLimitError(); }
+    if (res.status === 429) { markResting(); throw new VoiceLimitError(); }
     if (!res.ok) throw new Error("tts http " + res.status);
     const blob = await res.blob();
     if (blob.size < 100) throw new Error("tts empty audio");
@@ -279,71 +327,99 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   stopSpeaking();
   const my = generation;
   let ended = false;
-  const end = () => { if (!ended) { ended = true; if (endCurrent === end) endCurrent = null; hooks.onEnd?.(); } };
+  const end = () => { if (!ended) { ended = true; if (endCurrent === end) { endCurrent = null; setActive(false); } hooks.onEnd?.(); } };
   endCurrent = end;
-  let offset = 0, buffer = "", sentFirst = false, done = false, failed = false, played = false;
+  let offset = 0, buffer = "", sentFirst = false, done = false, played = false;
   let inflight = 0;
-  const queue: Promise<Blob | null>[] = [];
+  const queue: Promise<Promise<Blob | null>[]>[] = [];
   const spoken: string[] = [];
   let playing = false, playIdx = 0;
   let fullText = "";
   const waiters: (() => void)[] = [];
   const slot = () => inflight < MAX_PARALLEL ? Promise.resolve() : new Promise<void>((r) => waiters.push(r));
-  // One voice per reply: Puck if it's ready (and this device is fast enough, or Aura is resting), else Aura.
-  let engine: "puck" | "aura" = getPuckState() === "ready" && (!puckIsSlow() || isVoiceResting() || serverDown) ? "puck" : "aura";
-  dbg(`voice engine: ${engine === "puck" ? "Puck (on device)" : "Aura (server)"}`);
-  const clip = async (t: string): Promise<Blob | null> => {
-    if (engine === "puck") {
+  /*
+   * Which voice speaks each piece:
+   *  1. Puck whenever it's loaded on this device, even if the phone is slow (Aura has a daily cap, Puck doesn't).
+   *  2. Aura-2 arcas while Puck is still downloading / can't run here, unless Aura is resting or offline.
+   *  3. Aura unavailable: wait for Puck to finish downloading (small "Getting Wilson's voice ready…" note).
+   *  4. Nothing works: skip the piece and show a small note. Later pieces still get their chance.
+   */
+  dbg(`voice engine: ${getPuckState() === "ready" ? "Puck (on device)" : "Aura (server) until Puck is ready"}`);
+  /** Puck ready (waiting for its download if needed)? */
+  const puckReady = async (): Promise<boolean> => {
+    if (getPuckState() === "ready") return true;
+    if (!puckSupported() && getPuckState() === "off") return false;
+    if (getPuckState() !== "failed") setStatus({ state: "preparing", progress: getPuckProgress() });
+    const ok = await waitForPuck(PUCK_WAIT_MS);
+    if (status.state === "preparing") setStatus(ok ? { state: "ready" } : noVoiceStatus());
+    return ok && my === generation;
+  };
+  /** One short piece with Puck; one retry (covers a worker restart after a crash). */
+  const puckPiece = async (t: string): Promise<Blob | null> => {
+    for (let i = 0; i < 2 && my === generation; i++) {
+      if (!(await puckReady())) return null;
       const t0 = Date.now();
       const b = await puckSynth(t, speed, my);
-      if (b) { dbg(`puck ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`); return my === generation ? b : null; }
       if (my !== generation) return null;
-      dbg("puck clip failed, using server voice");
-      engine = "aura";
+      if (b) { dbg(`puck ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`); return b; }
+      dbg("puck clip failed" + (i === 0 ? ", retrying" : ""));
     }
-    try {
-      await slot(); inflight++;
-      try { return await fetchClip(t, speed, my); }
-      finally { inflight--; waiters.shift()?.(); }
-    } catch (e) {
-      // Server voice failed (daily limit, offline...). If Puck is still downloading, wait for it.
-      if (my === generation && (getPuckState() === "loading" || getPuckState() === "ready")) {
-        if (getPuckState() === "loading") setStatus({ state: "preparing" });
-        const ok = await waitForPuck(90000);
-        if (status.state === "preparing") setStatus({ state: ok ? "ready" : (isVoiceResting() ? "resting" : "idle") });
-        if (ok && my === generation) { engine = "puck"; const b = await puckSynth(t, speed, my); if (b) return my === generation ? b : null; }
-      }
-      throw e;
+    return null;
+  };
+  /** Split into short pieces and queue them all on the worker at once (it runs them in order, back to back). */
+  const viaPuck = async (t: string, first: boolean): Promise<Promise<Blob | null>[] | null> => {
+    if (!(await puckReady())) return null;
+    return splitForPuck(t, first).map((p) => { const pr = puckPiece(p); pr.catch(() => {}); return pr; });
+  };
+  const clip = async (t: string, first: boolean): Promise<Promise<Blob | null>[]> => {
+    if (getPuckState() === "ready") {
+      const parts = await viaPuck(t, first);
+      if (parts || my !== generation) return parts ?? [];
     }
+    if (!isVoiceResting() && !serverDown) {
+      try {
+        await slot(); inflight++;
+        try { return [Promise.resolve(await fetchClip(t, speed, my))]; }
+        finally { inflight--; waiters.shift()?.(); }
+      } catch { if (my !== generation) return []; }
+    }
+    // Server voice can't help (daily limit, offline...): wait for Puck instead of going silent.
+    const parts = await viaPuck(t, first);
+    if (parts || my !== generation) return parts ?? [];
+    throw new Error("no voice available");
   };
 
   const playLoop = async () => {
     if (playing) return; playing = true;
     while (playIdx < queue.length && my === generation) {
-      let buf: Blob | null = null;
       if (!played) setPending(true);
-      try { buf = await queue[playIdx]; } catch { failed = true; }
+      let parts: Promise<Blob | null>[] = [];
+      try { parts = await queue[playIdx]; } catch { if (status.state !== "preparing") setStatus(noVoiceStatus()); }
+      for (const part of parts) {
+        if (my !== generation) break;
+        if (!played) setPending(true);
+        const buf = await part.catch(() => null);
+        if (my !== generation) break;
+        if (!buf) continue; // skip just this piece; keep the rest of the reply playing
+        setPending(false);
+        if (!played) hooks.onStart?.();
+        played = true;
+        if (status.state === "idle" || status.state === "unavailable") setStatus({ state: "ready", reason: undefined });
+        await playBlob(buf, my);
+      }
       if (my !== generation) break;
-      if (!buf) { if (failed) break; playIdx++; continue; }
-      setPending(false);
-      if (!played) hooks.onStart?.();
-      played = true;
-      if (status.state === "idle") setStatus({ state: "ready" });
-      await playBlob(buf, my);
       playIdx++;
     }
     playing = false;
     if (my !== generation) return;
-    if (failed && done) { setPending(false); end(); return; }
     if (done && playIdx >= queue.length) { setPending(false); end(); }
   };
 
   const dispatch = (text: string) => {
     const t = toSpeakable(text);
-    if (!t || failed) return;
+    if (!t) return;
     spoken.push(t);
-    // On-device synthesis is sequential: shorter pieces = faster first audio and a quicker stop on interrupt.
-    for (const piece of engine === "puck" ? splitForPuck(t, queue.length === 0) : [t]) { const pr = clip(piece); pr.catch(() => {}); queue.push(pr); }
+    const pr = clip(t, queue.length === 0); pr.catch(() => {}); queue.push(pr);
     void playLoop();
   };
 
@@ -363,10 +439,12 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     flush(final);
   };
 
-  if (serverDown && getPuckState() !== "ready" && getPuckState() !== "loading") {
+  if (serverDown && getPuckState() !== "ready" && getPuckState() !== "loading" && !puckSupported()) {
+    setStatus(noVoiceStatus());
     return { push: () => {}, finish: () => { end(); } };
   }
   setPending(true);
+  setActive(true);
   return {
     push: (t) => { fullText = t; feed(t, false); },
     finish: (t) => {

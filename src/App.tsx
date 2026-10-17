@@ -40,7 +40,7 @@ import {
   buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
-import { startSpeechStream, speakMessage, voiceTest, subscribeVoiceDebug, getVoiceDebug, type VoiceDebug, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus } from "./lib/kokoroTTS";
+import { startSpeechStream, speakMessage, voiceTest, subscribeVoiceDebug, getVoiceDebug, type VoiceDebug, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus, isVoiceActive, subscribeVoiceActive } from "./lib/kokoroTTS";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
 import { identify, loadProfiles, saveProfiles, renameProfile, mergeProfiles, splitLast, DEFAULT_THRESHOLD, type SpeakerProfile } from "./lib/speakerMatch";
@@ -232,6 +232,8 @@ export default function App() {
   const [fieldOpen, setFieldOpen] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>(() => getVoiceStatus());
   useEffect(() => subscribeVoiceStatus(setVoiceStatus), []);
+  const [voiceActive, setVoiceActive] = useState<boolean>(() => isVoiceActive());
+  useEffect(() => subscribeVoiceActive(setVoiceActive), []);
   const [voiceDebug, setVoiceDebug] = useState<VoiceDebug>(() => getVoiceDebug());
   useEffect(() => subscribeVoiceDebug(setVoiceDebug), []);
   /* Add-to-Home-Screen card: once, after Wilson's first reply (never before), hidden when installed. */
@@ -673,7 +675,7 @@ export default function App() {
     });
     return () => stopWake();
   }, [wakeOn]);
-  useEffect(() => { if (wakeOn) pauseWake(stt.listening || wilsonSpeaking || thinking); }, [wakeOn, stt.listening, wilsonSpeaking, thinking]);
+  useEffect(() => { if (wakeOn) pauseWake(stt.listening || wilsonSpeaking || voiceActive || thinking); }, [wakeOn, stt.listening, wilsonSpeaking, voiceActive, thinking]);
 
   /* ---------- global shortcuts ---------- */
   useEffect(() => {
@@ -1135,7 +1137,6 @@ export default function App() {
         <div
           ref={scrollRef}
           onScroll={onScroll}
-          onClick={(e) => { if (wilsonSpeaking && !(e.target as HTMLElement).closest("button, a, input, textarea, select, summary, label")) { stopSpeaking(); setPlayMsg(null); } }}
           className="flex-1 overflow-y-auto px-4"
         >
           {isHome ? (
@@ -1147,7 +1148,7 @@ export default function App() {
                 className="relative mb-[clamp(2.5rem,8dvh,5rem)]"
               >
                 <div className="relative">
-                  <ErrorBoundary label="the orb" compact><WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={() => { if (wilsonSpeaking) { stopSpeaking(); setPlayMsg(null); } primePlayback(); }} onLongPress={() => { if (!stt.listening && stt.supported && settings.voiceRecognition && voiceConsent === null) { setAskVoiceConsent(true); return; } if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (voiceId || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} /></ErrorBoundary>
+                  <ErrorBoundary label="the orb" compact><WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={() => { if (wilsonSpeaking || voiceActive) { stopSpeaking(); setPlayMsg(null); } primePlayback(); }} onLongPress={() => { if (!stt.listening && stt.supported && settings.voiceRecognition && voiceConsent === null) { setAskVoiceConsent(true); return; } if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (voiceId || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} /></ErrorBoundary>
                 </div>
               </motion.div>
 
@@ -1332,7 +1333,17 @@ export default function App() {
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting until 7 PM Central (daily free limit).</p>
             )}
             {voiceStatus.state === "preparing" && (
-              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Getting Wilson's voice ready…</p>
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Getting Wilson's voice ready…{voiceStatus.progress > 0 && voiceStatus.progress < 100 ? ` ${voiceStatus.progress}%` : ""} (one-time download, Wi-Fi is best)</p>
+            )}
+            {voiceStatus.state === "unavailable" && (
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice couldn't play just now{voiceStatus.reason ? ` (${voiceStatus.reason})` : ""}, so this reply is text only.</p>
+            )}
+            {voiceActive && (
+              <div className="flex justify-center mb-1.5">
+                <button type="button" onClick={() => { stopSpeaking(); setPlayMsg(null); }} className="flex items-center gap-1.5 px-3 py-1 rounded-full glass text-[12px] text-violet-700/80 touch-manipulation" aria-label="Stop Wilson's voice">
+                  <Square className="w-3 h-3 fill-current" /> Stop voice
+                </button>
+              </div>
             )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
             <div className={`relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5 ${saving || stt.listening ? "wl-telemetry" : ""}`} title={stt.listening ? "Listening…" : saving ? "Saving…" : undefined}>

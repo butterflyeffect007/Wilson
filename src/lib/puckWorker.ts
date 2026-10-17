@@ -20,6 +20,18 @@ let busy = false;
 
 const post = (m: unknown, transfer: Transferable[] = []) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(m, transfer);
 
+/** 16-bit PCM WAV: half the size of the float WAV transformers.js makes, and plays everywhere (incl. older iOS). */
+function wav16(samples: Float32Array, rate: number): ArrayBuffer {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const str = (o: number, t: string) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); str(8, "WAVE"); str(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true);
+  v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, samples.length * 2, true);
+  for (let i = 0, o = 44; i < samples.length; i++, o += 2) { const x = Math.max(-1, Math.min(1, samples[i])); v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+  return buf;
+}
+
 function load(): Promise<void> {
   if (!loading) loading = (async () => {
     const w = (env.backends.onnx as any)?.wasm;
@@ -55,9 +67,10 @@ async function pump() {
       if (job.gen < latestGen) { post({ type: "audio", id: job.id, cancelled: true }); continue; }
       try {
         await load();
+        post({ type: "start", id: job.id }); // the controller times each sentence from here, not from when it was queued
         const t0 = performance.now();
         const audio = await tts!.generate(job.text, { voice: VOICE, speed: job.speed });
-        const wav = audio.toWav() as ArrayBuffer;
+        const wav = wav16(audio.audio as Float32Array, audio.sampling_rate);
         const secs = audio.audio.length / audio.sampling_rate;
         post({ type: "audio", id: job.id, wav, secs, ms: Math.round(performance.now() - t0) }, [wav]);
       } catch (e) {
