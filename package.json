@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "fetch-assets": "node scripts/fetch-assets.mjs",
     "mcp:example": "tsx examples/mcp-wilson-server.ts",
-    "mcp:server": "tsx src/intelligence/mcp/server.ts"
+    "mcp:server": "tsx src/intelligence/mcp/server.ts",
+    "mcp:openquantum": "tsx src/intelligence/mcp/openquantum-server.ts"
   },
   "dependencies": {
     "@fontsource/lexend": "^5.3.0",
