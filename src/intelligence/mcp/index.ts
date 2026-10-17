@@ -4,4 +4,3 @@
 export { McpGateway, toWilsonToolResult } from "./McpGateway";
 export type { McpServerConfig, McpTool, McpCallResult } from "./McpGateway";
 export { createWilsonMcpServer } from "./server";
-export { createOpenQuantumMcpServer } from "./openquantum-server";
