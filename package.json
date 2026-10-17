@@ -7,34 +7,27 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "fetch-assets": "node scripts/fetch-assets.mjs",
-    "mcp:example": "tsx examples/mcp-wilson-server.ts"
+    "fetch-assets": "node scripts/fetch-assets.mjs"
   },
   "dependencies": {
     "@fontsource/lexend": "^5.3.0",
     "@fontsource/opendyslexic": "^5.3.0",
     "@huggingface/transformers": "^3.8.1",
-    "@modelcontextprotocol/client": "^2.0.0",
-    "@modelcontextprotocol/server": "^2.0.0",
     "clsx": "^2.1.1",
-    "express": "^4.21.0",
     "framer-motion": "^11.0.0",
     "kokoro-js": "^1.2.1",
     "lucide-react": "^0.462.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.6.0",
-    "zod": "^3.25.0"
+    "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.17",
-    "tsx": "^4.19.0",
     "typescript": "^5.8.3",
     "vite": "^5.4.11"
   }
