@@ -43,10 +43,13 @@ self.addEventListener("fetch", (e) => {
   if (url.pathname.endsWith("/sw.js") || url.pathname.endsWith("/version.json")) return;
   // Hashed assets, fonts, icons: cache-first; anything else same-origin: stale-while-revalidate.
   const immutable = url.pathname.includes("/assets/");
+  // Wilson's on-device voice engine (Puck worker, ONNX runtime, wasm) is big and rarely changes:
+  // keep it in the runtime cache, which survives deploys, so it downloads once.
+  const engine = immutable && (/\/assets\/(puckWorker|ort-|transformers)/.test(url.pathname) || url.pathname.endsWith(".wasm"));
   e.respondWith(
     caches.match(req).then((hit) => {
       const net = fetch(req).then((res) => {
-        if (res.ok && res.type === "basic") { const c = res.clone(); caches.open(immutable ? SHELL : RUNTIME).then((k) => k.put(req, c)); }
+        if (res.ok && res.type === "basic") { const c = res.clone(); caches.open(immutable && !engine ? SHELL : RUNTIME).then((k) => k.put(req, c)); }
         return res;
       });
       if (hit) { if (!immutable) net.catch(() => {}); return hit; }

@@ -16,7 +16,7 @@ function swPrecache(): Plugin {
       const sw = path.join(outDir, "sw.js");
       if (!fs.existsSync(sw)) return;
       const assets = fs.readdirSync(path.join(outDir, "assets"))
-        .filter((f) => !/\.(wasm|woff|map)$/.test(f) && !/^transformers|^ort-|vietnamese|latin-ext/.test(f))
+        .filter((f) => !/\.(wasm|woff|map)$/.test(f) && !/^transformers|^ort-|^puckWorker|vietnamese|latin-ext/.test(f))
         .map((f) => `assets/${f}`);
       const list = [...assets, "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
       const version = BUILD_ID;
@@ -29,6 +29,7 @@ function swPrecache(): Plugin {
 export default defineConfig({
   base: process.env.VITE_BASE || "/",
   plugins: [react(), swPrecache()],
+  worker: { format: "es" },
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID), __BUILD_AT__: JSON.stringify(new Date().toISOString()) },
   resolve: {
     alias: {
