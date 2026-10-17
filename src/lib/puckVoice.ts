@@ -9,7 +9,8 @@ const GUARD_KEY = "wilson-puck-guard"; // crash guard: load attempts that never 
 const MAX_ATTEMPTS = 3;
 const MAX_RESTARTS = 2; // worker died after it was ready (e.g. iOS memory pressure): reload from cache this many times per session
 /** Time allowed for ONE sentence, counted from when the worker starts it (not from when it was queued). */
-const synthBudgetMs = (text: string) => 45000 + text.length * 500;
+// ~14 characters per second of speech; once we know this phone's speed (rtf), allow 2.5x that, else a generous fixed budget.
+const synthBudgetMs = (text: string) => rtf ? Math.max(15000, 8000 + (text.length / 14) * rtf * 2500) : 25000 + text.length * 350;
 const START_GAP_MS = 20000;
 const LOAD_SILENCE_MS = 120000; // worker idle this long while sentences wait = it died silently
 
