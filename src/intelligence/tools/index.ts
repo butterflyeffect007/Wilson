@@ -10,7 +10,8 @@ export type ToolName =
   | "apod" | "donki" | "asteroids" | "mars" | "cern" | "launches" | "spacex" | "iss"
   | "starlink" | "swpc" | "quakes" | "weather" | "wikipedia" | "arxiv"
   | "country" | "fx" | "books" | "news" | "place" | "web" | "quantum" | "scholar" | "wikidata" | "gdelt" | "flights" | "nearby"
-  | "disasters" | "alerts" | "airquality" | "crypto" | "dictionary" | "holidays" | "grants";
+  | "disasters" | "alerts" | "airquality" | "crypto" | "dictionary" | "holidays" | "grants"
+  | "flightstatus" | "airport";
 export interface ToolCall { name: ToolName; params?: Record<string, string> }
 export interface ToolSource { title: string; url: string }
 export interface ToolResult { name: ToolName; ok: boolean; data?: unknown; sources: ToolSource[]; error?: string }
@@ -39,7 +40,9 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   scholar: "Peer-reviewed paper search (Semantic Scholar / OpenAlex / Crossref) with citations (params: q)",
   wikidata: "Structured facts about a person, place, organization or thing from Wikidata (params: q = name)",
   gdelt: "Worldwide news articles from the last 3 days (GDELT) on a topic (params: q = topic)",
-  flights: "Live aircraft overhead near a place (ADS-B) (params: place)",
+  flights: "Live aircraft flying near a place right now (params: place)",
+  flightstatus: "Live status of one flight by its number: on time/delayed, gates, times (params: q = flight number e.g. AA100 or UA 123)",
+  airport: "Next departures or arrivals at an airport (params: q = airport code or name e.g. DFW, to = departures|arrivals)",
   nearby: "Nearby amenities from OpenStreetMap, e.g. library, cafe, pharmacy, hospital (params: place, q = amenity)",
   place: "Find a place/address on OpenStreetMap: coordinates + map link (params: q)",
   disasters: "Current major disaster alerts worldwide (GDACS: cyclones, floods, quakes, volcanoes, wildfires; last 7 days)",
@@ -99,6 +102,29 @@ const RULES: [RegExp, (m: string) => ToolCall][] = [
   [/\b(weather|forecast|temperature|rain(ing)?|snow(ing)?)\b/i, (m) => ({ name: "weather", params: placeOf(m) })],
 ];
 
+// ---- flights (AirLabs on the worker) ----
+const AIRLINE_NAMES = "american(?: airlines)?|united(?: airlines)?|delta(?: air lines)?|southwest|alaska(?: airlines)?|jetblue|spirit|frontier|allegiant|hawaiian|sun country|breeze|air canada|westjet|british airways|lufthansa|air france|klm|emirates|qatar(?: airways)?|aeromexico|volaris|virgin atlantic|iberia|turkish airlines|ryanair|easyjet|qantas|singapore airlines|japan airlines|cathay pacific|korean air|envoy|skywest|republic";
+const FLIGHT_CTX = /\b(on time|delay(?:ed|s)?|late|land(?:ed|s|ing)?|status|gate|terminal|depart(?:ed|s|ing|ure)?|arriv(?:e|ed|es|ing|al)|boarding|cancel+ed|take ?off|took off|en route|in the air|where is|track|flight)\b/i;
+/** Returns the flight-number text to send to the worker, or "". */
+export function flightNumberOf(m: string): string {
+  let x = m.match(new RegExp(`\\b(${AIRLINE_NAMES})\\s+(?:flight\\s+)?#?\\s?(\\d{1,4})\\b`, "i")); if (x) return `${x[1]} ${x[2]}`;
+  x = m.match(/\bflight\s+(?:number\s+)?#?\s?((?:[a-z]{2}|[a-z]\d|\d[a-z])\s?\d{1,4})\b/i); if (x) return x[1];
+  if (!FLIGHT_CTX.test(m)) return "";
+  x = m.match(/\b((?:[A-Z]{2}|[A-Z]\d|\d[A-Z])\s?\d{1,4})\b/); if (x && !/^(AM|PM|MP|ID|OK|TV|PS|UK|US|EU)\s?\d/.test(x[1])) return x[1];
+  x = m.match(/\b((?:[a-z]{2}|[a-z]\d)\d{2,4})\b/i); if (x && !/^(mp[34]|b12|covid|top|no|vs|pg)/i.test(x[1])) return x[1];
+  return "";
+}
+/** Airport departures/arrivals ask -> { q, to }, or null. */
+export function airportAskOf(m: string): Record<string, string> | null {
+  if (/\b(cheap|price|prices|cost|fares?|tickets?|book(?:ing)?|deals?)\b/i.test(m)) return null;
+  if (!/\b(departures?|arrivals?|departing|arriving|leaving|landing|taking off|coming in|flights? (?:out of|leaving|departing|from|into|arriving|landing|at|to)|(?:departure|arrivals?) board)\b/i.test(m)) return null;
+  const to = /\b(arriv\w*|landing|coming in|into)\b/i.test(m) ? "arrivals" : "departures";
+  const code = m.match(/\b(?!THE|AND|FOR|ARE|NOW|YOU|HOW|WHO|WHY|ANY|CAN|GET|OUT|ETA)([A-Z]{3,4})\b/);
+  if (code) return { q: code[1], to };
+  const p = m.match(/\b(?:at|from|out of|into|in|leaving|departing(?: from)?|arriving (?:at|in)|landing (?:at|in)|to)\s+(?!the next|next|now|today|soon|on time)([A-Za-z][\w .'\/-]{1,40}?)(?:\s+(?:airport|international|today|tomorrow|tonight|right now|now|this|soon|later|in the next)\b|[?.!,]|$)/i);
+  return p ? { q: p[1].trim(), to } : null;
+}
+
 function topic(m: string, strip: RegExp): string {
   return m.replace(/[?!.]/g, "").replace(strip, " ").replace(/\b(what|whats|what's|is|are|there|can|you|tell|wilson|hey|please|give|some)\b/gi, " ").replace(/\s+/g, " ").trim().slice(0, 120);
 }
@@ -110,6 +136,9 @@ function placeOf(m: string): Record<string, string> {
 /** Cheap, reliable intent detection. Returns at most 2 calls. */
 export function detectTools(message: string): ToolCall[] {
   const out: ToolCall[] = [];
+  const fn = flightNumberOf(message), ap = fn ? null : airportAskOf(message);
+  if (fn) out.push({ name: "flightstatus", params: { q: fn } });
+  else if (ap) out.push({ name: "airport", params: ap });
   for (const [re, mk] of RULES) if (re.test(message) && !out.some((c) => c.name === mk(message).name)) out.push(mk(message));
   if (!out.length && /^(who|what) (is|was|are|were)\b|\b(look up|tell me about|wikipedia)\b/i.test(message))
     out.push({ name: "wikipedia", params: { q: topic(message, /\b(who|what|is|was|are|were|look up|tell me about|wikipedia)\b/gi) } });
@@ -120,7 +149,7 @@ const CURRENT = /\b(latest|current|currently|right now|today|tonight|this week|r
 
 /** Ask the model for a JSON tool request when keywords miss but the turn sounds factual/current. */
 export async function planWithModel(adapter: ModelAdapter, message: string): Promise<ToolCall[]> {
-  if (!/\b(latest|current|now|today|tonight|right now|news|recent|look up|search|real[- ]time|live|population|capital|currency|exchange|convert|book|author|novel|where is|address|map|located|how (many|big|far)|area of)\b/i.test(message)) return [];
+  if (!/\b(latest|current|now|today|tonight|right now|news|recent|look up|search|real[- ]time|live|flights?|airport|planes?|population|capital|currency|exchange|convert|book|author|novel|where is|address|map|located|how (many|big|far)|area of)\b/i.test(message)) return [];
   const list = Object.entries(TOOL_DESCRIPTIONS).map(([k, v]) => `- ${k}: ${v}`).join("\n");
   try {
     const r = await adapter.generate({
@@ -150,7 +179,7 @@ export async function planWithModel(adapter: ModelAdapter, message: string): Pro
 export async function runTool(baseUrl: string, call: ToolCall, location?: { lat: number; lon: number }): Promise<ToolResult> {
   const params = { ...(call.params ?? {}) };
   if ((call.name === "starlink" || (call.name === "weather" && !params.place)) && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
-  if (call.name === "nearby" && !params.place && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
+  if ((call.name === "nearby" || call.name === "flights") && !params.place && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
   if ((call.name === "alerts" || call.name === "airquality") && !params.place && location) { params.lat = String(location.lat); params.lon = String(location.lon); }
   // Some free upstreams block Cloudflare but allow CORS: try them from the browser first, worker as fallback.
   let directErr = "";
