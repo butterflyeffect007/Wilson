@@ -3,10 +3,12 @@
  * Loaded lazily (first tap / idle moment), never during app start. If anything goes wrong it just
  * reports "unavailable" and the caller uses the Aura-2 server voice instead. Never throws to callers.
  */
+import { isIOS } from "./ortSetup";
+
 export type PuckState = "off" | "loading" | "ready" | "failed";
 
 const GUARD_KEY = "wilson-puck-guard"; // crash guard: load attempts that never reached "ready" (per build)
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = 4; // per build; each failed load normally uses 2 (first try + one safe-mode retry)
 const MAX_RESTARTS = 2; // worker died after it was ready (e.g. iOS memory pressure): reload from cache this many times per session
 /** Time allowed for ONE sentence, counted from when the worker starts it (not from when it was queued). */
 // ~14 characters per second of speech; once we know this phone's speed (rtf), allow 2.5x that, else a generous fixed budget.
@@ -28,6 +30,56 @@ const listeners = new Set<() => void>();
 let rtf = 0;
 export let puckStats = { loadMs: 0, firstClipMs: 0, bytes: 0, rtf: 0, restarts: 0 };
 let lastMsgAt = 0;
+let loadStage = "";
+let safeNext = isIOS() || (() => { try { return localStorage.getItem("wilson-puck-safe") === "1"; } catch { return false; } })(); // iPhones always start in low-memory mode; // low-memory session (after a failed try; remembered once it works)
+let freshNext = false;    // next load clears a possibly half-saved model download first
+let sessionRetried = false;
+
+/* ---- why Puck didn't start, in plain words (kept across app restarts; shown in Settings → Voice test) ---- */
+const FAIL_KEY = "wilson-puck-lastfail";
+const STAGE_KEY = "wilson-puck-loading"; // set while a load is in progress; still set at the next start = the app was closed/killed mid-load
+export type PuckFail = { at: number; stage: string; error: string; plain: string; build: string; device: string };
+function deviceLabel(): string {
+  const ua = navigator.userAgent || "";
+  const ios = ua.match(/OS (\d+)[_.](\d+)/); const android = ua.match(/Android (\d+)/);
+  const standalone = (navigator as any).standalone === true || matchMedia?.("(display-mode: standalone)").matches;
+  const br = /CriOS|Chrome/.test(ua) ? "Chrome" : /FxiOS|Firefox/.test(ua) ? "Firefox" : /Safari/.test(ua) ? "Safari" : "browser";
+  const os = /iPhone|iPad|iPod/.test(ua) && ios ? `iPhone iOS ${ios[1]}.${ios[2]}` : android ? `Android ${android[1]}` : /Mac OS X/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : "device";
+  const mem = (navigator as any).deviceMemory; const cores = navigator.hardwareConcurrency;
+  return `${os}, ${br}${standalone ? " (Home Screen app)" : ""}${mem ? `, ${mem} GB` : ""}${cores ? `, ${cores} cores` : ""}`;
+}
+function plainReason(stage: string, error: string): string {
+  const e = error.toLowerCase();
+  if (/app closed or reloaded/.test(e)) return stage === "downloading" ? "the app was closed before the voice download finished (keep Wilson open until it reaches 100%)" : "the phone closed or reloaded Wilson while the voice was starting (usually memory: close other apps and try again)";
+  if (/invalid regular expression|syntaxerror|unexpected token|invalid group/.test(e)) return "this phone's browser is too old for the on-device voice (update iOS / the browser)";
+  if (/out of memory|memory|rangeerror|allocation|abort\(|oom/.test(e) || /killed|went silent|closed|reloaded/.test(e)) return "the phone ran out of memory while starting the voice (close other apps and try again)";
+  if (/quota|storage/.test(e)) return "the phone is out of storage space for the voice download";
+  if (/failed to fetch|network|load failed|fetch|404|403|cors|connection/.test(e)) return stage === "downloading" ? "the voice download was interrupted (try again on Wi‑Fi)" : "the voice engine file couldn't be downloaded (try again on Wi‑Fi)";
+  if (/wasm|webassembly|compile|instantiate|no available backend/.test(e)) return "this phone couldn't start the voice engine (WebAssembly)";
+  if (stage === "downloading") return "the voice download didn't finish";
+  return "the on-device voice couldn't start";
+}
+function recordFail(stage: string, error: string) {
+  const f: PuckFail = { at: Date.now(), stage: stage || "starting", error: error || "unknown", plain: plainReason(stage, error), build: BUILD, device: deviceLabel() };
+  try { localStorage.setItem(FAIL_KEY, JSON.stringify(f)); localStorage.removeItem(STAGE_KEY); } catch { /* ignore */ }
+  console.warn("[voice] Puck didn't start:", f.stage, f.error);
+  reportFail(f);
+}
+export function getPuckFail(): PuckFail | null { try { const r = localStorage.getItem(FAIL_KEY); return r ? JSON.parse(r) as PuckFail : null; } catch { return null; } }
+export function getPuckStage() { return loadStage; }
+export function getPuckDevice() { try { return deviceLabel(); } catch { return ""; } }
+/** Anonymous failure note to the Wilson worker (stage + error + phone type; no messages, no ids). */
+function reportFail(f: PuckFail) {
+  try {
+    const url = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev") + "/voice/diag";
+    void fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: f.stage, error: f.error, device: f.device, build: f.build }), keepalive: true }).catch(() => {});
+  } catch { /* ignore */ }
+}
+// A load that was still in progress when the app last closed = iOS likely killed the page for memory.
+try {
+  const prev = localStorage.getItem(STAGE_KEY);
+  if (prev) { localStorage.removeItem(STAGE_KEY); recordFail(prev, "app closed or reloaded while the voice was loading"); safeNext = true; }
+} catch { /* ignore */ }
 let watchdog: ReturnType<typeof setInterval> | null = null;
 
 function emit() { listeners.forEach((l) => l()); }
@@ -66,7 +118,7 @@ export function puckBlockedReason(): string {
   const mem = (navigator as any).deviceMemory as number | undefined;
   if (mem !== undefined && mem < 3) return "this phone has too little memory for the on-device voice";
   if ((navigator as any).connection?.saveData) return "Data Saver is on";
-  if (guard() >= MAX_ATTEMPTS) return "the on-device voice failed to load 3 times";
+  if (guard() >= MAX_ATTEMPTS) { const f = getPuckFail(); return `the on-device voice failed to load ${MAX_ATTEMPTS} times${f ? `: ${f.plain}` : ""}`; }
   return "";
 }
 
@@ -79,7 +131,7 @@ function armWatchdog() {
     waiting.forEach((w) => { if (w.startedAt && !started) started = w; });
     const s = started as Wait | null;
     const over = s ? now - s.startedAt > synthBudgetMs(s.text) : now - lastMsgAt > START_GAP_MS;
-    if (over) { console.warn("[voice] Puck worker stopped responding"); crashed(); }
+    if (over) { console.warn("[voice] Puck worker stopped responding"); crashed("stopped responding while speaking (the phone may have stopped it, often for memory)"); }
   }, 2000);
 }
 
@@ -87,19 +139,29 @@ function armWatchdog() {
 export function ensurePuck(): void {
   if (state !== "off" || !puckSupported()) return;
   setState("loading");
+  const safe = safeNext, fresh = freshNext; freshNext = false;
+  loadStage = "starting";
   if (!wasReady) setGuard(guard() + 1); // a restart after a runtime crash loads from cache; don't count it
   const t0 = performance.now();
   lastMsgAt = Date.now();
   try {
     worker = new Worker(new URL("./puckWorker.ts", import.meta.url), { type: "module" });
-  } catch (e) { console.warn("[voice] Puck worker failed to start", e); setState("failed"); return; }
-  worker.onerror = (e) => { console.warn("[voice] Puck worker error", e.message); crashed(); };
+  } catch (e) { recordFail("starting the voice worker", String((e as Error)?.message ?? e)); setState("failed"); return; }
+  if (!wasReady) try { localStorage.setItem(STAGE_KEY, "starting"); } catch { /* ignore */ }
+  worker.onerror = (e) => {
+    // A module that can't even load (old browser, blocked file) gives an ErrorEvent with little detail.
+    const msg = e.message || (loadStage === "starting" ? "the voice engine file couldn't load in this browser" : "worker error");
+    try { e.preventDefault(); } catch { /* ignore */ }
+    crashed(msg);
+  };
   worker.onmessage = (ev: MessageEvent) => {
     const m = ev.data;
     lastMsgAt = Date.now();
-    if (m.type === "progress") { progress = m.progress; if (m.bytes) puckStats.bytes = m.bytes; emit(); }
-    else if (m.type === "ready") { puckStats.loadMs = Math.round(performance.now() - t0); progress = 100; wasReady = true; setGuard(0); console.info(`[voice] Puck ready in ${(puckStats.loadMs / 1000).toFixed(1)}s`); setState("ready"); }
-    else if (m.type === "failed") { console.warn("[voice] Puck failed to load:", m.error); crashed(); }
+    if (m.type === "stage") { loadStage = m.stage; if (!wasReady && m.stage !== "ready") try { localStorage.setItem(STAGE_KEY, m.stage); } catch { /* ignore */ } emit(); }
+    else if (m.type === "alive") { /* worker script loaded and parsed */ }
+    else if (m.type === "progress") { progress = m.progress; if (m.bytes) puckStats.bytes = m.bytes; emit(); }
+    else if (m.type === "ready") { puckStats.loadMs = Math.round(performance.now() - t0); progress = 100; wasReady = true; setGuard(0); loadStage = "ready"; try { localStorage.removeItem(STAGE_KEY); if (m.safe) localStorage.setItem("wilson-puck-safe", "1"); } catch { /* ignore */ } console.info(`[voice] Puck ready in ${(puckStats.loadMs / 1000).toFixed(1)}s`); setState("ready"); }
+    else if (m.type === "failed") { if (m.stage) loadStage = m.stage; crashed(m.error || "failed to load"); }
     else if (m.type === "start") { const w = waiting.get(m.id); if (w) w.startedAt = Date.now(); }
     else if (m.type === "audio") {
       const w = waiting.get(m.id); if (!w) return;
@@ -111,17 +173,17 @@ export function ensurePuck(): void {
       } else { if (m.error) console.warn("[voice] Puck clip failed:", m.error); w.resolve(null); }
     }
   };
-  worker.postMessage({ type: "load" });
+  worker.postMessage({ type: "load", safe, fresh });
   // A load that goes completely quiet (no download progress, no "ready") for 2 minutes is dead: e.g. iOS killed the worker.
   const me = worker;
   const lw = setInterval(() => {
     if (worker !== me || state !== "loading") { clearInterval(lw); return; }
-    if (Date.now() - lastMsgAt > LOAD_SILENCE_MS) { clearInterval(lw); console.warn("[voice] Puck load went silent"); crashed(); }
+    if (Date.now() - lastMsgAt > LOAD_SILENCE_MS) { clearInterval(lw); crashed("went silent (the phone may have stopped it, often for memory)"); }
   }, 5000);
 }
 
 /** The worker died, hung, or failed to load. After a successful load, restart it (model is cached). */
-function crashed() {
+function crashed(why = "") {
   try { worker?.terminate(); } catch { /* ignore */ }
   worker = null;
   if (watchdog) { clearInterval(watchdog); watchdog = null; }
@@ -130,6 +192,11 @@ function crashed() {
     restarts++; puckStats.restarts = restarts;
     console.warn(`[voice] restarting Puck (${restarts}/${MAX_RESTARTS})`);
     state = "off"; ensurePuck(); return;
+  }
+  if (!wasReady) {
+    recordFail(loadStage, why);
+    // First try failed: retry once right away in safe mode (plain WASM, single thread, low-memory session, fresh download).
+    if (!sessionRetried && guard() < MAX_ATTEMPTS) { sessionRetried = true; safeNext = true; freshNext = !/memory|silent|closed|stopped|too old|syntax|regular expression/i.test(why); console.warn("[voice] retrying Puck in safe mode"); state = "off"; ensurePuck(); if ((state as PuckState) === "loading") return; }
   }
   setState("failed");
 }
@@ -159,3 +226,11 @@ export function puckSynth(text: string, speed: number, gen: number): Promise<Blo
 
 /** Drop queued sentences from older replies (tap-to-interrupt). */
 export function puckCancel(gen: number): void { worker?.postMessage({ type: "cancel", gen }); }
+
+/** Settings → "Try Puck again": clears the failure counter and starts a fresh load (safe mode if a try failed before). */
+export function retryPuck(): void {
+  setGuard(0); sessionRetried = false;
+  if (state === "loading" || state === "ready") return;
+  if (getPuckFail()) safeNext = true;
+  state = "off"; emit(); ensurePuck();
+}

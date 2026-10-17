@@ -53,6 +53,7 @@ function loadSV() {
   if (!svPromise) {
     svPromise = (async () => {
       const t = await import("@huggingface/transformers");
+      (await import("./ortSetup")).configureOrt(t.env);
       const processor = await t.AutoProcessor.from_pretrained(SV_MODEL);
       const model = await t.AutoModelForXVector.from_pretrained(SV_MODEL, { dtype: "q8" } as any);
       return { processor, model };

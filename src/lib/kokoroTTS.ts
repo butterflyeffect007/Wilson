@@ -11,7 +11,7 @@
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
  */
 import { attachAudio, detachAudio, setSpeakingFlag } from "./audioBus";
-import { ensurePuck, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
+import { ensurePuck, getPuckFail, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
 
 /** Load Puck in an idle moment (never blocks the app or the tap that triggered it). */
 function schedulePuck() {
@@ -192,7 +192,8 @@ subscribePuck(() => {
 
 /** What to show when a reply can't be voiced right now. */
 function noVoiceStatus(): Partial<VoiceStatus> {
-  const why = puckBlockedReason() || (getPuckState() === "failed" ? "the on-device voice couldn't start" : "");
+  const f = getPuckFail();
+  const why = puckBlockedReason() || (getPuckState() === "failed" ? `the on-device voice couldn't start${f ? `: ${f.plain.replace(/\s*\([^)]*\)\s*$/, "")}; see Settings → Voice test` : ""}` : "");
   if (isVoiceResting()) return { state: why ? "unavailable" : "resting", reason: why || undefined };
   return { state: "unavailable", reason: why || "the voice server didn't answer" };
 }

@@ -13,13 +13,20 @@ export interface MemoryItem {
   vec: number[];
 }
 
+import { isIOS } from "./ortSetup";
+import { getPuckState } from "./puckVoice";
+
 const MODEL = "Xenova/all-MiniLM-L6-v2";
 const DB = "wilson_memory", STORE = "items";
 let extractor: Promise<any> | null = null;
 
 function loadExtractor() {
+  // iPhone: one page gets one memory budget. Don't load the memory-search model while Puck's voice is still loading
+  // (this turn just skips recall); once Puck is ready both fit.
+  if (!extractor && isIOS() && getPuckState() === "loading") return Promise.reject(new Error("waiting for Puck to finish loading"));
   if (!extractor) {
     extractor = import("@huggingface/transformers")
+      .then(async (t) => { (await import("./ortSetup")).configureOrt(t.env); return t; })
       .then((t) => t.pipeline("feature-extraction", MODEL, { dtype: "q8" } as any))
       .catch((e) => { extractor = null; throw e; });
   }

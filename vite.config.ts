@@ -26,10 +26,22 @@ function swPrecache(): Plugin {
   };
 }
 
+/** Use onnxruntime-web's plain WASM build everywhere (no WebGPU/JSEP): ~11 MB engine instead of ~21 MB, less memory on iPhones. Nothing in Wilson uses WebGPU. */
+function ortWasmOnly(): Plugin {
+  return {
+    name: "wilson-ort-wasm-only",
+    enforce: "pre",
+    async resolveId(source, importer, opts) {
+      if (source === "onnxruntime-web") return this.resolve("onnxruntime-web/wasm", importer, { ...opts, skipSelf: true });
+      return null;
+    },
+  };
+}
+
 export default defineConfig({
   base: process.env.VITE_BASE || "/",
-  plugins: [react(), swPrecache()],
-  worker: { format: "es" },
+  plugins: [ortWasmOnly(), react(), swPrecache()],
+  worker: { format: "es", plugins: () => [ortWasmOnly()] },
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID), __BUILD_AT__: JSON.stringify(new Date().toISOString()) },
   resolve: {
     alias: {
