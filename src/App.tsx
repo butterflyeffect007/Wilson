@@ -1331,6 +1331,9 @@ export default function App() {
             {voiceStatus.state === "resting" && (
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting until 7 PM Central (daily free limit).</p>
             )}
+            {voiceStatus.state === "preparing" && (
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Getting Wilson's voice ready…</p>
+            )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
             <div className={`relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5 ${saving || stt.listening ? "wl-telemetry" : ""}`} title={stt.listening ? "Listening…" : saving ? "Saving…" : undefined}>
               {(saving || stt.listening) && <span className="sr-only" role="status">{stt.listening ? "Processing voice" : "Saving"}</span>}

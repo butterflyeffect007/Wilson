@@ -1,12 +1,24 @@
 /**
- * Wilson's voice: Deepgram Aura-2 "apollo" via Cloudflare Workers AI, through the Wilson worker /tts (MP3).
- * Server voice ONLY. No device/speechSynthesis voice: if a clip fails, Wilson stays silent.
+ * Wilson's voice.
+ * 1) Primary: Kokoro "Puck" (am_puck) synthesized on the device in a Web Worker (puckVoice.ts), loaded lazily
+ *    after the first tap / an idle moment and cached by the browser, so it downloads once.
+ * 2) Fallback: Deepgram Aura-2 (arcas) via Cloudflare Workers AI through the Wilson worker /tts (MP3), with the
+ *    IndexedDB clip cache — used while Puck is still downloading, on devices too weak for it, or if it fails.
+ * 3) If both fail (e.g. the daily free Aura limit), Wilson stays text-only (no robotic device voice).
  * Playback: ONE reused HTMLAudioElement (playsinline), unlocked by playing a silent clip inside the first tap.
  * HTMLAudioElement is not muted by the iPhone ringer switch the way Web Audio is, and avoids
  * AudioContext "suspended"/"interrupted" states in home-screen PWAs. Web Audio is only used for
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
  */
 import { attachAudio, detachAudio, setSpeakingFlag } from "./audioBus";
+import { ensurePuck, getPuckState, puckCancel, puckIsSlow, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
+
+/** Load Puck in an idle moment (never blocks the app or the tap that triggered it). */
+function schedulePuck() {
+  if (getPuckState() !== "off") return;
+  const ric = (globalThis as any).requestIdleCallback as ((cb: () => void, o?: { timeout: number }) => void) | undefined;
+  if (ric) ric(() => ensurePuck(), { timeout: 3000 }); else setTimeout(() => ensurePuck(), 1500);
+}
 
 const SPEED = 1.1;
 const SERVER_TTS_URL = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev") + "/tts";
@@ -44,7 +56,7 @@ function audioEl(): HTMLAudioElement {
 }
 
 export type SpeakResult = "success" | "skipped" | "error";
-export type VoiceStatus = { state: "idle" | "ready" | "resting"; progress: number; reason?: string };
+export type VoiceStatus = { state: "idle" | "ready" | "resting" | "preparing"; progress: number; reason?: string };
 let status: VoiceStatus = { state: "idle", progress: 0 };
 const statusListeners = new Set<(s: VoiceStatus) => void>();
 function setStatus(s: Partial<VoiceStatus>) { status = { ...status, ...s }; statusListeners.forEach((l) => l(status)); }
@@ -56,6 +68,7 @@ export function subscribeVoiceStatus(l: (s: VoiceStatus) => void) { statusListen
  * audio element so iOS lets that element play later (after async fetches) without another tap.
  */
 export function primePlayback(): void {
+  schedulePuck();
   if (unlocked) return;
   const a = audioEl();
   try {
@@ -69,6 +82,7 @@ export function primePlayback(): void {
 
 export function stopSpeaking(): void {
   generation++;
+  puckCancel(generation);
   if (el && currentUrl) { try { el.pause(); } catch { /* ignore */ } }
   finishCurrentClip?.(); finishCurrentClip = null;
   if (currentUrl) { URL.revokeObjectURL(currentUrl); currentUrl = null; }
@@ -127,8 +141,15 @@ function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListe
 /** True while voice audio has been requested but nothing is playing yet ("getting ready to speak"). */
 export function subscribeVoicePending(l: (p: boolean) => void) { pendingListeners.add(l); return () => { pendingListeners.delete(l); }; }
 
-/** Kept for callers; Workers AI needs no warm-up. */
-export function warmVoice(): void { /* no-op */ }
+/** Typing / opening: start getting Puck ready in the background (Workers AI itself needs no warm-up). */
+export function warmVoice(): void { schedulePuck(); }
+
+// Once Puck is ready, the Aura daily limit no longer silences Wilson.
+subscribePuck(() => {
+  const p = getPuckState();
+  if (p === "ready" && (status.state === "resting" || status.state === "preparing")) setStatus({ state: "ready" });
+  if (p === "failed" && status.state === "preparing") setStatus({ state: isVoiceResting() ? "resting" : "idle" });
+});
 
 /* ---- client-side clip cache (IndexedDB) so replays don't spend the daily voice allowance ---- */
 const IDB_NAME = "wilson-voice", IDB_STORE = "clips";
@@ -181,7 +202,7 @@ async function fetchOnce(text: string, speed: number, timeoutMs: number): Promis
       body: JSON.stringify({ text, speed }), signal: ctrl.signal,
     });
     if (res.status === 503) { serverDown = true; throw new Error("voice server not configured (503)"); }
-    if (res.status === 429) { restingUntil = nextResetUtcMidnight(); setStatus({ state: "resting" }); throw new VoiceLimitError(); }
+    if (res.status === 429) { restingUntil = nextResetUtcMidnight(); if (getPuckState() !== "ready") setStatus({ state: "resting" }); throw new VoiceLimitError(); }
     if (!res.ok) throw new Error("tts http " + res.status);
     const blob = await res.blob();
     if (blob.size < 100) throw new Error("tts empty audio");
@@ -229,6 +250,22 @@ function takeSentences(text: string, from: number, final: boolean): { parts: str
   return { parts, next };
 }
 
+/** Split a long sentence at commas/semicolons/dashes into pieces of ~PUCK_MAX chars (first piece shorter). */
+const PUCK_MAX = 120, PUCK_FIRST = 70;
+function splitForPuck(text: string, first: boolean): string[] {
+  const out: string[] = [];
+  let rest = text, max = first ? PUCK_FIRST : PUCK_MAX;
+  while (rest.length > max) {
+    const win = rest.slice(0, max);
+    const m = [...win.matchAll(/[,;:—–](\s|$)|\s-\s/g)].filter((x) => (x.index ?? 0) >= 20).pop();
+    if (!m) break;
+    const cut = (m.index ?? 0) + m[0].length;
+    out.push(rest.slice(0, cut).trim()); rest = rest.slice(cut).trim(); max = PUCK_MAX;
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
 export type SpeechStream = { push: (textSoFar: string) => void; finish: (finalText: string) => void };
 
 /**
@@ -252,6 +289,33 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   let fullText = "";
   const waiters: (() => void)[] = [];
   const slot = () => inflight < MAX_PARALLEL ? Promise.resolve() : new Promise<void>((r) => waiters.push(r));
+  // One voice per reply: Puck if it's ready (and this device is fast enough, or Aura is resting), else Aura.
+  let engine: "puck" | "aura" = getPuckState() === "ready" && (!puckIsSlow() || isVoiceResting() || serverDown) ? "puck" : "aura";
+  dbg(`voice engine: ${engine === "puck" ? "Puck (on device)" : "Aura (server)"}`);
+  const clip = async (t: string): Promise<Blob | null> => {
+    if (engine === "puck") {
+      const t0 = Date.now();
+      const b = await puckSynth(t, speed, my);
+      if (b) { dbg(`puck ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`); return my === generation ? b : null; }
+      if (my !== generation) return null;
+      dbg("puck clip failed, using server voice");
+      engine = "aura";
+    }
+    try {
+      await slot(); inflight++;
+      try { return await fetchClip(t, speed, my); }
+      finally { inflight--; waiters.shift()?.(); }
+    } catch (e) {
+      // Server voice failed (daily limit, offline...). If Puck is still downloading, wait for it.
+      if (my === generation && (getPuckState() === "loading" || getPuckState() === "ready")) {
+        if (getPuckState() === "loading") setStatus({ state: "preparing" });
+        const ok = await waitForPuck(90000);
+        if (status.state === "preparing") setStatus({ state: ok ? "ready" : (isVoiceResting() ? "resting" : "idle") });
+        if (ok && my === generation) { engine = "puck"; const b = await puckSynth(t, speed, my); if (b) return my === generation ? b : null; }
+      }
+      throw e;
+    }
+  };
 
   const playLoop = async () => {
     if (playing) return; playing = true;
@@ -276,13 +340,10 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
 
   const dispatch = (text: string) => {
     const t = toSpeakable(text);
-    if (!t || failed || serverDown) return;
+    if (!t || failed) return;
     spoken.push(t);
-    queue.push((async () => {
-      await slot(); inflight++;
-      try { return await fetchClip(t, speed, my); }
-      finally { inflight--; waiters.shift()?.(); }
-    })());
+    // On-device synthesis is sequential: shorter pieces = faster first audio and a quicker stop on interrupt.
+    for (const piece of engine === "puck" ? splitForPuck(t, queue.length === 0) : [t]) { const pr = clip(piece); pr.catch(() => {}); queue.push(pr); }
     void playLoop();
   };
 
@@ -302,7 +363,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     flush(final);
   };
 
-  if (serverDown) {
+  if (serverDown && getPuckState() !== "ready" && getPuckState() !== "loading") {
     return { push: () => {}, finish: () => { end(); } };
   }
   setPending(true);
@@ -322,7 +383,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
 /** Speak one finished message with Wilson's voice (sentence-chunked). Works regardless of the auto-voice setting. */
 /** Settings → "Voice test": call from a tap. */
 export function voiceTest(): void {
-  dbg("voice test tapped");
+  dbg(`voice test tapped (Puck: ${getPuckState()})`);
   speakMessage("Hi Jenny, it's Wilson. If you can hear me, my voice is working!");
 }
 
