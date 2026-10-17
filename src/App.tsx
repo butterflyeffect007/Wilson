@@ -50,7 +50,7 @@ import { analyzeProsody, classify, EMOTION_CONFIDENCE_MIN, EMOTION_GUIDANCE, EMO
 export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
   "https://wilson-proxy.butterflyeffect007.workers.dev";
-const CONTEXT_WINDOW = 20; // last 20 messages (was 10)
+const CONTEXT_WINDOW = 10; // last 10 messages (20 kept old spec talk in view)
 const MAX_RETRIES = 2;
 
 /* ---------- greetings (logic from wilsonaibro Index.tsx @ 1816d92) ---------- */
