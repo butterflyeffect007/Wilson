@@ -44,7 +44,7 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
 
 const RULES: [RegExp, (m: string) => ToolCall][] = [
   [/\bquantum (computer|computing|result|experiment|job|demo)s?\b|\bibm quantum\b|\bbell state\b|\bqubits?\b/i, () => ({ name: "quantum" })],
-  [/\b(planes?|flights?|aircraft|airplanes?|jets?) (overhead|above|near|over|flying|around)\b|\bwhat(?:'s| is) flying\b/i, (m) => ({ name: "flights", params: placeOf(m) })],
+  [/\b(planes?|flights?|aircraft|airplanes?|jets?)\b[\w\s]{0,14}\b(overhead|above|near|over|flying|around)\b|\bwhat(?:'s| is) flying\b/i, (m) => ({ name: "flights", params: placeOf(m) })],
   [/\b(peer[- ]reviewed|scientific|scholarly|academic|journal) (papers?|articles?|studies|research)\b|\bstud(y|ies) (on|about)\b/i, (m) => ({ name: "scholar", params: { q: topic(m, /\b(peer[- ]reviewed|scientific|scholarly|academic|journal|papers?|articles?|studies|study|research|latest|recent|find|search|on|about|any|me|show)\b/gi) } })],
   [/\b(libraries|library|cafes?|coffee shops?|pharmac(y|ies)|hospitals?|parks?) (near|in|around)\b/i, (m) => ({ name: "nearby", params: { ...placeOf(m), q: (m.match(/\b(librar|cafe|coffee|pharmac|hospital|park)/i)?.[1] || "cafe").toLowerCase().replace(/^librar$/, "library").replace(/^coffee$/, "cafe").replace(/^pharmac$/, "pharmacy") } })],
   [/\b(iss|international space station|space station)\b/i, () => ({ name: "iss" })],
@@ -68,7 +68,7 @@ function topic(m: string, strip: RegExp): string {
   return m.replace(/[?!.]/g, "").replace(strip, " ").replace(/\b(what|whats|what's|is|are|there|can|you|tell|wilson|hey|please|give|some)\b/gi, " ").replace(/\s+/g, " ").trim().slice(0, 120);
 }
 function placeOf(m: string): Record<string, string> {
-  const p = m.match(/\b(?:in|for|at|near)\s+([A-Z][\w .'-]{1,40}?)(?:\s+(?:today|tomorrow|this|right|now|tonight)\b|[?.!,]|$)/);
+  const p = m.match(/\b(?:in|for|at|near|over|above)\s+([A-Z][\w .'-]{1,40}?)(?:\s+(?:today|tomorrow|this|right|now|tonight)\b|[?.!,]|$)/);
   return p ? { place: p[1].trim() } : {};
 }
 
