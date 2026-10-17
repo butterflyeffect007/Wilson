@@ -18,7 +18,7 @@ function swPrecache(): Plugin {
       const assets = fs.readdirSync(path.join(outDir, "assets"))
         .filter((f) => !/\.(wasm|woff|map)$/.test(f) && !/^transformers|^ort-|^puckWorker|vietnamese|latin-ext/.test(f))
         .map((f) => `assets/${f}`);
-      const list = [...assets, "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
+      const list = [...assets, "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-192.png", "icon-maskable-512.png", "apple-touch-icon.png"];
       const version = BUILD_ID;
       fs.writeFileSync(path.join(outDir, "version.json"), JSON.stringify({ build: BUILD_ID, at: new Date().toISOString() }));
       fs.writeFileSync(sw, fs.readFileSync(sw, "utf8").replace("__VERSION__", version).replace("__PRECACHE__", JSON.stringify(list)));
