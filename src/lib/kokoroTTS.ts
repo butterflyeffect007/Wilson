@@ -193,7 +193,9 @@ subscribePuck(() => {
 /** What to show when a reply can't be voiced right now. */
 function noVoiceStatus(): Partial<VoiceStatus> {
   const f = getPuckFail();
-  const why = puckBlockedReason() || (getPuckState() === "failed" ? `the on-device voice couldn't start${f ? `: ${f.plain.replace(/\s*\([^)]*\)\s*$/, "")}; see Settings → Voice test` : ""}` : "");
+  // Plain reason when we know one; otherwise the real error text (never "couldn't start: couldn't start").
+  const detail = f ? (/couldn't start$/.test(f.plain) ? `error: ${f.error.slice(0, 90)}` : f.plain.replace(/\s*\([^)]*\)\s*$/, "")) : "";
+  const why = puckBlockedReason() || (getPuckState() === "failed" ? `Puck couldn't start${detail ? `: ${detail}` : ""}; see Settings → Voice test` : "");
   if (isVoiceResting()) return { state: why ? "unavailable" : "resting", reason: why || undefined };
   return { state: "unavailable", reason: why || "the voice server didn't answer" };
 }

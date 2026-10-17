@@ -13,6 +13,7 @@
  * "safe" mode (the retry after a failed load, remembered once it works): turns off ONNX's memory arena /
  * memory-pattern planning to lower peak memory. "fresh" clears a possibly half-saved model download first.
  */
+import "./streamPolyfill"; // first: iPhone Safari needs it before the voice library loads
 import { env, StyleTextToSpeech2Model, AutoTokenizer } from "@huggingface/transformers";
 import { KokoroTTS } from "kokoro-js";
 import { configureOrt } from "./ortSetup";

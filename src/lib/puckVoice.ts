@@ -51,6 +51,7 @@ function deviceLabel(): string {
 function plainReason(stage: string, error: string): string {
   const e = error.toLowerCase();
   if (/app closed or reloaded/.test(e)) return stage === "downloading" ? "the app was closed before the voice download finished (keep Wilson open until it reaches 100%)" : "the phone closed or reloaded Wilson while the voice was starting (usually memory: close other apps and try again)";
+  if (/undefined is not a function|is not a function|not iterable|iterator|asynciterator/.test(e)) return "this iPhone's Safari is missing a feature the voice engine used (fixed in the latest update; reopen Wilson)";
   if (/invalid regular expression|syntaxerror|unexpected token|invalid group/.test(e)) return "this phone's browser is too old for the on-device voice (update iOS / the browser)";
   if (/out of memory|memory|rangeerror|allocation|abort\(|oom/.test(e) || /killed|went silent|closed|reloaded/.test(e)) return "the phone ran out of memory while starting the voice (close other apps and try again)";
   if (/quota|storage/.test(e)) return "the phone is out of storage space for the voice download";
@@ -72,7 +73,7 @@ export function getPuckDevice() { try { return deviceLabel(); } catch { return "
 function reportFail(f: PuckFail) {
   try {
     const url = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev") + "/voice/diag";
-    void fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: f.stage, error: f.error, device: f.device, build: f.build }), keepalive: true }).catch(() => {});
+    void fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage: f.stage, error: f.error, device: f.device, build: f.build }) }).catch(() => {});
   } catch { /* ignore */ }
 }
 // A load that was still in progress when the app last closed = iOS likely killed the page for memory.
@@ -196,7 +197,7 @@ function crashed(why = "") {
   if (!wasReady) {
     recordFail(loadStage, why);
     // First try failed: retry once right away in safe mode (plain WASM, single thread, low-memory session, fresh download).
-    if (!sessionRetried && guard() < MAX_ATTEMPTS) { sessionRetried = true; safeNext = true; freshNext = !/memory|silent|closed|stopped|too old|syntax|regular expression/i.test(why); console.warn("[voice] retrying Puck in safe mode"); state = "off"; ensurePuck(); if ((state as PuckState) === "loading") return; }
+    if (!sessionRetried && guard() < MAX_ATTEMPTS) { sessionRetried = true; safeNext = true; freshNext = !/memory|silent|closed|stopped|too old|syntax|regular expression|not a function|iterat/i.test(why); console.warn("[voice] retrying Puck in safe mode"); state = "off"; ensurePuck(); if ((state as PuckState) === "loading") return; }
   }
   setState("failed");
 }
