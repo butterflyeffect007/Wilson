@@ -11,7 +11,7 @@
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
  */
 import { attachAudio, detachAudio, setSpeakingFlag } from "./audioBus";
-import { ensurePuck, getPuckFail, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
+import { puckStats, ensurePuck, getPuckFail, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
 
 /** Load Puck in an idle moment (never blocks the app or the tap that triggered it). */
 function schedulePuck() {
@@ -302,7 +302,7 @@ function takeSentences(text: string, from: number, final: boolean): { parts: str
 }
 
 /** Split a long sentence at commas/semicolons/dashes into pieces of ~PUCK_MAX chars (first piece shorter). */
-const PUCK_MAX = 120, PUCK_FIRST = 70;
+const PUCK_MAX = 120, PUCK_FIRST = 50; // short first piece so the first words start sooner
 function splitForPuck(text: string, first: boolean): string[] {
   const out: string[] = [];
   let rest = text, max = first ? PUCK_FIRST : PUCK_MAX;
@@ -398,12 +398,20 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       if (!played) setPending(true);
       let parts: Promise<Blob | null>[] = [];
       try { parts = await queue[playIdx]; } catch { if (status.state !== "preparing") setStatus(noVoiceStatus()); }
-      for (const part of parts) {
+      for (let pi = 0; pi < parts.length; pi++) {
+        const part = parts[pi];
         if (my !== generation) break;
         if (!played) setPending(true);
         const buf = await part.catch(() => null);
         if (my !== generation) break;
         if (!buf) continue; // skip just this piece; keep the rest of the reply playing
+        // Phone slower than real time: before the first words, let one more piece finish (up to 6 s) so the
+        // paragraph has a small buffer and fewer silences between sentences.
+        if (!played && puckStats.rtf > 1.05) {
+          const next = parts[pi + 1] ?? (playIdx + 1 < queue.length ? queue[playIdx + 1].then((ps) => ps[0] ?? null) : null);
+          if (next) await Promise.race([next.catch(() => null), new Promise((r) => setTimeout(r, 6000))]);
+          if (my !== generation) break;
+        }
         setPending(false);
         if (!played) hooks.onStart?.();
         played = true;

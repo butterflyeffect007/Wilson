@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getPuckState, getPuckProgress, getPuckStage, getPuckFail, getPuckDevice, puckBlockedReason, subscribePuck, retryPuck } from "../lib/puckVoice";
+import { puckStats, getPuckState, getPuckProgress, getPuckStage, getPuckFail, getPuckDevice, puckBlockedReason, subscribePuck, retryPuck } from "../lib/puckVoice";
 import { isVoiceResting } from "../lib/kokoroTTS";
 
 /** Settings → Voice: plain-words status of Puck (on-device) and the arcas backup, plus why Puck last failed. */
@@ -16,6 +16,12 @@ export default function PuckStatus() {
   return (
     <div className="space-y-0.5 text-[11px] text-violet-700/80">
       <p><b>Puck voice (on this phone):</b> {line}</p>
+      {st === "ready" && (
+        <p className="text-[10px] text-violet-500/80 break-all">
+          Engine: {puckStats.threads} {puckStats.threads === 1 ? "core" : "cores"}{puckStats.coi ? "" : " (multi-core not enabled yet: close and reopen Wilson)"}{puckStats.safe ? ", low-memory mode" : ""}; loaded in {(puckStats.loadMs / 1000).toFixed(1)} s{puckStats.restarts ? `; restarted ${puckStats.restarts}×` : ""}.
+          {puckStats.clips.length > 0 && <> Last sentences: {puckStats.clips.slice(-5).map((c) => `${(c.ms / 1000).toFixed(1)} s for ${c.secs} s of speech`).join(" · ")}. Speed factor {puckStats.clips[puckStats.clips.length - 1].rtf} (under 1 = keeps up with speaking).</>}
+        </p>
+      )}
       <p><b>Backup voice (arcas):</b> {isVoiceResting() ? "resting until 7 PM Central (daily free limit)" : "available"}</p>
       {fail && st !== "ready" && (
         <p className="text-[10px] text-rose-500/80 break-all">Last Puck problem ({time(fail.at)}): {fail.plain}. Step: {fail.stage}. Details: {fail.error}. Phone: {fail.device}.</p>

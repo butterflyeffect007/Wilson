@@ -24,6 +24,18 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// Cross-origin isolation (lets Puck's voice engine use several CPU cores via SharedArrayBuffer on GitHub Pages,
+// which can't send these headers itself). Same-origin responses only; cross-origin requests are never touched
+// (the Wilson worker, Hugging Face model files and APIs are all CORS fetches, which isolation allows).
+function isolate(res) {
+  if (!res || res.status === 0 || res.type === "opaque" || res.type === "opaqueredirect") return res;
+  const h = new Headers(res.headers);
+  h.set("Cross-Origin-Opener-Policy", "same-origin");
+  h.set("Cross-Origin-Embedder-Policy", "require-corp");
+  h.set("Cross-Origin-Resource-Policy", "same-origin");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
+
 const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), ms));
 
 self.addEventListener("fetch", (e) => {
@@ -37,6 +49,7 @@ self.addEventListener("fetch", (e) => {
       Promise.race([fetch(req, { cache: "no-store" }), timeout(3500)])
         .then((res) => { if (res.ok) { const c = res.clone(); caches.open(SHELL).then((k) => k.put("shell", c)); } return res; })
         .catch(() => caches.open(SHELL).then((k) => k.match("shell")).then((r) => r || fetch(req)))
+        .then(isolate)
     );
     return;
   }
@@ -54,7 +67,7 @@ self.addEventListener("fetch", (e) => {
       });
       if (hit) { if (!immutable) net.catch(() => {}); return hit; }
       return net;
-    })
+    }).then(isolate)
   );
 });
 

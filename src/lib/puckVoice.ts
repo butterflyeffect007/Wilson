@@ -22,13 +22,25 @@ let worker: Worker | null = null;
 let nextId = 1;
 let restarts = 0;
 let wasReady = false;
-type Wait = { resolve: (b: Blob | null) => void; text: string; startedAt: number };
+type Wait = { resolve: (b: Blob | null) => void; text: string; startedAt: number; queuedAt: number };
 const waiting = new Map<number, Wait>();
 const readyWaiters: ((ok: boolean) => void)[] = [];
 const listeners = new Set<() => void>();
 /** Smoothed real-time factor (synth seconds / audio seconds). Informational only (shown in Voice test). */
 let rtf = 0;
-export let puckStats = { loadMs: 0, firstClipMs: 0, bytes: 0, rtf: 0, restarts: 0 };
+export type ClipTime = { chars: number; ms: number; secs: number; rtf: number; waitMs: number };
+export let puckStats = { loadMs: 0, firstClipMs: 0, bytes: 0, rtf: 0, restarts: 0, threads: 1, coi: false, safe: false, clips: [] as ClipTime[] };
+let timingSent = false;
+/** Once per session, after 4 sentences: anonymous speed note to the worker (numbers only, no text). */
+function reportTiming() {
+  if (timingSent || puckStats.clips.length < 4) return; timingSent = true;
+  const c = puckStats.clips;
+  const t = `threads=${puckStats.threads} coi=${puckStats.coi ? 1 : 0} safe=${puckStats.safe ? 1 : 0} load=${puckStats.loadMs}ms restarts=${puckStats.restarts} rtf=${c.map((x) => x.rtf).join(",")} chars=${c.map((x) => x.chars).join(",")} wait=${c.map((x) => Math.round(x.waitMs / 1000)).join(",")}s`;
+  try {
+    const url = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev") + "/voice/diag";
+    void fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "timing", stage: "speaking", error: "", timing: t, device: deviceLabel(), build: BUILD }) }).catch(() => {});
+  } catch { /* ignore */ }
+}
 let lastMsgAt = 0;
 let loadStage = "";
 let safeNext = isIOS() || (() => { try { return localStorage.getItem("wilson-puck-safe") === "1"; } catch { return false; } })(); // iPhones always start in low-memory mode; // low-memory session (after a failed try; remembered once it works)
@@ -161,7 +173,7 @@ export function ensurePuck(): void {
     if (m.type === "stage") { loadStage = m.stage; if (!wasReady && m.stage !== "ready") try { localStorage.setItem(STAGE_KEY, m.stage); } catch { /* ignore */ } emit(); }
     else if (m.type === "alive") { /* worker script loaded and parsed */ }
     else if (m.type === "progress") { progress = m.progress; if (m.bytes) puckStats.bytes = m.bytes; emit(); }
-    else if (m.type === "ready") { puckStats.loadMs = Math.round(performance.now() - t0); progress = 100; wasReady = true; setGuard(0); loadStage = "ready"; try { localStorage.removeItem(STAGE_KEY); if (m.safe) localStorage.setItem("wilson-puck-safe", "1"); } catch { /* ignore */ } console.info(`[voice] Puck ready in ${(puckStats.loadMs / 1000).toFixed(1)}s`); setState("ready"); }
+    else if (m.type === "ready") { puckStats.loadMs = Math.round(performance.now() - t0); progress = 100; wasReady = true; setGuard(0); loadStage = "ready"; puckStats.threads = m.threads || 1; puckStats.coi = !!m.coi; puckStats.safe = !!m.safe; try { localStorage.removeItem(STAGE_KEY); if (m.safe) localStorage.setItem("wilson-puck-safe", "1"); } catch { /* ignore */ } console.info(`[voice] Puck ready in ${(puckStats.loadMs / 1000).toFixed(1)}s`); setState("ready"); }
     else if (m.type === "failed") { if (m.stage) loadStage = m.stage; crashed(m.error || "failed to load"); }
     else if (m.type === "start") { const w = waiting.get(m.id); if (w) w.startedAt = Date.now(); }
     else if (m.type === "audio") {
@@ -170,11 +182,16 @@ export function ensurePuck(): void {
       if (m.wav && m.wav.byteLength > 1000) {
         if (m.secs >= 1.5) { const r = m.ms / 1000 / m.secs; rtf = rtf ? rtf * 0.6 + r * 0.4 : r; puckStats.rtf = Math.round(rtf * 100) / 100; }
         if (!puckStats.firstClipMs) puckStats.firstClipMs = m.ms;
+        puckStats.clips = [...puckStats.clips, { chars: w.text.length, ms: m.ms, secs: Math.round(m.secs * 10) / 10, rtf: Math.round((m.ms / 1000 / Math.max(0.1, m.secs)) * 100) / 100, waitMs: (w.startedAt || Date.now()) - w.queuedAt }].slice(-8);
+        console.info(`[voice] puck clip ${w.text.length} chars: ${m.ms} ms for ${m.secs.toFixed(1)} s (x${(m.ms / 1000 / m.secs).toFixed(2)})`);
+        emit(); reportTiming();
         w.resolve(new Blob([m.wav], { type: "audio/wav" }));
       } else { if (m.error) console.warn("[voice] Puck clip failed:", m.error); w.resolve(null); }
     }
   };
-  worker.postMessage({ type: "load", safe, fresh });
+  // Several cores when the page is cross-origin isolated; the retry after a failure always uses 1 (safest).
+  const threads = (window as any).crossOriginIsolated && !sessionRetried ? Math.min(4, Math.max(1, (navigator.hardwareConcurrency || 2) - (isIOS() ? 0 : 1))) : 1;
+  worker.postMessage({ type: "load", safe, fresh, threads });
   // A load that goes completely quiet (no download progress, no "ready") for 2 minutes is dead: e.g. iOS killed the worker.
   const me = worker;
   const lw = setInterval(() => {
@@ -219,7 +236,7 @@ export function puckSynth(text: string, speed: number, gen: number): Promise<Blo
   const id = nextId++;
   return new Promise((resolve) => {
     if (!waiting.size) lastMsgAt = Date.now();
-    waiting.set(id, { resolve, text, startedAt: 0 });
+    waiting.set(id, { resolve, text, startedAt: 0, queuedAt: Date.now() });
     worker!.postMessage({ type: "speak", id, gen, text, speed });
     armWatchdog();
   });

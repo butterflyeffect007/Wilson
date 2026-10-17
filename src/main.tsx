@@ -44,6 +44,21 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL, updateViaCache: "none" })
       .then((reg) => {
+        // The page that installed the new service worker isn't isolated yet (Puck can only use 1 core). Reload once
+        // per build at startup so it is; if this browser ignores the headers, don't try again for this build.
+        try {
+          const K = "wilson_coi_try";
+          if (navigator.serviceWorker.controller && !window.crossOriginIsolated && localStorage.getItem(K) !== __BUILD_ID__ && performance.now() < 8000 && !document.querySelector("textarea:focus")) {
+            localStorage.setItem(K, __BUILD_ID__); location.reload(); return;
+          }
+        } catch { /* ignore */ }
+        // First visit: the service worker takes control a moment after load; reload once then so the page is isolated.
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          try {
+            const K = "wilson_coi_try";
+            if (!window.crossOriginIsolated && localStorage.getItem(K) !== __BUILD_ID__ && performance.now() < 15000 && !document.querySelector("textarea:focus")) { localStorage.setItem(K, __BUILD_ID__); location.reload(); }
+          } catch { /* ignore */ }
+        });
         // Quietly pick up new deploys: check on return to the app; the new worker activates itself.
         document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void reg.update().catch(() => {}); });
       })

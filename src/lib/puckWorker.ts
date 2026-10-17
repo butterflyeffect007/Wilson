@@ -52,9 +52,11 @@ async function clearModelCache() {
   } catch { /* no Cache API here */ }
 }
 
+let threads = 1;
 function load(safe: boolean, fresh = false): Promise<void> {
   if (!loading) loading = (async () => {
-    configureOrt(env);
+    configureOrt(env, threads);
+    const usedThreads = (env.backends.onnx as any)?.wasm?.numThreads ?? 1;
     if (fresh) { setStage("clearing old download"); await clearModelCache(); }
     const files: Record<string, { loaded: number; total: number }> = {};
     const t0 = performance.now();
@@ -80,7 +82,7 @@ function load(safe: boolean, fresh = false): Promise<void> {
     const t1 = performance.now();
     await tts.generate("Hi.", { voice: VOICE });
     setStage("ready");
-    post({ type: "ready", ms: loadMs, warmMs: Math.round(performance.now() - t1), safe });
+    post({ type: "ready", ms: loadMs, warmMs: Math.round(performance.now() - t1), safe, threads: usedThreads, coi: !!(self as any).crossOriginIsolated });
   })().catch((e) => {
     loading = null;
     const err = e as Error;
@@ -114,7 +116,7 @@ async function pump() {
 
 self.onmessage = (ev: MessageEvent) => {
   const m = ev.data;
-  if (m?.type === "load") { safeMode = !!m.safe; void load(safeMode, !!m.fresh).catch(() => {}); }
+  if (m?.type === "load") { safeMode = !!m.safe; threads = Number(m.threads) || 1; void load(safeMode, !!m.fresh).catch(() => {}); }
   else if (m?.type === "speak") { queue.push(m as Job); void pump(); }
   else if (m?.type === "cancel") { latestGen = Math.max(latestGen, m.gen ?? 0); }
 };
