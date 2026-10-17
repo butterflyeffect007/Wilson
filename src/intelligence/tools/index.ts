@@ -73,6 +73,8 @@ export function detectTools(message: string): ToolCall[] {
   return out.slice(0, 2);
 }
 
+const CURRENT = /\b(latest|current|currently|right now|today|tonight|this week|recent|recently|breaking|who won|score|price of|just happened|news)\b/i;
+
 /** Ask the model for a JSON tool request when keywords miss but the turn sounds factual/current. */
 export async function planWithModel(adapter: ModelAdapter, message: string): Promise<ToolCall[]> {
   if (!/\b(latest|current|now|today|tonight|right now|news|recent|look up|search|real[- ]time|live|population|capital|currency|exchange|convert|book|author|novel|where is|address|map|located|how (many|big|far)|area of)\b/i.test(message)) return [];
@@ -84,9 +86,21 @@ export async function planWithModel(adapter: ModelAdapter, message: string): Pro
       generation: { temperature: 0, maxTokens: 150 },
     });
     const m = r.text.match(/\{[\s\S]*\}/);
-    const parsed = m ? JSON.parse(m[0]) : { tools: [] };
-    return (parsed.tools ?? []).filter((t: ToolCall) => t && t.name in TOOL_DESCRIPTIONS).slice(0, 2);
-  } catch { return []; }
+    let tools: ToolCall[] = [];
+    if (m) { try { tools = JSON.parse(m[0]).tools ?? []; } catch { tools = []; } }
+    // Some models answer the router with a native tool call instead of JSON text.
+    if (!tools.length && Array.isArray(r.toolCalls)) {
+      for (const tc of r.toolCalls as { function?: { name?: string; arguments?: string } }[]) {
+        const fn = tc?.function; if (!fn?.name) continue;
+        let params: Record<string, string> = {}; try { params = JSON.parse(fn.arguments || "{}"); } catch { /* ignore */ }
+        if (fn.name === "tools" && Array.isArray((params as unknown as { tools?: ToolCall[] }).tools)) tools.push(...(params as unknown as { tools: ToolCall[] }).tools);
+        else tools.push({ name: fn.name as ToolName, params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])) });
+      }
+    }
+    tools = tools.filter((t: ToolCall) => t && t.name in TOOL_DESCRIPTIONS).slice(0, 2);
+    if (!tools.length && CURRENT.test(message)) tools = [{ name: "web", params: { q: message.replace(/\s+/g, " ").trim().slice(0, 150) } }];
+    return tools;
+  } catch { return CURRENT.test(message) ? [{ name: "web", params: { q: message.replace(/\s+/g, " ").trim().slice(0, 150) } }] : []; }
 }
 
 export async function runTool(baseUrl: string, call: ToolCall, location?: { lat: number; lon: number }): Promise<ToolResult> {

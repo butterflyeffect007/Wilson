@@ -96,6 +96,7 @@ export class OpenRouterAdapter implements ModelAdapter {
     const choice = data.choices?.[0];
     return {
       text: choice?.message?.content ?? "",
+      toolCalls: Array.isArray(choice?.message?.tool_calls) ? choice.message.tool_calls : undefined,
       model: data.model ?? this.defaultModel,
       provider: "openrouter",
       finishReason: choice?.finish_reason,
