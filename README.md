@@ -78,38 +78,31 @@ Wilson Core          (src/core/wilson)
   ↓
 Intelligence Router  (src/intelligence)
   ↓
-Model Adapter        + MCP Gateway
+Model Adapter        + MCP Gateway (optional)
   ↓
-AI Gateway (OmniRoute)   +   MCP Servers
+AI Gateway (OmniRoute)   or   direct providers
+  ↓
+Models / MCP Servers
 ```
 
 The visual layer — Orb, Field, glass system, and home experience — does not contain model logic.
 
 Wilson’s identity and principles belong to the core layer rather than individual UI components or model providers.
 
-### Two-layer clean architecture (wired)
+### Two-layer clean architecture
 
 1. **AI Gateway / Router (OmniRoute)**  
    Self-hosted OpenAI-compatible gateway. One endpoint, Combos for automatic multi-provider fallback, quota-aware routing, optional token compression.  
-   Adapter: `src/intelligence/OmniRouteAdapter.ts`
+   Adapter: `src/intelligence/OmniRouteAdapter.ts`  
+   Example registration: `examples/omniroute-wilson.ts`
 
 2. **Translation layer (MCP)**  
    `src/intelligence/mcp`  
    - `McpGateway` aggregates tools from one or more Streamable HTTP MCP servers and normalizes results into Wilson’s existing tool shape.  
-   - Wilson MCP server: `src/intelligence/mcp/server.ts` (`npm run mcp:server`).  
+   - Wilson MCP server itself: `src/intelligence/mcp/server.ts` (run with `npm run mcp:server`).  
    Tools: `wilson:reflect`, `wilson:palette`, `wilson:status`, `wilson:imagine`.
 
-**One-call wiring:** `src/intelligence/setup.ts`  
-Registers OmniRoute, connects MCP servers, and returns a ready registry + optional gateway.
-
-Example bootstrap: `examples/full-wilson-setup.ts`
-
-```ts
-import { bootFullWilson } from "./examples/full-wilson-setup";
-const { router, mcp, mcpTools } = await bootFullWilson();
-```
-
-Existing OpenRouter path is unchanged. Switch preferred engine in policy to `omniroute` / `auto/best-coding` when you want the gateway.
+Both layers sit between the IntelligenceRouter and external systems so Wilson never needs custom glue for each database, tool, or model provider.
 
 ## Wilson Core
 
@@ -193,19 +186,22 @@ npm run dev
 
 Open the local URL (usually http://localhost:5173).
 
-### Full stack (optional)
+### Optional: Wilson MCP server
 
 ```bash
-# Wilson MCP server
 npm run mcp:server
+```
 
-# OmniRoute gateway
+Listens at `http://localhost:3001/mcp`. Point `McpGateway` at it with id `"wilson"`.
+
+### Optional: OmniRoute AI gateway
+
+```bash
 docker run -d --name omniroute -p 20128:20128 \
   -e INITIAL_PASSWORD=$(openssl rand -base64 24) \
   -v omniroute-data:/app/data diegosouzapw/omniroute
 ```
 
-Then bootstrap with `examples/full-wilson-setup.ts` (or call `setupWilsonIntelligence` directly).  
-Set `OMNIROUTE_API_KEY` and optionally `OMNIROUTE_URL` / `WILSON_MCP_URL`.
+Then open http://localhost:20128, set the password, create an API key, and register the adapter via `examples/omniroute-wilson.ts` (or directly with `new OmniRouteAdapter(...)`).
 
-Combos such as `auto/best-coding` give automatic multi-provider fallback. MCP tools appear namespaced (`wilson:reflect`, etc.) and normalize into Wilson’s existing tool result shape.
+Combos such as `auto/best-coding` and `auto/best-free` give automatic multi-provider fallback without changing Wilson’s preferred-engine policy.
