@@ -93,6 +93,7 @@ export async function planWithModel(adapter: ModelAdapter, message: string): Pro
       systemContext: `You are a tool router. Decide if live public data would help answer the user. Tools:\n${list}\nReply with ONLY JSON: {"tools":[{"name":"<tool>","params":{...}}]} (max 2) or {"tools":[]}.`,
       userInput: message,
       generation: { temperature: 0, maxTokens: 150 },
+      metadata: { task: "router" },
     });
     const m = r.text.match(/\{[\s\S]*\}/);
     let tools: ToolCall[] = [];

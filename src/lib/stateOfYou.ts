@@ -5,6 +5,7 @@
  */
 import type { OpenRouterAdapter } from "../intelligence/OpenRouterAdapter";
 import type { StoredMessage, WilsonVibe } from "../memory/LocalMemory";
+import { MEMORY_SUMMARY_ADDON, memoryForSummary, absorbSummaryReply } from "./quietMemory";
 
 const KEY = "wilson_state_of_you_v1";
 export const REFRESH_EVERY = 12;
@@ -85,11 +86,13 @@ export async function maybeRefreshStateOfYou(adapter: OpenRouterAdapter, recent:
   running = true;
   try {
     const r = await adapter.generate({
-      systemContext: "You maintain a private, compact 'state of her' note for Wilson, a companion app. Update the previous note using the new conversation. Output ONLY the note, 150-220 words, plain short lines, no preamble, under these headings exactly:\nMood & energy:\nGrinding on:\nOpen loops:\nLife context:\nHow to meet her now:\nKeep durable facts from the previous note unless contradicted; drop stale items; be specific; no diagnoses; never invent facts.",
-      userInput: `PREVIOUS NOTE:\n${s.summary || "(none yet)"}\n\nLOCAL SIGNALS:\n${localSignals(s).join(" ") || "(none)"}\n\nNEW CONVERSATION (most recent last):\n${convo}`,
-      generation: { temperature: 0.3, maxTokens: 600 },
+      systemContext: "You maintain a private, compact 'state of her' note for Wilson, a companion app. Update the previous note using the new conversation. Output ONLY the note, 150-220 words, plain short lines, no preamble, under these headings exactly:\nMood & energy:\nGrinding on:\nOpen loops:\nLife context:\nHow to meet her now:\nKeep durable facts from the previous note unless contradicted; drop stale items; be specific; no diagnoses; never invent facts." + MEMORY_SUMMARY_ADDON,
+      userInput: `PREVIOUS NOTE:\n${s.summary || "(none yet)"}\n\nPREVIOUS MEMORY:\n${memoryForSummary()}\n\nLOCAL SIGNALS:\n${localSignals(s).join(" ") || "(none)"}\n\nNEW CONVERSATION (most recent last):\n${convo}`,
+      generation: { temperature: 0.3, maxTokens: 900 },
+      metadata: { task: "summary" },
     });
-    const text = (r.text || "").replace(/\[(VIBE|DREAM_UPDATE):[^\]]*\]/gi, "").trim();
+    // One reply refreshes both the note and quiet memory (no extra model call).
+    const text = absorbSummaryReply((r.text || "").replace(/\[(VIBE|DREAM_UPDATE):[^\]]*\]/gi, "")).trim();
     if (text.length < 40) return false;
     const fresh = loadStateOfYou();
     fresh.summary = text.slice(0, 2000); fresh.pending = 0; fresh.updatedAt = Date.now(); fresh.editedByUser = false;

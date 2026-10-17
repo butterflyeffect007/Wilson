@@ -11,6 +11,7 @@ import { useWilsonAudio } from "./hooks/useWilsonAudio";
 import { enablePush, disablePush, pushEnabled, pushSupported, isIOS, isStandalone, startReminderSync } from "./lib/push";
 import { loadStateOfYou, recordUserTurn, recordVibe, buildStateOfYouContext, maybeRefreshStateOfYou, editStateSummary, clearStateOfYou, localSignals, type StateOfYou } from "./lib/stateOfYou";
 import { subscribeSaving } from "./lib/saveBus";
+import { loadQuietMemory, buildQuietMemoryContext, deleteQuietItem, clearQuietMemory, exportQuietMemory, pullArchitectMemory, type QuietMemory } from "./lib/quietMemory";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
@@ -49,7 +50,7 @@ import { analyzeProsody, classify, EMOTION_CONFIDENCE_MIN, EMOTION_GUIDANCE, EMO
 export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
   "https://wilson-proxy.butterflyeffect007.workers.dev";
-const CONTEXT_WINDOW = 10; // parity: wilsonaibro sent only the last 10 messages
+const CONTEXT_WINDOW = 20; // last 20 messages (was 10)
 const MAX_RETRIES = 2;
 
 /* ---------- greetings (logic from wilsonaibro Index.tsx @ 1816d92) ---------- */
@@ -142,6 +143,10 @@ export default function App() {
   }, []);
   useEffect(() => { if (isAdmin && nightly) { const t = setTimeout(() => void fetchUnseenNote().then(setAwayNote), 2500); return () => clearTimeout(t); } }, [isAdmin, nightly]);
   const [soyDraft, setSoyDraft] = useState<string | null>(null);
+  const [qmem, setQmem] = useState<QuietMemory>(() => loadQuietMemory());
+  const [qmemOpen, setQmemOpen] = useState(false);
+  useEffect(() => { const f = () => setQmem(loadQuietMemory()); window.addEventListener("wilson-quiet-memory", f); return () => window.removeEventListener("wilson-quiet-memory", f); }, []);
+  useEffect(() => { if (isAdmin) void pullArchitectMemory(); }, [isAdmin]);
   useEffect(() => { const f = () => setSoy(loadStateOfYou()); window.addEventListener("wilson-state-of-you", f); return () => window.removeEventListener("wilson-state-of-you", f); }, []);
   const [playMsg, setPlayMsg] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
   const toggleMessageVoice = (msg: StoredMessage) => {
@@ -379,7 +384,7 @@ export default function App() {
       const convo = history
         .filter((m) => m.role === "user" || m.role === "assistant")
         .map((m) => ({ role: m.role, content: m.content }));
-      // last 10 messages INCLUDING the new user message (parity)
+      // last CONTEXT_WINDOW messages INCLUDING the new user message
       const windowed = [...convo, { role: "user" as const, content }].slice(-CONTEXT_WINDOW);
       let recalled: string[] = [];
       if (settings.longMemory) {
@@ -419,6 +424,7 @@ export default function App() {
         newLesson: learned,
         suggest: settings.suggestions && !learned && shouldSuggest(),
         stateOfYou: settings.longMemory ? buildStateOfYouContext() : "",
+        quietMemory: settings.longMemory ? buildQuietMemoryContext(!history.some((m) => m.role === "user")) : "",
         anchor: isAdmin ? { vision: TACHO_VISION, weave: ++anchorTurnRef.current % 5 === 0 } : null,
       });
 
@@ -1011,6 +1017,35 @@ export default function App() {
                     </div>
                   )}
                 </div>
+                <div>
+                  <button type="button" className="underline text-[12px] text-violet-700/80" onClick={() => setQmemOpen((o) => !o)}>{qmemOpen ? "Hide" : "What Wilson remembers about you"}</button>
+                  {qmemOpen && (() => {
+                    const rows: { k: string; kind: "intent" | "pacing" | "thread" | "recap"; key: string; text: string }[] = [
+                      ...(qmem.intent ? [{ k: "i", kind: "intent" as const, key: "", text: `What you're aiming for: ${qmem.intent}` }] : []),
+                      ...qmem.pacing.map((p, i) => ({ k: `p${i}`, kind: "pacing" as const, key: p, text: `How you like it: ${p}` })),
+                      ...qmem.threads.map((t) => ({ k: t.id, kind: "thread" as const, key: t.id, text: `${t.title} (${t.status}, ${t.date})${t.decision ? ` · decided: ${t.decision}` : ""}${t.next ? ` · next: ${t.next}` : ""}` })),
+                      ...qmem.recaps.map((r) => ({ k: r.id, kind: "recap" as const, key: r.id, text: `${r.date} · ${r.text}` })),
+                    ];
+                    return (
+                      <div className="mt-1 rounded-xl bg-violet-100/50 p-3 text-[12px] text-violet-900/90 space-y-1.5">
+                        <p className="text-[11px] text-violet-700/70">{isAdmin ? "Kept on this device and synced privately to your Wilson server." : "Kept only on this device."} Wilson uses it to pick up where you left off; he won't read it back to you.</p>
+                        {rows.length === 0 && <div className="text-violet-500/70">Nothing yet. It fills in quietly as you talk.</div>}
+                        <div className="max-h-40 overflow-y-auto space-y-1">
+                          {rows.map((r) => (
+                            <div key={r.k} className="flex gap-2 justify-between">
+                              <span className="text-[11px]">{r.text}</span>
+                              <button type="button" className="text-rose-500" aria-label="Forget this" onClick={() => deleteQuietItem(r.kind, r.key)}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex gap-3 text-[12px]">
+                          <button type="button" className="underline" onClick={exportQuietMemory}>Export</button>
+                          <button type="button" className="underline text-rose-500" onClick={() => { if (confirm("Clear what Wilson remembers about you?")) clearQuietMemory(); }}>Clear</button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input type="checkbox" checked={settings.suggestions} onChange={(e) => setSettings((s) => ({ ...s, suggestions: e.target.checked }))} />
                   Gentle suggestions (now and then)
@@ -1097,7 +1132,12 @@ export default function App() {
             </div>
           </div>
         )}
-        <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-4">
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          onClick={(e) => { if (wilsonSpeaking && !(e.target as HTMLElement).closest("button, a, input, textarea, select, summary, label")) { stopSpeaking(); setPlayMsg(null); } }}
+          className="flex-1 overflow-y-auto px-4"
+        >
           {isHome ? (
             <div className="min-h-full flex flex-col items-center justify-center pt-[clamp(2rem,8dvh,5rem)] pb-10 max-w-md mx-auto">
               <motion.div
@@ -1107,7 +1147,7 @@ export default function App() {
                 className="relative mb-[clamp(2.5rem,8dvh,5rem)]"
               >
                 <div className="relative">
-                  <ErrorBoundary label="the orb" compact><WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={primePlayback} onLongPress={() => { if (!stt.listening && stt.supported && settings.voiceRecognition && voiceConsent === null) { setAskVoiceConsent(true); return; } if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (voiceId || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} /></ErrorBoundary>
+                  <ErrorBoundary label="the orb" compact><WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={() => { if (wilsonSpeaking) { stopSpeaking(); setPlayMsg(null); } primePlayback(); }} onLongPress={() => { if (!stt.listening && stt.supported && settings.voiceRecognition && voiceConsent === null) { setAskVoiceConsent(true); return; } if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (voiceId || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} /></ErrorBoundary>
                 </div>
               </motion.div>
 

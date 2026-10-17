@@ -50,6 +50,9 @@ export class OpenRouterAdapter implements ModelAdapter {
     messages.push({ role: "user", content: request.userInput });
 
     const body: Record<string, unknown> = { model, messages, stream };
+    // Background task marker for the Wilson proxy (it strips it; no stats/extra context on those calls).
+    const task = request.metadata?.task;
+    if (typeof task === "string" && this.url !== OPENROUTER_URL) body.wilson_task = task;
     const g = request.generation;
     if (g?.temperature !== undefined) body.temperature = g.temperature;
     if (g?.maxTokens !== undefined) body.max_tokens = g.maxTokens;
