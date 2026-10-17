@@ -61,9 +61,11 @@ const DIRECT: Partial<Record<ToolName, { ttl: number; run: (p: Record<string, st
     const kind = String(p.q || "cafe").toLowerCase().replace(/[^a-z_]/g, "").slice(0, 30) || "cafe";
     const ql = `[out:json][timeout:8];nwr(around:2000,${g.lat},${g.lon})["amenity"="${kind}"];out center 10;`;
     const hosts = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
-    let d: any; let last: unknown;
-    for (const h of hosts) { try { d = await getJson(`${h}?data=${encodeURIComponent(ql)}`, 6000); break; } catch (e) { last = e; } }
-    if (!d) throw last ?? new Error("overpass unavailable");
+    // Race both public servers; first good answer wins (they can be slow under load).
+    const d: any = await new Promise((resolve, reject) => {
+      let failed = 0;
+      for (const h of hosts) getJson(`${h}?data=${encodeURIComponent(ql)}`, 10000).then(resolve, () => { if (++failed === hosts.length) reject(new Error("overpass servers busy or unreachable")); });
+    });
     const r = (d.elements || []).map((e: any) => ({ name: e.tags?.name || "(unnamed)", street: [e.tags?.["addr:housenumber"], e.tags?.["addr:street"]].filter(Boolean).join(" ") || null, lat: e.lat ?? e.center?.lat, lon: e.lon ?? e.center?.lon })).slice(0, 10);
     return { data: { place: g.name, amenity: kind, radius_m: 2000, results: r }, sources: [{ title: "OpenStreetMap (Overpass)", url: `https://www.openstreetmap.org/#map=15/${g.lat}/${g.lon}` }] };
   } },

@@ -124,7 +124,7 @@ export async function runTool(baseUrl: string, call: ToolCall, location?: { lat:
   }
   const qs = new URLSearchParams(params).toString();
   try {
-    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 12000);
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), directErr ? 8000 : 12000); // shorter fallback budget if the browser path already used time
     const r = await fetch(`${baseUrl.replace(/\/$/, "")}/tools/${call.name}${qs ? "?" + qs : ""}`, { signal: ctl.signal });
     clearTimeout(to);
     const d = await r.json();
