@@ -167,9 +167,11 @@ export function toSpeakable(text: string): string {
     .slice(0, 1500);
 }
 
-/* ---------------- streaming voice (sentence-by-sentence) ---------------- */
+/* ---------------- streaming voice (continuous chunking) ---------------- */
 const MAX_PARALLEL = 2;
-const MERGE_MAX = 250;
+const MERGE_MAX = 180;          // tighter for conversational cadence (was 250)
+const FIRST_CHUNK_MAX = 55;     // fire the first words fast
+const SOFT_CHUNK_MAX = 95;      // soft target once speaking has started
 const CLIP_TIMEOUT_MS = 20000;
 /** How long a reply waits for Puck to finish downloading (~92 MB) when the server voice can't help. */
 const PUCK_WAIT_MS = 240000;
@@ -281,28 +283,74 @@ async function fetchClip(text: string, speed: number, my: number): Promise<Blob 
   throw lastErr ?? new Error("voice failed");
 }
 
-/** Split off complete sentences from `text`, starting at `from`. Returns sentences + new offset. */
-function takeSentences(text: string, from: number, final: boolean): { parts: string[]; next: number } {
+/**
+ * Continuous chunker.
+ * - Emits as soon as we have enough tokens (or a natural break).
+ * - No longer requires a terminal . ! ? before the first (and subsequent) clips can start.
+ * - Still prefers sentence boundaries when they appear, but never blocks on them.
+ */
+function takeChunks(text: string, from: number, final: boolean, isFirst: boolean): { parts: string[]; next: number } {
   const parts: string[] = [];
-  let start = from, next = from;
-  for (let i = from; i < text.length; i++) {
+  let start = from;
+  let i = from;
+  const softMax = isFirst ? FIRST_CHUNK_MAX : SOFT_CHUNK_MAX;
+
+  while (i < text.length) {
     const c = text[i];
-    let end = -1;
-    if (c === "\n") end = i + 1;
-    else if (c === "." || c === "!" || c === "?") {
+
+    // Hard break on newline
+    if (c === "\n") {
+      const t = text.slice(start, i + 1).trim();
+      if (t) parts.push(t);
+      start = i + 1;
+      i = start;
+      continue;
+    }
+
+    // Prefer real sentence ends when present
+    if (c === "." || c === "!" || c === "?") {
       let j = i + 1;
       while (j < text.length && /[.!?"')\]*]/.test(text[j])) j++;
-      if (j < text.length && /\s/.test(text[j])) end = j;
-      i = j - 1;
+      if (j < text.length && /\s/.test(text[j])) {
+        const t = text.slice(start, j).trim();
+        if (t) parts.push(t);
+        start = j;
+        i = j;
+        continue;
+      }
     }
-    if (end > 0) { const t = text.slice(start, end).trim(); if (t) parts.push(t); start = next = end; }
+
+    // Soft break: enough characters and a natural pause point (space, comma, etc.)
+    const len = i - start + 1;
+    if (len >= softMax && /[\s,;:—–]/.test(c)) {
+      const t = text.slice(start, i + 1).trim();
+      if (t) parts.push(t);
+      start = i + 1;
+    }
+
+    i++;
   }
-  if (final && next < text.length) { const t = text.slice(next).trim(); if (t) parts.push(t); next = text.length; }
-  return { parts, next };
+
+  // On final, flush whatever remains
+  if (final && start < text.length) {
+    const t = text.slice(start).trim();
+    if (t) parts.push(t);
+    start = text.length;
+  }
+
+  // Safety: never let a single piece grow past MERGE_MAX even without a break
+  if (!final && start < text.length && (text.length - start) > MERGE_MAX) {
+    const cut = start + MERGE_MAX;
+    const t = text.slice(start, cut).trim();
+    if (t) parts.push(t);
+    start = cut;
+  }
+
+  return { parts, next: start };
 }
 
 /** Split a long sentence at commas/semicolons/dashes into pieces of ~PUCK_MAX chars (first piece shorter). */
-const PUCK_MAX = 120, PUCK_FIRST = 50; // short first piece so the first words start sooner
+const PUCK_MAX = 110, PUCK_FIRST = 42; // shorter first piece so the first words start sooner
 function splitForPuck(text: string, first: boolean): string[] {
   const out: string[] = [];
   let rest = text, max = first ? PUCK_FIRST : PUCK_MAX;
@@ -398,15 +446,12 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       if (!played) setPending(true);
       let parts: Promise<Blob | null>[] = [];
       try { parts = await queue[playIdx]; } catch { if (status.state !== "preparing") setStatus(noVoiceStatus()); }
-      for (let pi = 0; pi < parts.length; pi++) {
-        const part = parts[pi];
-        if (my !== generation) break;
-        if (!played) setPending(true);
-        const buf = await part.catch(() => null);
-        if (my !== generation) break;
-        if (!buf) continue; // skip just this piece; keep the rest of the reply playing
-        // Phone slower than real time: before the first words, let one more piece finish (up to 6 s) so the
-        // paragraph has a small buffer and fewer silences between sentences.
+      for (let pi = 0; pi < parts.length && my === generation; pi++) {
+        let buf: Blob | null = null;
+        try { buf = await parts[pi]; } catch { /* ignore */ }
+        if (!buf || my !== generation) continue;
+        // When Puck is slow, wait a bit for the next piece so the gap between clips is smaller.
+        // This keeps the paragraph feeling continuous instead of stop-start.
         if (!played && puckStats.rtf > 1.05) {
           const next = parts[pi + 1] ?? (playIdx + 1 < queue.length ? queue[playIdx + 1].then((ps) => ps[0] ?? null) : null);
           if (next) await Promise.race([next.catch(() => null), new Promise((r) => setTimeout(r, 6000))]);
@@ -440,12 +485,21 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
 
   const feed = (text: string, final: boolean) => {
     if (my !== generation) return;
-    const { parts, next } = takeSentences(text, offset, final);
+    const { parts, next } = takeChunks(text, offset, final, !sentFirst);
     offset = next;
     for (const p of parts) {
-      if (!sentFirst) { sentFirst = true; dispatch(p); continue; }
-      if (buffer && buffer.length + 1 + p.length > MERGE_MAX) { dispatch(buffer); buffer = p; }
-      else buffer = buffer ? buffer + " " + p : p;
+      if (!sentFirst) {
+        sentFirst = true;
+        dispatch(p);           // first usable tokens → speak immediately
+        continue;
+      }
+      // Keep the merge buffer but at the new tighter MERGE_MAX
+      if (buffer && buffer.length + 1 + p.length > MERGE_MAX) {
+        dispatch(buffer);
+        buffer = p;
+      } else {
+        buffer = buffer ? buffer + " " + p : p;
+      }
     }
     flush(final);
   };
