@@ -1,0 +1,31 @@
+name: Federation pipeline tests
+
+on:
+  push:
+    paths:
+      - "workers/federation-ingest/**"
+      - ".github/workflows/federation-pipeline-tests.yml"
+  pull_request:
+    paths:
+      - "workers/federation-ingest/**"
+      - ".github/workflows/federation-pipeline-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install TypeScript test runner
+        run: npm install --no-save --package-lock=false tsx
+      - name: Run federation pipeline tests
+        run: npx tsx --test workers/federation-ingest/tests/pipeline.test.ts
