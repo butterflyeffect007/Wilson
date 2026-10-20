@@ -480,7 +480,10 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   };
 
   const flush = (force: boolean) => {
-    if (buffer && (force || inflight === 0)) { dispatch(buffer); buffer = ""; }
+    // Avoid dispatching every short sentence as a separate Puck clip when the
+    // server-request counter is idle. Accumulate a fuller clip, but keep
+    // streaming once the buffer reaches the conversational chunk target.
+    if (buffer && (force || buffer.length >= SOFT_CHUNK_MAX)) { dispatch(buffer); buffer = ""; }
   };
 
   const feed = (text: string, final: boolean) => {
