@@ -54,7 +54,9 @@ export default function Organizer({ tab, onTab, onClose }: { tab: OrgTab; onTab:
                   </>
                 ) : (
                   <>
-                    <div className="text-[16px] leading-relaxed text-violet-950/90 whitespace-pre-wrap break-words" onClick={() => { setEditing(n.id); setEditText(n.text); }}>{n.text}</div>
+                    <div className="text-[16px] leading-relaxed text-violet-950/90 whitespace-pre-wrap break-words select-text">
+                      {n.text}
+                    </div>
                     <div className="flex items-center gap-3 mt-2 text-[11px] text-violet-500/70">
                       <span>{new Date(n.updated).toLocaleDateString([], { month: "short", day: "numeric" })}</span>
                       <button type="button" onClick={() => { setEditing(n.id); setEditText(n.text); }}>Edit</button>
