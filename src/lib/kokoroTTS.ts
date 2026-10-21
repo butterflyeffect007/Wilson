@@ -450,13 +450,9 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
         let buf: Blob | null = null;
         try { buf = await parts[pi]; } catch { /* ignore */ }
         if (!buf || my !== generation) continue;
-        // When Puck is slow, wait a bit for the next piece so the gap between clips is smaller.
-        // This keeps the paragraph feeling continuous instead of stop-start.
-        if (!played && puckStats.rtf > 1.05) {
-          const next = parts[pi + 1] ?? (playIdx + 1 < queue.length ? queue[playIdx + 1].then((ps) => ps[0] ?? null) : null);
-          if (next) await Promise.race([next.catch(() => null), new Promise((r) => setTimeout(r, 6000))]);
-          if (my !== generation) break;
-        }
+        // Start playback as soon as the first synthesized clip is ready.
+        // Waiting for a second clip here added up to 6 seconds before Wilson spoke,
+        // and the !played guard meant this wait only ever affected initial playback.
         setPending(false);
         if (!played) hooks.onStart?.();
         played = true;
