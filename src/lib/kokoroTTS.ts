@@ -429,7 +429,12 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     for (let i = 0; i < 2 && my === generation; i++) {
       if (!(await puckReady())) return null;
       const t0 = Date.now();
-      const b = await puckSynth(t, speed, my);
+      let voice = "am_puck";
+      try {
+        const saved = JSON.parse(localStorage.getItem("wilson_settings_v1") || "{}");
+        if (["am_puck", "am_michael", "am_fenrir", "af_heart"].includes(saved.kokoroVoice)) voice = saved.kokoroVoice;
+      } catch { /* keep the default voice */ }
+      const b = await puckSynth(t, speed, my, voice);
       if (my !== generation) return null;
       if (b) { dbg(`puck ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`); return b; }
       dbg("puck clip failed" + (i === 0 ? ", retrying" : ""));
