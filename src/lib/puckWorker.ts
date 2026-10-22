@@ -21,7 +21,7 @@ import { configureOrt } from "./ortSetup";
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
 const VOICE = "am_puck";
 
-type Job = { id: number; gen: number; text: string; speed: number };
+type Job = { id: number; gen: number; text: string; speed: number; voice?: string };
 let tts: KokoroTTS | null = null;
 let loading: Promise<void> | null = null;
 let latestGen = 0;
@@ -103,7 +103,9 @@ async function pump() {
         await load(safeMode);
         post({ type: "start", id: job.id }); // the controller times each sentence from here, not from when it was queued
         const t0 = performance.now();
-        const audio = await tts!.generate(job.text, { voice: VOICE, speed: job.speed });
+        const allowedVoices = new Set(["am_puck", "am_michael", "am_fenrir", "af_heart"]);
+        const voice = allowedVoices.has(job.voice || "") ? job.voice! : VOICE;
+        const audio = await tts!.generate(job.text, { voice, speed: job.speed });
         const wav = wav16(audio.audio as Float32Array, audio.sampling_rate);
         const secs = audio.audio.length / audio.sampling_rate;
         post({ type: "audio", id: job.id, wav, secs, ms: Math.round(performance.now() - t0) }, [wav]);
