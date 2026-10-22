@@ -110,7 +110,8 @@ function playBlob(blob: Blob, my: number): Promise<void> {
     currentUrl = URL.createObjectURL(blob);
     let settled = false;
     let stall: ReturnType<typeof setTimeout> | null = null;
-    let resumed = 0;
+    let resumeAttempts = 0;
+    let playAttempts = 0;
     const cleanup = () => {
       a.removeEventListener("ended", done); a.removeEventListener("error", onErr);
       a.removeEventListener("pause", onPause); a.removeEventListener("loadedmetadata", armStall);
@@ -123,12 +124,23 @@ function playBlob(blob: Blob, my: number): Promise<void> {
       resolve();
     };
     const onErr = () => { dbg("audio element error", a.error ? { name: "MediaError", message: `code ${a.error.code} ${a.error.message ?? ""}` } : "unknown"); done(); };
-    // iOS can pause the element on its own (notification sound, Siri, audio-session hiccup) and then never fire
-    // "ended", which used to leave the rest of the reply stuck. Resume it, and never wait forever on one clip.
+    // iOS may interrupt playback temporarily. Give the same clip several bounded resume attempts
+    // instead of abandoning it after two pauses, which can make Wilson skip words mid-answer.
+    const resumeAfterPause = () => {
+      if (settled || my !== generation || a.ended || !a.paused) return;
+      if (resumeAttempts >= 5) { dbg("audio resume retries exhausted"); done(); return; }
+      const delay = Math.min(2000, 250 * (2 ** resumeAttempts++));
+      setTimeout(() => {
+        if (settled || my !== generation || a.ended || !a.paused) return;
+        a.play().catch((e) => {
+          dbg("resume play() rejected", e);
+          resumeAfterPause();
+        });
+      }, delay);
+    };
     const onPause = () => {
       if (settled || my !== generation || a.ended) return;
-      if (resumed++ < 2) setTimeout(() => { if (!settled && my === generation && a.paused && !a.ended) a.play().catch(() => done()); }, 250);
-      else done();
+      resumeAfterPause();
     };
     const armStall = () => {
       if (stall) clearTimeout(stall);
@@ -141,14 +153,21 @@ function playBlob(blob: Blob, my: number): Promise<void> {
     a.src = currentUrl;
     attachAudio(a);
     armStall();
-    const tryPlay = (retry: boolean) => {
+    const tryPlay = () => {
+      if (settled || my !== generation) return;
+      playAttempts++;
       const p = a.play();
       if (p && typeof p.then === "function") p.then(() => dbg(`playing ${(blob.size / 1024).toFixed(0)} KB`), (e) => {
         dbg("play() rejected", e);
-        if (retry && !settled && my === generation) setTimeout(() => tryPlay(false), 300); else done();
+        if (playAttempts < 4 && !settled && my === generation) {
+          setTimeout(tryPlay, Math.min(1600, 300 * (2 ** (playAttempts - 1))));
+        } else if (!settled) {
+          dbg("play retries exhausted");
+          done();
+        }
       });
     };
-    tryPlay(true);
+    tryPlay();
   });
 }
 
