@@ -18,19 +18,66 @@ export async function verifyAdmin(key = storedAdminKey()): Promise<boolean | nul
   } catch { return null; }
 }
 
+/** Label you can set on any OG seat from Architect. */
+export type RosterLabel = "real" | "bot" | "duplicate" | "jenny-test" | "paid" | "unlabeled";
+
+export type RosterEntry = {
+  number: number;
+  ts: string;                    // first seen
+  lastActive?: string;
+  messages?: number;
+  claimed?: boolean;
+  method?: "passkey" | "name" | "email";
+  displayName?: string;
+  contact?: string;              // email / X / wallet (only shown to Architect)
+  label?: RosterLabel;
+};
+
 export type Telemetry = {
-  beta: { count: number; limit: number; latest: { number: number; ts: string }[]; roster?: { number: number; ts: string }[] };
-  reports: { count: number; recent: { id: string; type: string; ts: string; message: string; beta: number | null; issue: string | null }[] };
+  beta: {
+    count: number;
+    limit: number;
+    claimed?: number;
+    activeToday?: number;        // unique devices with ≥1 message in last 24h
+    latest: { number: number; ts: string }[];
+    roster?: RosterEntry[];
+  };
+  reports: {
+    count: number;
+    open?: number;
+    recent: { id: string; type: string; ts: string; message: string; beta: number | null; issue: string | null }[];
+  };
   usage: Record<string, Record<string, number>>;
   config: { chat: string; voice: string };
   referrals?: { shares: number; opens: number; sharers: number; top: { code: string; stars: number }[] };
+  /** Optional cost / volume proxies if worker can surface them */
+  health?: {
+    uniqueHumans7d?: number;
+    retention3d?: number;        // % of OG who returned in last 3 days
+    retention7d?: number;
+  };
 };
+
 export async function fetchTelemetry(): Promise<Telemetry | null> {
   try {
     const r = await fetch(`${WILSON_PROXY_URL}/admin/telemetry`, { headers: { Authorization: `Bearer ${storedAdminKey()}` } });
     if (r.status === 401) forgetAdmin();
     return r.ok ? await r.json() : null;
   } catch { return null; }
+}
+
+/** Set or clear a label on an OG seat. Worker: POST /admin/roster/label */
+export async function setRosterLabel(number: number, label: RosterLabel): Promise<boolean> {
+  try {
+    const r = await fetch(`${WILSON_PROXY_URL}/admin/roster/label`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${storedAdminKey()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ number, label }),
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
 }
 
 /* ---------- Nightly notes (opt-in): sync open loops to the worker; read the daily note ---------- */
