@@ -1,11 +1,14 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import { appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+// Load the local-only file used by Wilson's setup. It is ignored by Git.
+dotenv.config({ path: '.env.local' });
 
 const apiKey = process.env.ALCHEMY_API_KEY?.trim();
 
 if (!apiKey) {
-  console.error('Missing ALCHEMY_API_KEY. Set it in a local .env file; never commit that file.');
+  console.error('Missing ALCHEMY_API_KEY. Add it to your local .env.local file; never commit that file.');
   process.exit(1);
 }
 
