@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { X, RefreshCw, ChevronLeft, ChevronRight, Send } from "lucide-react";
-import { fetchTelemetry, forgetAdmin, type Telemetry } from "../lib/admin";
+import { fetchTelemetry, forgetAdmin, setRosterLabel, type Telemetry, type RosterLabel, type RosterEntry } from "../lib/admin";
 import type { StoredMessage } from "../memory/LocalMemory";
 
-/** Architect view (server-verified admin only): collapsible sidebar, tach gauge, live chat center. */
+/** Architect view (server-verified admin only): collapsible sidebar, meaningful health numbers, claimed roster. */
 export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, onSend }: {
   onClose: () => void; onSignOut: () => void; messages?: StoredMessage[]; busy?: boolean; onSend?: (text: string) => void;
 }) {
@@ -11,10 +11,10 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
   const [side, setSide] = useState(true);
   const [draft, setDraft] = useState("");
+  const [filter, setFilter] = useState<"all" | "claimed" | "unclaimed" | "labeled">("all");
   const endRef = useRef<HTMLDivElement>(null);
   const load = () => { setState("loading"); void fetchTelemetry().then((d) => { setT(d); setState(d ? "ok" : "error"); }); };
   useEffect(load, []);
-  // Exit paths: Escape key, and the phone's back gesture/button (history entry popped).
   const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeRef.current(); };
@@ -28,6 +28,7 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
     };
   }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [messages]);
+
   const days = t ? Object.keys(t.usage).sort().reverse().slice(0, 7) : [];
   const lastModel = (() => { try { return localStorage.getItem("wilson_last_model") || "—"; } catch { return "—"; } })();
   const replies = (d: string) => Object.entries(t?.usage[d] ?? {}).filter(([k]) => k.startsWith("model:")).reduce((s, [, v]) => s + v, 0);
@@ -35,33 +36,57 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
   const clips7 = days.reduce((s, d) => s + (t?.usage[d]?.["tts:gen"] ?? 0), 0);
   const today = new Date().toISOString().slice(0, 10);
   const peak = Math.max(1, ...days.map(replies));
-  // Tach: today's replies relative to the busiest day of the week → 0–9k RPM.
   const rpm = t ? Math.round((replies(today) / peak) * 9000) : 0;
   const recent = messages.slice(-12);
   const send = () => { const s = draft.trim(); if (!s || busy || !onSend) return; onSend(s); setDraft(""); };
+
+  const roster: RosterEntry[] = (t?.beta.roster ?? t?.beta.latest?.map((m) => ({ number: m.number, ts: m.ts })) ?? [])
+    .slice()
+    .sort((a, b) => a.number - b.number);
+
+  const filtered = roster.filter((m) => {
+    if (filter === "claimed") return !!m.claimed;
+    if (filter === "unclaimed") return !m.claimed;
+    if (filter === "labeled") return !!m.label && m.label !== "unlabeled";
+    return true;
+  });
+
+  const claimedCount = t?.beta.claimed ?? roster.filter((m) => m.claimed).length;
+
+  const setLabel = async (number: number, label: RosterLabel) => {
+    const ok = await setRosterLabel(number, label);
+    if (ok) load();
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/30 backdrop-blur-sm pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:p-6" role="dialog" aria-modal="true" aria-label="Architect view" onClick={onClose}>
       <div className="glass-strong rounded-3xl w-full max-w-3xl h-full sm:h-[90dvh] flex overflow-hidden text-violet-950/90" onClick={(e) => e.stopPropagation()}>
         {side && (
-          <aside className="w-[40%] max-w-[15rem] shrink-0 bg-violet-100/50 border-r border-violet-300/30 overflow-y-auto p-3 text-[12px] space-y-4">
+          <aside className="w-[42%] max-w-[17rem] shrink-0 bg-violet-100/50 border-r border-violet-300/30 overflow-y-auto p-3 text-[12px] space-y-4">
             <button type="button" onClick={() => setSide(false)} className="flex items-center text-[11px] font-semibold tracking-[0.12em] text-violet-800"><ChevronLeft className="w-3.5 h-3.5" />CORE</button>
             {state === "error" && <p className="text-rose-600">Couldn't load telemetry. Refresh.</p>}
             {t && <>
+              {/* Health at a glance */}
               <section>
-                <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">TELEMETRY</h4>
-                <div className="rounded-2xl bg-white/55 px-3 py-2 leading-[1.7]">
-                  <div>OG 100 <b>{t.beta.count}/{t.beta.limit}</b></div>
-                  <div>Reports <b>{t.reports.count}</b></div>
+                <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">HEALTH</h4>
+                <div className="rounded-2xl bg-white/55 px-3 py-2 leading-[1.7] space-y-0.5">
+                  <div>OG seats <b>{t.beta.count}/{t.beta.limit}</b></div>
+                  <div>Claimed <b>{claimedCount}</b></div>
+                  {t.beta.activeToday != null && <div>Active today <b>{t.beta.activeToday}</b></div>}
+                  <div>Reports <b>{t.reports.count}</b>{t.reports.open != null ? ` · ${t.reports.open} open` : ""}</div>
                   <div>Replies 7d <b>{total7}</b></div>
-                  <div>Voice clips 7d <b>{clips7}</b></div>
-                  <div className="break-all">Last model <b>{lastModel.replace(/^.*\//, "")}</b></div>
+                  <div>Voice 7d <b>{clips7}</b></div>
+                  {t.health?.uniqueHumans7d != null && <div>Unique humans 7d <b>{t.health.uniqueHumans7d}</b></div>}
+                  {t.health?.retention7d != null && <div>Retention 7d <b>{Math.round(t.health.retention7d * 100)}%</b></div>}
+                  <div className="break-all opacity-70">Last model {lastModel.replace(/^.*\//, "")}</div>
                 </div>
               </section>
+
               <section>
                 <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">ENGINE</h4>
                 <div className="rounded-2xl bg-white/55 px-3 py-2"><div>Chat: {t.config.chat}</div><div>Voice: {t.config.voice}</div></div>
               </section>
+
               <section>
                 <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">USAGE · 7 DAYS</h4>
                 {days.length === 0 ? <p className="opacity-70">No usage yet.</p> : days.map((d) => {
@@ -70,6 +95,7 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
                   return <div key={d} className="rounded-xl bg-white/45 px-2.5 py-1.5 mb-1"><div className="font-semibold">{d.slice(5)} · {replies(d)} replies · {u["tts:gen"] ?? 0} voice{u["tts:limit"] ? ` (limit ${u["tts:limit"]}×)` : ""}</div><div className="text-[10.5px] opacity-75 break-words">{models}</div></div>;
                 })}
               </section>
+
               <section>
                 <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">REPORTS</h4>
                 {t.reports.recent.length === 0 ? <p className="opacity-70">None yet.</p> : t.reports.recent.map((r) => (
@@ -79,15 +105,65 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
                   </div>
                 ))}
               </section>
+
               {t.referrals && <section>
                 <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">SHARING</h4>
                 <p>{t.referrals.shares} shares · {t.referrals.opens} opened · {t.referrals.sharers} with stars{t.referrals.top.length ? ` · top: ${t.referrals.top.map((x) => `✦${x.stars}`).join(", ")}` : ""}</p>
               </section>}
+
+              {/* OG Roster — the important part */}
               <section>
-                <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">OG 100 ROSTER ({t.beta.count}/{t.beta.limit})</h4>
-                {(t.beta.roster ?? t.beta.latest).length ? [...(t.beta.roster ?? t.beta.latest)].sort((a, b) => a.number - b.number).map((m) => (
-                  <div key={m.number} className="flex gap-2 text-[10.5px]"><span className="w-5 text-right opacity-70">{m.number}</span><span>{new Date(m.ts).toLocaleString([], { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}</span></div>
-                )) : <p>None yet.</p>}
+                <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">
+                  OG 100 ROSTER ({t.beta.count}/{t.beta.limit} · {claimedCount} claimed)
+                </h4>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {(["all", "claimed", "unclaimed", "labeled"] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => setFilter(f)}
+                      className={`px-2 py-0.5 rounded-full text-[10px] tracking-wide ${
+                        filter === f ? "bg-violet-600 text-white" : "bg-white/50 text-violet-700"
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+                {filtered.length === 0 ? <p className="opacity-70">None match.</p> : filtered.map((m) => (
+                  <div key={m.number} className="rounded-xl bg-white/45 px-2.5 py-1.5 mb-1.5">
+                    <div className="flex items-baseline justify-between gap-1">
+                      <span className="font-semibold">#{m.number}</span>
+                      <span className="text-[10px] opacity-60">
+                        {new Date(m.ts).toLocaleString([], { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    {m.claimed ? (
+                      <div className="text-[11px] mt-0.5">
+                        <span className="text-violet-700">{m.displayName || "Claimed"}</span>
+                        {m.method && <span className="opacity-50"> · {m.method}</span>}
+                        {m.contact && <div className="opacity-70 break-all">{m.contact}</div>}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] opacity-50 mt-0.5">Unclaimed</div>
+                    )}
+                    {m.messages != null && <div className="text-[10px] opacity-60">{m.messages} msgs{m.lastActive ? ` · last ${new Date(m.lastActive).toLocaleDateString()}` : ""}</div>}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {(["real", "bot", "duplicate", "jenny-test", "paid"] as RosterLabel[]).map((lab) => (
+                        <button
+                          key={lab}
+                          type="button"
+                          onClick={() => setLabel(m.number, m.label === lab ? "unlabeled" : lab)}
+                          className={`px-1.5 py-0.5 rounded text-[9px] tracking-wide ${
+                            m.label === lab ? "bg-violet-600 text-white" : "bg-white/60 text-violet-600"
+                          }`}
+                        >
+                          {lab}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </section>
             </>}
             <button type="button" onClick={() => { forgetAdmin(); onSignOut(); }} className="text-[11px] text-violet-500 underline underline-offset-2">Sign out of Architect mode</button>
@@ -128,7 +204,7 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
 
 function Tach({ rpm }: { rpm: number }) {
   const f = Math.min(1, Math.max(0, rpm / 9000));
-  const a = Math.PI * (1 - f); // 180° → 0°
+  const a = Math.PI * (1 - f);
   const cx = 46, cy = 48, r = 36;
   const x = cx + r * Math.cos(a), y = cy - r * Math.sin(a);
   const nx = cx + (r - 8) * Math.cos(a), ny = cy - (r - 8) * Math.sin(a);
