@@ -20,6 +20,7 @@ import {
   Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
+import GematriaObservatory from "./components/GematriaObservatory";
 import Backdrop from "./components/Backdrop";
 import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
 import type { ModelRequest } from "./intelligence";
@@ -83,6 +84,7 @@ const TACHO_VISION = "the tacho climbs past 9,000 RPMs as the browser version st
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function App() {
+  const [showGematria, setShowGematria] = useState(false);
   const [threads, setThreads] = useState<StoredThread[]>(() => loadThreads());
   const [activeId, setActiveId] = useState<string | null>(() => {
     const saved = loadActiveThreadId();
@@ -700,6 +702,8 @@ export default function App() {
   return (
     <div className="h-[100dvh] flex flex-col relative overflow-hidden">
       <Backdrop chat={!isHome} />
+      {showGematria && <ErrorBoundary label="Gematria Observatory"><GematriaObservatory onClose={() => setShowGematria(false)} /></ErrorBoundary>}
+      
       {orgTab && <ErrorBoundary label="organizer" compact><Organizer tab={orgTab} onTab={setOrgTab} onClose={() => setOrgTab(null)} /></ErrorBoundary>}
       {dueBanner.length > 0 && !orgTab && (
         <div className="fixed z-[45] left-3 right-3 top-[max(4.25rem,calc(env(safe-area-inset-top)+3.5rem))] max-w-lg mx-auto glass-strong rounded-2xl px-4 py-3 flex items-start gap-3 shadow-lg">
@@ -1167,6 +1171,14 @@ export default function App() {
                 <p className="text-[13px] text-violet-700/55 wl-thin tracking-wide">
                   Imagination becomes intelligence.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setShowGematria(true)}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-violet-200/80 bg-white/55 px-4 py-2 text-[12px] text-violet-700 shadow-sm transition hover:bg-white/85 touch-manipulation"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
+                  Gematria Observatory
+                </button>
               </motion.div>
 
               <motion.div
