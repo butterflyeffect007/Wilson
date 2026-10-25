@@ -11,11 +11,25 @@ Live Ethereum observation + anomaly detection + alert stack, controllable by Wil
 | `webhook_dispatcher.cjs` | Status-flip alerts (Telegram/Discord) with Stripe paywall |
 | `agent.cjs` | HTTP control plane (start/stop/status) on port 3001 |
 
-## Quick start (Windows)
+## Docker (recommended)
 
 ```powershell
 cd silverharbor
-npm install ws express
+copy .env.example .env
+# edit .env and put your Alchemy key
+docker compose up -d --build
+```
+
+Check logs:
+```powershell
+docker compose logs -f
+```
+
+## Manual (Windows)
+
+```powershell
+cd silverharbor
+npm install
 $env:ETH_WS_URL = "wss://eth-mainnet.g.alchemy.com/v2/YOUR_KEY"
 $env:AGENT_SECRET = "wilson-secret-change-me"
 node agent.cjs
@@ -34,10 +48,7 @@ Repeat for `evaluator` and `dispatcher`.
 
 ## Env vars
 
-- `ETH_WS_URL` — Alchemy/Infura WebSocket
-- `AGENT_SECRET` — shared secret for the control plane
-- `STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID` — optional paywall
-- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` or `DISCORD_WEBHOOK_URL` — alerts
+See `.env.example`.
 
 ## Wilson control
 
