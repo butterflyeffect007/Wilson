@@ -8,6 +8,7 @@ Clean, consolidated layout of everything built in this session.
 Wilson/
 ├── silverharbor/          # Live Ethereum observation + alerts
 │   ├── README.md
+│   ├── PAYMENTS.md           # Phantom receive address
 │   ├── websocket_connector.cjs
 │   ├── evaluator.cjs
 │   ├── webhook_dispatcher.cjs   # Stripe paywall
@@ -39,6 +40,7 @@ Wilson/
 - Stripe paywall gate present in the dispatcher
 - Wilson `agent.ts` client ready (Tailscale IP 100.117.181.95)
 - Wilson `github.ts` push helper ready (token stored in localStorage)
+- Phantom receive address: `8ErdfNEmpcfmE8Dn3tvUgeSkkQNLf3vQTbfk3Q27m5FH`
 
 ## What works today
 
@@ -46,6 +48,7 @@ Wilson/
 - Wilson can start/stop the three Silver Harbor processes over Tailscale
 - Wilson can push files to this repo once a GitHub token is set in localStorage
 - Trading systems are organized; copy full sources from attachments and set keys to run
+- Payments can land in Phantom (see `silverharbor/PAYMENTS.md`)
 
 ## Next clean-ups (optional)
 
