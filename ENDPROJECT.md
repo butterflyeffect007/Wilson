@@ -30,12 +30,22 @@ Wilson/
     └── github.ts             # Wilson → GitHub push helper
 ```
 
+## Verified working (2026-10-25)
+
+- Silver Harbor agent listening on port 3001
+- Connector, evaluator, and dispatcher all startable via the agent
+- Live Ethereum blocks flowing into `ethereum_observations.ndjson`
+- Anomaly receipts writing to `evaluation_receipts.ndjson` (BLOCK_TIME_GAP detections confirmed)
+- Stripe paywall gate present in the dispatcher
+- Wilson `agent.ts` client ready (Tailscale IP 100.117.181.95)
+- Wilson `github.ts` push helper ready (token stored in localStorage)
+
 ## What works today
 
 - Silver Harbor: live blocks → anomaly receipts → optional paid alerts
 - Wilson can start/stop the three Silver Harbor processes over Tailscale
 - Wilson can push files to this repo once a GitHub token is set in localStorage
-- Trading systems are present; copy full sources from attachments and set keys to run
+- Trading systems are organized; copy full sources from attachments and set keys to run
 
 ## Next clean-ups (optional)
 
