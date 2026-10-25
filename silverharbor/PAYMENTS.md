@@ -1,5 +1,28 @@
 # Payments — Silver Harbor
 
+## Stripe (card)
+
+**Publishable key (test):**
+```
+pk_test_51UUM9uET7kb1wx0eWZ2HUWLHkVskOmkzUz0Z515RQfiCThWuteFUFEfxcX4TVxa0WNTHcB9bsSqwA9ZHoPvcMxnc00Tk3GLID4
+```
+
+**Subscribe page:**
+```
+https://butterflyeffect007.github.io/Wilson/subscribe.html
+```
+
+### Setup remaining
+1. Create a product + recurring price in the Stripe dashboard.
+2. Copy the Price ID (`price_...`).
+3. Replace `price_REPLACE_ME` in `public/subscribe.html`.
+4. Set on the Windows agent machine:
+   ```powershell
+   $env:STRIPE_SECRET_KEY = "sk_test_..."
+   $env:STRIPE_PRICE_ID = "price_..."
+   ```
+5. Restart the dispatcher.
+
 ## Solana / Phantom
 
 **Receive address** (USDC or SOL):
@@ -12,25 +35,8 @@
 - Wallet: Phantom
 - Recommended token: USDC
 
-### How to pay
-1. Open Phantom
-2. Send USDC (or SOL) to the address above
-3. Include a memo if you want the payment tied to a specific alert tier
-
-## Stripe (card)
-
-Stripe paywall is already wired in `webhook_dispatcher.cjs`.
-Create a product + price in the Stripe dashboard, then set:
-
-```powershell
-$env:STRIPE_SECRET_KEY = "sk_live_..."
-$env:STRIPE_PRICE_ID = "price_..."
-```
-
-Alerts only fire when there is at least one active subscriber.
-
 ## Notes
 
-- This address is public and safe to share.
-- Never share your seed phrase or private key.
-- Double-check the address before sending large amounts.
+- Test key is safe to expose.
+- Never commit the secret key (`sk_test_` or `sk_live_`).
+- Double-check the Phantom address before sending large amounts.
