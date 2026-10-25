@@ -1,27 +1,53 @@
 /**
- * Wilson's voice.
- * 1) Primary: Kokoro "Puck" (am_puck) synthesized on the device in a Web Worker (puckVoice.ts), loaded lazily
- *    after the first tap / an idle moment and cached by the browser, so it downloads once.
- * 2) Fallback: Deepgram Aura-2 (arcas) via Cloudflare Workers AI through the Wilson worker /tts (MP3), with the
- *    IndexedDB clip cache — used while Puck is still downloading, on devices too weak for it, or if it fails.
- * 3) If both fail (e.g. the daily free Aura limit), Wilson stays text-only (no robotic device voice).
+ * Wilson's voice, in this order (per piece of a reply):
+ * 1) Gemini Puck: Google's prebuilt "Puck" voice through the Wilson worker /tts/gemini-puck (key stays on the
+ *    server; WAV; free tier, daily limit resets at midnight Pacific). Fast (~4x real time), so pieces play back to back.
+ * 2) On-device Kokoro "Puck" (am_puck, puckVoice.ts) ONLY if its ~92 MB model is already saved on this device.
+ *    Wilson never starts that download by itself (Settings → Voice has a button for it).
+ * 3) Deepgram Aura-2 (arcas) via Cloudflare Workers AI through the worker /tts (MP3).
+ * 4) If nothing works, Wilson stays text-only with a small note (never the phone's built-in voice).
  * Playback: ONE reused HTMLAudioElement (playsinline), unlocked by playing a silent clip inside the first tap.
  * HTMLAudioElement is not muted by the iPhone ringer switch the way Web Audio is, and avoids
  * AudioContext "suspended"/"interrupted" states in home-screen PWAs. Web Audio is only used for
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
  */
 import { attachAudio, detachAudio, setSpeakingFlag } from "./audioBus";
-import { puckStats, ensurePuck, getPuckFail, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
+import { ensurePuck, getPuckFail, getPuckState, puckBlockedReason, puckCancel, puckOnDisk, puckOnDiskKnown, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
 
-/** Load Puck in an idle moment (never blocks the app or the tap that triggered it). */
+/** Start on-device Puck in an idle moment, but only if its model is already saved here (never the 92 MB download). */
 function schedulePuck() {
   if (getPuckState() !== "off") return;
-  const ric = (globalThis as any).requestIdleCallback as ((cb: () => void, o?: { timeout: number }) => void) | undefined;
-  if (ric) ric(() => ensurePuck(), { timeout: 3000 }); else setTimeout(() => ensurePuck(), 1500);
+  void puckOnDisk().then((yes) => {
+    if (!yes || getPuckState() !== "off") return;
+    const ric = (globalThis as any).requestIdleCallback as ((cb: () => void, o?: { timeout: number }) => void) | undefined;
+    if (ric) ric(() => ensurePuck(), { timeout: 3000 }); else setTimeout(() => ensurePuck(), 1500);
+  });
+}
+/** On-device Puck can help right now (loaded, or saved on this device and starting). */
+function puckUsable(): boolean {
+  const st = getPuckState();
+  return st === "ready" || (st === "loading" && puckOnDiskKnown() === true);
 }
 
+/* ---- which voice is speaking (shown in Settings → Voice test) ---- */
+export type VoiceName = "Gemini Puck" | "Puck (on this phone)" | "arcas" | "";
+export type VoicePlaying = { now: VoiceName; last: VoiceName; lastAt: number };
+let playingVoice: VoicePlaying = (() => { try { const r = localStorage.getItem("wilson-voice-last"); if (r) return { now: "", ...JSON.parse(r) } as VoicePlaying; } catch { /* ignore */ } return { now: "", last: "", lastAt: 0 }; })();
+const playingListeners = new Set<(v: VoicePlaying) => void>();
+function setPlayingVoice(now: VoiceName) {
+  playingVoice = now ? { now, last: now, lastAt: Date.now() } : { ...playingVoice, now: "" };
+  if (now) try { localStorage.setItem("wilson-voice-last", JSON.stringify({ last: now, lastAt: playingVoice.lastAt })); } catch { /* ignore */ }
+  playingListeners.forEach((l) => l(playingVoice));
+}
+export function getVoicePlaying() { return playingVoice; }
+export function subscribeVoicePlaying(l: (v: VoicePlaying) => void) { playingListeners.add(l); return () => { playingListeners.delete(l); }; }
+const voiceOf = new WeakMap<Blob, VoiceName>();
+const tag = (b: Blob | null, v: VoiceName) => { if (b) voiceOf.set(b, v); return b; };
+
 const SPEED = 1.1;
-const SERVER_TTS_URL = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev") + "/tts";
+const PROXY = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev");
+const SERVER_TTS_URL = PROXY + "/tts";
+const GEMINI_TTS_URL = PROXY + "/tts/gemini-puck";
 const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/84TAAAAAAAAAAAAASW5mbwAAAA8AAAAFAAACoABtbW1tbW1tbW1tbW1tbW1tbW1tkpKSkpKSkpKSkpKSkpKSkpKSkpK2tra2tra2tra2tra2tra2tra2ttvb29vb29vb29vb29vb29vb29vb//////////////////////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJARQAAAAAAAAAqC9P8vrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80TEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEUwAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEpgAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=";
 let serverDown = false;
 
@@ -98,6 +124,7 @@ export function stopSpeaking(): void {
   setSpeakingFlag(false);
   setPending(false);
   setActive(false);
+  if (playingVoice.now) setPlayingVoice("");
   const e = endCurrent; endCurrent = null; e?.();
 }
 
@@ -170,11 +197,14 @@ export function toSpeakable(text: string): string {
 /* ---------------- streaming voice (continuous chunking) ---------------- */
 const MAX_PARALLEL = 2;
 const MERGE_MAX = 180;          // tighter for conversational cadence (was 250)
-const FIRST_CHUNK_MAX = 55;     // fire the first words fast
-const SOFT_CHUNK_MAX = 95;      // soft target once speaking has started
+const FIRST_CHUNK_MAX = 90;     // fire the first words fast (a short first sentence; Gemini sounds odd cut mid-sentence)
+const SOFT_CHUNK_MAX = 160;     // soft break for long run-on text without punctuation
+/** Pieces grow as the reply goes on (fewer requests): 2nd piece ~160 chars, then up to ~420 (a paragraph). */
+const pieceTarget = (idx: number) => (idx <= 1 ? 160 : 420);
+const PIECE_MAX = 450;
 const CLIP_TIMEOUT_MS = 20000;
 /** How long a reply waits for Puck to finish downloading (~92 MB) when the server voice can't help. */
-const PUCK_WAIT_MS = 240000;
+const PUCK_WAIT_MS = 30000; // only used when the model is already saved on this device (loading from storage)
 let pending = false;
 const pendingListeners = new Set<(p: boolean) => void>();
 function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListeners.forEach((l) => l(p)); } }
@@ -188,7 +218,6 @@ export function warmVoice(): void { schedulePuck(); }
 subscribePuck(() => {
   const p = getPuckState();
   if (p === "ready" && (status.state === "resting" || status.state === "preparing" || status.state === "unavailable")) setStatus({ state: "ready", reason: undefined });
-  else if (p === "loading" && status.state === "preparing") setStatus({ progress: getPuckProgress() });
   else if (p === "failed" && status.state === "preparing") setStatus(noVoiceStatus());
 });
 
@@ -197,9 +226,11 @@ function noVoiceStatus(): Partial<VoiceStatus> {
   const f = getPuckFail();
   // Plain reason when we know one; otherwise the real error text (never "couldn't start: couldn't start").
   const detail = f ? (/couldn't start$/.test(f.plain) ? `error: ${f.error.slice(0, 90)}` : f.plain.replace(/\s*\([^)]*\)\s*$/, "")) : "";
-  const why = puckBlockedReason() || (getPuckState() === "failed" ? `Puck couldn't start${detail ? `: ${detail}` : ""}; see Settings → Voice test` : "");
-  if (isVoiceResting()) return { state: why ? "unavailable" : "resting", reason: why || undefined };
-  return { state: "unavailable", reason: why || "the voice server didn't answer" };
+  const g = geminiRestingUntil();
+  const gWhy = g ? `Gemini Puck is resting until ${new Date(g).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Gemini Puck didn't answer";
+  const pWhy = getPuckState() === "failed" ? `on-device Puck couldn't start${detail ? `: ${detail}` : ""}` : puckBlockedReason();
+  const why = [gWhy, pWhy, isVoiceResting() ? "arcas is resting (daily free limit)" : "arcas didn't answer"].filter(Boolean).join("; ");
+  return { state: g && isVoiceResting() ? "resting" : "unavailable", reason: why };
 }
 
 /* ---- client-side clip cache (IndexedDB) so replays don't spend the daily voice allowance ---- */
@@ -262,6 +293,49 @@ async function fetchOnce(text: string, speed: number, timeoutMs: number): Promis
     const out = blob.type ? blob : new Blob([blob], { type: "audio/mpeg" });
     if (key) void cachePut(key, out);
     return out;
+  } finally { clearTimeout(to); }
+}
+
+/* ---- Gemini Puck (main voice) ---- */
+const G_REST_KEY = "wilson-gpuck-resting-until";
+let gRestUntil = (() => { try { return Number(localStorage.getItem(G_REST_KEY)) || 0; } catch { return 0; } })();
+let gFails = 0; // consecutive non-limit failures (offline etc.): skip Gemini for a minute after 3
+let gToday = 0;
+export function geminiRestingUntil() { return gRestUntil > Date.now() ? gRestUntil : 0; }
+export function geminiUsedToday() { return gToday; }
+function geminiUsable() { return Date.now() >= gRestUntil; }
+function geminiRest(until: number, daily: boolean) {
+  gRestUntil = until;
+  if (daily) try { localStorage.setItem(G_REST_KEY, String(until)); } catch { /* ignore */ }
+  statusListeners.forEach((l) => l(status));
+}
+async function fetchGemini(text: string, my: number): Promise<Blob | null> {
+  const key = await clipKey("gpuck|" + text).catch(() => "");
+  if (key) { const hit = await cacheGet(key); if (hit) { dbg("Gemini Puck clip from device cache"); return new Blob([hit], { type: "audio/wav" }); } }
+  if (!geminiUsable()) throw new Error("Gemini Puck resting");
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 15000);
+  const t0 = Date.now();
+  try {
+    const res = await fetch(GEMINI_TTS_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }), signal: ctrl.signal });
+    if (res.status === 429) {
+      let j: { daily?: boolean; until?: number } = {}; try { j = await res.json(); } catch { /* ignore */ }
+      const ra = Number(res.headers.get("Retry-After")) || 60;
+      geminiRest(j.daily && j.until ? j.until : Date.now() + Math.min(ra, 120) * 1000, !!j.daily);
+      throw new Error(j.daily ? "Gemini Puck daily limit reached" : "Gemini Puck busy");
+    }
+    if (!res.ok) throw new Error("gemini tts http " + res.status);
+    const blob = await res.blob();
+    if (blob.size < 1000) throw new Error("gemini tts empty audio");
+    const n = Number(res.headers.get("X-Voice-Today")); if (n) gToday = n;
+    gFails = 0;
+    dbg(`Gemini Puck ${(blob.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    const out = blob.type ? blob : new Blob([blob], { type: "audio/wav" });
+    if (key) void cachePut(key, out);
+    return my === generation ? out : null;
+  } catch (e) {
+    if (!/resting|limit|busy/.test(String((e as Error)?.message))) { if (++gFails >= 3) { gFails = 0; geminiRest(Date.now() + 60000, false); } }
+    throw e;
   } finally { clearTimeout(to); }
 }
 
@@ -390,19 +464,17 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   const slot = () => inflight < MAX_PARALLEL ? Promise.resolve() : new Promise<void>((r) => waiters.push(r));
   /*
    * Which voice speaks each piece:
-   *  1. Puck whenever it's loaded on this device, even if the phone is slow (Aura has a daily cap, Puck doesn't).
-   *  2. Aura-2 arcas while Puck is still downloading / can't run here, unless Aura is resting or offline.
-   *  3. Aura unavailable: wait for Puck to finish downloading (small "Getting Wilson's voice ready…" note).
-   *  4. Nothing works: skip the piece and show a small note. Later pieces still get their chance.
+   *  1. Gemini Puck (online, fast) unless it's resting (daily/minute limit) or offline.
+   *  2. On-device Kokoro Puck, only if its model is already saved on this device.
+   *  3. arcas (Aura-2, online) unless it's resting.
+   *  4. Nothing works: skip the piece and show a small note (later pieces still get their chance).
    */
-  dbg(`voice engine: ${getPuckState() === "ready" ? "Puck (on device)" : "Aura (server) until Puck is ready"}`);
-  /** Puck ready (waiting for its download if needed)? */
+  dbg(`voice order: ${geminiUsable() ? "Gemini Puck" : "Gemini Puck resting"} → ${getPuckState() === "ready" ? "Puck on device (ready)" : puckOnDiskKnown() ? "Puck on device (saved)" : "no on-device Puck"} → arcas`);
+  /** On-device Puck ready (waiting briefly if it's loading from storage)? */
   const puckReady = async (): Promise<boolean> => {
     if (getPuckState() === "ready") return true;
-    if (!puckSupported() && getPuckState() === "off") return false;
-    if (getPuckState() !== "failed") setStatus({ state: "preparing", progress: getPuckProgress() });
+    if (getPuckState() === "failed" || !(await puckOnDisk()) || !puckSupported()) return false;
     const ok = await waitForPuck(PUCK_WAIT_MS);
-    if (status.state === "preparing") setStatus(ok ? { state: "ready" } : noVoiceStatus());
     return ok && my === generation;
   };
   /** One short piece with Puck; one retry (covers a worker restart after a crash). */
@@ -412,7 +484,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       const t0 = Date.now();
       const b = await puckSynth(t, speed, my);
       if (my !== generation) return null;
-      if (b) { dbg(`puck ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`); return b; }
+      if (b) { dbg(`puck ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`); return tag(b, "Puck (on this phone)"); }
       dbg("puck clip failed" + (i === 0 ? ", retrying" : ""));
     }
     return null;
@@ -423,20 +495,24 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     return splitForPuck(t, first).map((p) => { const pr = puckPiece(p); pr.catch(() => {}); return pr; });
   };
   const clip = async (t: string, first: boolean): Promise<Promise<Blob | null>[]> => {
-    if (getPuckState() === "ready") {
+    if (geminiUsable()) {
+      try {
+        await slot(); inflight++;
+        try { const b = await fetchGemini(t, my); if (b || my !== generation) return [Promise.resolve(tag(b, "Gemini Puck"))]; }
+        finally { inflight--; waiters.shift()?.(); }
+      } catch (e) { dbg("Gemini Puck failed", e); if (my !== generation) return []; }
+    }
+    if (puckUsable() || puckOnDiskKnown() === true) {
       const parts = await viaPuck(t, first);
       if (parts || my !== generation) return parts ?? [];
     }
     if (!isVoiceResting() && !serverDown) {
       try {
         await slot(); inflight++;
-        try { return [Promise.resolve(await fetchClip(t, speed, my))]; }
+        try { return [Promise.resolve(tag(await fetchClip(t, speed, my), "arcas"))]; }
         finally { inflight--; waiters.shift()?.(); }
       } catch { if (my !== generation) return []; }
     }
-    // Server voice can't help (daily limit, offline...): wait for Puck instead of going silent.
-    const parts = await viaPuck(t, first);
-    if (parts || my !== generation) return parts ?? [];
     throw new Error("no voice available");
   };
 
@@ -456,13 +532,17 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
         setPending(false);
         if (!played) hooks.onStart?.();
         played = true;
-        if (status.state === "idle" || status.state === "unavailable") setStatus({ state: "ready", reason: undefined });
+        if (status.state === "idle" || status.state === "unavailable" || status.state === "resting") setStatus({ state: "ready", reason: undefined });
+        setPlayingVoice(voiceOf.get(buf) || "");
+        maybeFlush(); // queue the next piece now if nothing else is waiting
         await playBlob(buf, my);
       }
       if (my !== generation) break;
       playIdx++;
+      maybeFlush();
     }
     playing = false;
+    if (playingVoice.now) setPlayingVoice("");
     if (my !== generation) return;
     if (done && playIdx >= queue.length) { setPending(false); end(); }
   };
@@ -475,12 +555,13 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     void playLoop();
   };
 
+  /* Save requests: gather sentences into bigger pieces (see pieceTarget), but never let the speaker run dry —
+     when the piece now playing is the last one queued, send what we have (at least a full sentence). */
+  const starving = () => played && playIdx >= queue.length - 1;
   const flush = (force: boolean) => {
-    // Avoid dispatching every short sentence as a separate Puck clip when the
-    // server-request counter is idle. Accumulate a fuller clip, but keep
-    // streaming once the buffer reaches the conversational chunk target.
-    if (buffer && (force || buffer.length >= SOFT_CHUNK_MAX)) { dispatch(buffer); buffer = ""; }
+    if (buffer && (force || buffer.length >= pieceTarget(queue.length) || (starving() && buffer.length >= 40))) { dispatch(buffer); buffer = ""; }
   };
+  function maybeFlush() { if (!done && buffer) flush(false); }
 
   const feed = (text: string, final: boolean) => {
     if (my !== generation) return;
@@ -492,8 +573,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
         dispatch(p);           // first usable tokens → speak immediately
         continue;
       }
-      // Keep the merge buffer but at the new tighter MERGE_MAX
-      if (buffer && buffer.length + 1 + p.length > MERGE_MAX) {
+      if (buffer && buffer.length + 1 + p.length > Math.max(pieceTarget(queue.length), Math.min(PIECE_MAX, MERGE_MAX))) {
         dispatch(buffer);
         buffer = p;
       } else {
@@ -503,7 +583,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     flush(final);
   };
 
-  if (serverDown && getPuckState() !== "ready" && getPuckState() !== "loading" && !puckSupported()) {
+  if (!geminiUsable() && (isVoiceResting() || serverDown) && !puckUsable() && puckOnDiskKnown() !== true) {
     setStatus(noVoiceStatus());
     return { push: () => {}, finish: () => { end(); } };
   }
