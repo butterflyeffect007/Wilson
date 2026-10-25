@@ -1,0 +1,17 @@
+langgraph
+langchain_core
+langchain-google-genai
+langchain-tavily
+python-dotenv
+pandas
+numpy
+alpaca-trade-api
+alpha_vantage==2.3.1
+scikit-learn
+ta
+pytz
+openpyxl
+matplotlib
+pyfolio-reloaded
+requests
+six
