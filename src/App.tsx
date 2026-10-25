@@ -770,6 +770,7 @@ export default function App() {
               <div className="px-3 pb-2 flex gap-2">
                 <button type="button" onClick={() => { setSidebarOpen(false); setOrgTab("notes"); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><StickyNote className="w-4 h-4" />Notes</button>
                 <button type="button" onClick={() => { setSidebarOpen(false); setOrgTab("reminders"); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><Bell className="w-4 h-4" />Reminders</button>
+                <a href="https://butterflyeffect007.github.io/Wilson/subscribe.html" target="_blank" rel="noopener" className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]">Alerts</a>
               </div>
               <div className="px-3 pb-2">
                 <button type="button" onClick={() => { setSidebarOpen(false); setFeedback({ type: "problem" }); }} className="w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><MessageSquareWarning className="w-4 h-4" />Send feedback to Jenny</button>
