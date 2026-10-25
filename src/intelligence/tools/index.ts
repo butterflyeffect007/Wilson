@@ -11,7 +11,7 @@ export type ToolName =
   | "starlink" | "swpc" | "quakes" | "weather" | "wikipedia" | "arxiv"
   | "country" | "fx" | "books" | "news" | "place" | "web" | "quantum" | "scholar" | "wikidata" | "gdelt" | "flights" | "nearby"
   | "disasters" | "alerts" | "airquality" | "crypto" | "dictionary" | "holidays" | "grants"
-  | "flightstatus" | "airport";
+  | "flightstatus" | "airport" | "ntrs" | "nasadoc";
 export interface ToolCall { name: ToolName; params?: Record<string, string> }
 export interface ToolSource { title: string; url: string }
 export interface ToolResult { name: ToolName; ok: boolean; data?: unknown; sources: ToolSource[]; error?: string }
@@ -52,6 +52,8 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   dictionary: "Dictionary definition of an English word (params: q = the word)",
   holidays: "Public holidays for a country (params: q = country name or ISO code, date = optional year)",
   grants: "Open US federal grant opportunities from Grants.gov (params: q = topic, e.g. community gardens)",
+  ntrs: "NASA Technical Reports Server: search NASA's own research papers, tech briefs and reports (params: q = research topic, e.g. vibration control neural networks)",
+  nasadoc: "Read a NASA Technical Reports Server document from its link (params: q = the ntrs.nasa.gov link, focus = what the user wants to know)",
 };
 
 const CUR: Record<string, string> = { dollar: "USD", dollars: "USD", buck: "USD", bucks: "USD", euro: "EUR", euros: "EUR", pound: "GBP", pounds: "GBP", quid: "GBP", yen: "JPY", peso: "MXN", pesos: "MXN", rupee: "INR", rupees: "INR", yuan: "CNY", renminbi: "CNY", franc: "CHF", francs: "CHF", real: "BRL", reais: "BRL", rand: "ZAR", lira: "TRY", zloty: "PLN", krona: "SEK", kronor: "SEK", krone: "NOK" };
@@ -71,7 +73,13 @@ function dictWord(m: string): string {
   return x ? x[1].toLowerCase() : "";
 }
 
+const NASA_LINK = /https?:\/\/(?:ntrs\.nasa\.gov\/\S+|(?:[\w-]+\.)*nasa\.gov\/\S+?\.pdf\b)/i;
+const NASA_RESEARCH = /\bnasa\b[^.?!\n]{0,60}\b(research\w*|stud(?:y|ies|ied)|papers?|(?:technical |tech )?reports?|tech briefs?|publications?|experiments?|investigat\w*|work(?:ed|ing)? on|done (?:on|with|about|in|for)|developed|invent\w*|findings?)\b|\b(research\w*|stud(?:y|ies)|papers?|reports?|work)\b[^.?!\n]{0,40}\b(?:by|from|at) nasa\b|\bntrs\b|\bnasa (?:technical reports?|tech briefs?)\b/i;
+
 const RULES: [RegExp, (m: string) => ToolCall][] = [
+  // NASA research (NTRS). A pasted NASA document link wins; otherwise "what has NASA researched/studied/done on X".
+  [NASA_LINK, (m) => ({ name: "nasadoc", params: { q: (m.match(NASA_LINK)?.[0] || "").replace(/[)\].,;!?'"]+$/, ""), focus: m.replace(NASA_LINK, " ").replace(/\s+/g, " ").trim().slice(0, 160) } })],
+  [NASA_RESEARCH, (m) => ({ name: "ntrs", params: { q: topic(m.replace(NASA_LINK, " "), /\b(nasa'?s?|ntrs|technical|tech|reports?|briefs?|research(?:ed|ing|ers?)?|stud(?:y|ies|ied)|papers?|publications?|experiments?|investigat\w*|findings?|work(?:ed|ing)?|done|did|do|does|has|have|had|ever|developed|invented|anything|on|about|with|into|in|for|of|by|from|at|the|a|an|any|find|search|look|up|me|show|latest|recent|know)\b/gi) || "space" } })],
   [/^\s*(?:hey wilson,?\s*)?(?:please\s+)?define\s+\w|\b(definition|meaning) of (?:the word )?["'“]?(?!life\b)[a-z'-]+["'”]?\s*\??$|\bwhat does ["'“]?[a-z'-]+["'”]? mean\b|\bsynonyms? (?:of|for)\b/i, (m) => ({ name: "dictionary", params: { q: dictWord(m) } })],
   [/\b(bitcoin|btc|ethereum|dogecoin|solana|xrp|cardano|litecoin|crypto(?:currency|currencies)?|shiba inu|tether|usdt|chainlink|polkadot)\b|\b(eth|doge|sol|ada|ltc) (price|to usd)\b/i, (m) => ({ name: "crypto", params: { q: [...new Set((m.match(COINS) || []).map((c) => c.toLowerCase().replace(/\s+/g, "")))].slice(0, 4).join(",") || "bitcoin,ethereum" } })],
   [/\b(grants?|funding opportunit(?:y|ies))\b.{0,30}\b(for|about|on|to fund|supporting|related to)\b|\b(find|search|look for|any|list|open|federal|available|new)\b.{0,20}\b(grants?|funding opportunit(?:y|ies))\b/i, (m) => ({ name: "grants", params: { q: topic(m, /\b(grants?|funding|opportunit(y|ies)|find|search|look|for|about|on|to|fund|supporting|related|any|list|open|federal|available|new|me|show|apply|applying|get|i|we|my|our|could|that|there|the|a|an|help|write|writing|proposal)\b/gi) || "community" } })],
@@ -140,6 +148,11 @@ export function detectTools(message: string): ToolCall[] {
   if (fn) out.push({ name: "flightstatus", params: { q: fn } });
   else if (ap) out.push({ name: "airport", params: ap });
   for (const [re, mk] of RULES) if (re.test(message) && !out.some((c) => c.name === mk(message).name)) out.push(mk(message));
+  // NASA research asks are answered from NASA's own library: drop the generic paper searches (and ntrs when a document was pasted).
+  if (out.some((c) => c.name === "ntrs" || c.name === "nasadoc")) {
+    const doc = out.some((c) => c.name === "nasadoc");
+    for (let i = out.length - 1; i >= 0; i--) if (["arxiv", "scholar", "wikipedia"].includes(out[i].name) || (doc && out[i].name === "ntrs")) out.splice(i, 1);
+  }
   if (!out.length && /^(who|what) (is|was|are|were)\b|\b(look up|tell me about|wikipedia)\b/i.test(message))
     out.push({ name: "wikipedia", params: { q: topic(message, /\b(who|what|is|was|are|were|look up|tell me about|wikipedia)\b/gi) } });
   return out.slice(0, 2);
@@ -203,7 +216,7 @@ export function toolContext(results: ToolResult[]): string {
   results = results.filter((r) => !(r.name === "web" && /not configured/.test(r.error ?? ""))); // inert until BRAVE_API_KEY is set
   if (!results.length) return "";
   const body = results.map((r) => r.ok
-    ? `[${r.name}] ${JSON.stringify(r.data).slice(0, 2500)}\nSources: ${r.sources.slice(0, 3).map((s) => `${s.title} <${s.url}>`).join("; ")}`
+    ? `[${r.name}] ${JSON.stringify(r.data).slice(0, r.name === "nasadoc" ? 6000 : r.name === "ntrs" ? 5000 : 2500)}\nSources: ${r.sources.slice(0, r.name === "ntrs" ? 4 : 3).map((s) => `${s.title} <${s.url}>`).join("; ")}`
     : `[${r.name}] unavailable right now (${r.error}).`).join("\n\n");
   return `\n\n[Live public data fetched just now — ${new Date().toISOString()}]\n${body}\n\nUse this data for facts in your answer, in your own voice. Do not invent numbers beyond it. If a tool was unavailable, say so briefly. End with a short "Sources:" line listing the source names and links you used.`;
 }
