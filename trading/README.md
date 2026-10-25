@@ -9,16 +9,23 @@ Path: `trading/`
 - LangGraph: Analyst → Portfolio Allocator → Executor → Email
 - Hybrid signals (Gemini news + RandomForest on SMA/RSI)
 - Runs during market hours at a configurable frequency
-- **Y/N confirmation gate** before every order (see `confirm.py`)
+- **Toggle between auto-trade and confirmation** via `TRADE_MODE`
 
 ```powershell
 cd trading
 pip install -r requirements.txt
 # fill .env from .env.example
+
+# Confirmation mode (default) — asks Y/N before every order
+$env:TRADE_MODE = "confirm"
+python main.py
+
+# Auto mode — executes immediately, no prompt
+$env:TRADE_MODE = "auto"
 python main.py
 ```
 
-Before each order the console will show:
+In confirm mode the console shows:
 
 ```
 ==================================================
