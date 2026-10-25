@@ -931,6 +931,7 @@ export default function App() {
                 <button type="button" onClick={doShare} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
                 {!isInstalled() && <button type="button" onClick={() => { setShowSettings(false); setInstallOpen(true); }} className="w-full text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Add Wilson to your Home Screen</button>}
                 <p className="text-[12px] text-violet-700/80">Wilson + The Only One · <span className="italic">Imagination becomes intelligence™</span></p>
+                <p className="text-[12px]"><a href="https://butterflyeffect007.github.io/Wilson/subscribe.html" className="text-violet-600 hover:underline" target="_blank" rel="noopener">Silver Harbor Alerts</a></p>
                 <p className="text-[11px] text-violet-500/70">Version {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
               </div>
               <div className="pt-2 border-t border-violet-200/40 text-[13px] text-violet-800/90">
@@ -1416,3 +1417,4 @@ export default function App() {
     </div>
   );
 }
+
