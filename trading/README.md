@@ -9,6 +9,7 @@ Path: `trading/`
 - LangGraph: Analyst → Portfolio Allocator → Executor → Email
 - Hybrid signals (Gemini news + RandomForest on SMA/RSI)
 - Runs during market hours at a configurable frequency
+- **Y/N confirmation gate** before every order (see `confirm.py`)
 
 ```powershell
 cd trading
@@ -17,12 +18,25 @@ pip install -r requirements.txt
 python main.py
 ```
 
+Before each order the console will show:
+
+```
+==================================================
+PROPOSED TRADE
+  BUY  $4,950.00  of AAPL  (weight 33.0%)
+==================================================
+Approve? (y/n):
+```
+
+Only `y` or `yes` proceeds. Anything else skips that order.
+
 ## 2. One-shot Sentiment + PDF Report
 
 Path: `trading/sentiment/`
 
 - News Gatherer → Sentiment → VIX → Strategy Agent
 - Emits a PDF audit trail
+- Does **not** place orders
 
 ```powershell
 cd trading/sentiment
