@@ -4,37 +4,23 @@
   <meta charset="UTF-8" />
   <title>Subscribe — Silver Harbor Alerts</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://js.stripe.com/v3/"></script>
   <style>
     body { font-family: system-ui, sans-serif; background: #0d1030; color: #efe4ff; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
     .card { background: #161a3a; padding: 2rem; border-radius: 16px; max-width: 420px; text-align: center; }
-    button { background: #7aa8b4; color: #0d1030; border: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 1rem; }
-    button:hover { opacity: 0.9; }
+    a.btn { display: inline-block; background: #7aa8b4; color: #0d1030; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; margin-top: 1rem; }
+    a.btn:hover { opacity: 0.9; }
     .price { font-size: 2rem; margin: 0.5rem 0; }
+    img { width: 100%; border-radius: 12px; margin-bottom: 1rem; }
   </style>
 </head>
 <body>
   <div class="card">
+    <img src="https://butterflyeffect007.github.io/Wilson/og-wilson-only-one.jpg" alt="Wilson" />
     <h1>Silver Harbor Alerts</h1>
     <p>Live Ethereum anomaly alerts — base-fee surges, block-time gaps, congestion.</p>
     <div class="price">$29<span style="font-size:1rem">/month</span></div>
-    <button id="subscribe">Subscribe</button>
-    <p style="font-size:12px; opacity:0.7; margin-top:1.5rem;">Test mode · Phantom also accepted</p>
+    <a class="btn" href="https://buy.stripe.com/14AbJ3dz26F54974EP7EQ00">Subscribe</a>
+    <p style="font-size:12px; opacity:0.7; margin-top:1.5rem;">Phantom also accepted</p>
   </div>
-
-  <script>
-    const stripe = Stripe('pk_test_51UUM9uET7kb1wx0eWZ2HUWLHkVskOmkzUz0Z515RQfiCThWuteFUFEfxcX4TVxa0WNTHcB9bsSqwA9ZHoPvcMxnc00Tk3GLID4');
-
-    document.getElementById('subscribe').addEventListener('click', async () => {
-      // Replace PRICE_ID with the real price_... from your Stripe dashboard
-      const { error } = await stripe.redirectToCheckout({
-        lineItems: [{ price: 'price_REPLACE_ME', quantity: 1 }],
-        mode: 'subscription',
-        successUrl: window.location.origin + '/Wilson/?subscribed=1',
-        cancelUrl: window.location.origin + '/Wilson/subscribe.html'
-      });
-      if (error) alert(error.message);
-    });
-  </script>
 </body>
 </html>
