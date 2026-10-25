@@ -2,9 +2,9 @@
 
 ## Stripe (card)
 
-**Publishable key (test):**
+**Payment Link (live):**
 ```
-pk_test_51UUM9uET7kb1wx0eWZ2HUWLHkVskOmkzUz0Z515RQfiCThWuteFUFEfxcX4TVxa0WNTHcB9bsSqwA9ZHoPvcMxnc00Tk3GLID4
+https://buy.stripe.com/14AbJ3dz26F54974EP7EQ00
 ```
 
 **Subscribe page:**
@@ -12,16 +12,15 @@ pk_test_51UUM9uET7kb1wx0eWZ2HUWLHkVskOmkzUz0Z515RQfiCThWuteFUFEfxcX4TVxa0WNTHcB9
 https://butterflyeffect007.github.io/Wilson/subscribe.html
 ```
 
-### Setup remaining
-1. Create a product + recurring price in the Stripe dashboard.
-2. Copy the Price ID (`price_...`).
-3. Replace `price_REPLACE_ME` in `public/subscribe.html`.
-4. Set on the Windows agent machine:
-   ```powershell
-   $env:STRIPE_SECRET_KEY = "sk_test_..."
-   $env:STRIPE_PRICE_ID = "price_..."
-   ```
-5. Restart the dispatcher.
+The button on the subscribe page opens the Payment Link directly.
+
+### Optional: gate alerts behind payment
+On the Windows machine set:
+```powershell
+$env:STRIPE_SECRET_KEY = "sk_live_..."
+$env:STRIPE_PRICE_ID = "price_..."
+```
+Then restart the dispatcher. Alerts only fire when there is at least one active subscriber.
 
 ## Solana / Phantom
 
@@ -37,6 +36,5 @@ https://butterflyeffect007.github.io/Wilson/subscribe.html
 
 ## Notes
 
-- Test key is safe to expose.
-- Never commit the secret key (`sk_test_` or `sk_live_`).
+- Never commit secret keys.
 - Double-check the Phantom address before sending large amounts.
