@@ -24,6 +24,7 @@ import Backdrop from "./components/Backdrop";
 import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
 import type { ModelRequest } from "./intelligence";
 import { prepareTools } from "./intelligence";
+import { linksIn } from "./intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
@@ -416,6 +417,8 @@ export default function App() {
         ]);
         toolCtx = step.context;
       } catch (e) { console.warn("[tools]", e); }
+      if (!orgAction && !toolCtx && linksIn(content).length)
+        toolCtx = `\n\n[Link reader] The link the user shared could not be opened in time (timeout). Tell them plainly you couldn't open it just now; do NOT guess what it says.`;
       const emo = voiceCtxRef.current.emotion;
       const request: ModelRequest = composeRequest(content, windowed.slice(0, -1), {
         memory: buildMemoryContext(threadsRef.current),
