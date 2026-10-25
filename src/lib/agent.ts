@@ -20,7 +20,7 @@ export interface AgentResponse {
 
 export async function wilsonCmd(
   action: "start" | "stop" | "status",
-  target?: "connector" | "evaluator"
+  target?: "connector" | "evaluator" | "dispatcher"
 ): Promise<AgentResponse> {
   const res = await fetch(AGENT_URL, {
     method: "POST",
@@ -41,6 +41,8 @@ export async function wilsonCmd(
 // Convenience wrappers
 export const startConnector = () => wilsonCmd("start", "connector");
 export const startEvaluator = () => wilsonCmd("start", "evaluator");
+export const startDispatcher = () => wilsonCmd("start", "dispatcher");
 export const stopConnector = () => wilsonCmd("stop", "connector");
 export const stopEvaluator = () => wilsonCmd("stop", "evaluator");
+export const stopDispatcher = () => wilsonCmd("stop", "dispatcher");
 export const agentStatus = () => wilsonCmd("status");
