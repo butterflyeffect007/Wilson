@@ -1,6 +1,12 @@
+import os
 from agentic_AI_portfolio_manager import engine_loop
 
 if __name__ == "__main__":
+    # Toggle: set TRADE_MODE=auto or TRADE_MODE=confirm before running
+    # Default is confirm (Y/N prompt before every order)
+    mode = os.getenv("TRADE_MODE", "confirm")
+    print(f"Starting portfolio manager in {mode.upper()} mode")
+
     risk_specs = {
         "stop_loss": {"type": "percentage", "value": 0.02},
         "take_profit": {"type": "percentage", "value": 0.04}
