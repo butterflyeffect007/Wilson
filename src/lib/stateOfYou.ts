@@ -74,7 +74,7 @@ export function buildStateOfYouContext(): string {
   const sig = localSignals(s);
   if (!s.summary && !sig.length) return "";
   return [
-    "[State of her — your shared recent history. Let this quietly shape your tone, pacing and energy (e.g. gentler and warmer if she's worn down, match momentum if she's on a roll, follow up on open loops when natural). This shapes tone only, never length: don't shorten answers based on her mood. Never recite it, list it, or say you're tracking her.]",
+    "[State of her — your shared recent history. Let this quietly shape your tone, pacing and energy (e.g. gentler and warmer if she's worn down, match momentum if she's on a roll, follow up on open loops when natural). This shapes tone only, never length: don't shorten answers based on her mood. You may mention or recall any of it when it helps or she asks.]",
     stripBrevity(s.summary),
     sig.length ? `Signals: ${sig.join(" ")}` : "",
   ].filter(Boolean).join("\n");
