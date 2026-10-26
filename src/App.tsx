@@ -633,6 +633,13 @@ export default function App() {
     }
     void sendMessage(t);
   }, [sendMessage, analyzeUtterance, voiceId, settings.emotionDetection]);
+  // Mic dictation never auto-sends: the words land in the message box for her to review/edit, and she taps Send.
+  const dictBaseRef = useRef("");
+  const joinDict = (base: string, spoken: string) => (base && spoken ? base.replace(/\s+$/, "") + " " + spoken : base + spoken);
+  const onDictated = useCallback((t: string) => {
+    setInput(joinDict(dictBaseRef.current, t));
+    if (voiceId || settings.emotionDetection) void analyzeUtterance(t).catch((e) => console.warn("[voice]", e)); // tone/speaker ready by the time she sends
+  }, [analyzeUtterance, voiceId, settings.emotionDetection]);
 
   const nameSpeaker = useCallback((name: string) => {
     const n = name.trim();
@@ -660,8 +667,8 @@ export default function App() {
     voiceCtxRef.current.name = n;
     setNameDraft(""); setCorrecting(false);
   }, [speaker]);
-  const onInterimSpeech = useCallback((t: string) => setInput(t), []);
-  const stt = useSpeechToText(onFinalSpeech, onInterimSpeech);
+  const onInterimSpeech = useCallback((t: string) => setInput(joinDict(dictBaseRef.current, t)), []);
+  const stt = useSpeechToText(onDictated, onInterimSpeech);
 
   /* ---------- "Hey Wilson" wake word (foreground, opt-in) ---------- */
   const { speaking: wilsonSpeaking } = useWilsonAudio();
@@ -675,7 +682,7 @@ export default function App() {
       emitRipple();
       wakeSpeakRef.current = true;
       if (rest) void wakeCtx.current.onFinalSpeech(rest);
-      else wakeCtx.current.stt.start();
+      else { dictBaseRef.current = ""; wakeCtx.current.stt.start(); }
     });
     return () => stopWake();
   }, [wakeOn]);
@@ -1363,6 +1370,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
+                    stt.cancel();
                     void sendMessage();
                   }
                 }}
@@ -1379,6 +1387,7 @@ export default function App() {
                   // iOS can't share the mic between getUserMedia and speech recognition reliably: skip voice ID capture there
                   if (!iOS && !stt.listening && (voiceId || settings.emotionDetection)) void startCapture().catch((e) => console.warn("[capture]", e));
                   if (!iOS && stt.listening) setTimeout(() => void stopCapture(), 3000);
+                  if (!stt.listening) dictBaseRef.current = input; // keep anything already typed; dictation adds to it
                   stt.toggle();
                 }}
                 disabled={!stt.supported}
@@ -1406,7 +1415,7 @@ export default function App() {
                   type="button"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => void sendMessage()}
+                  onClick={() => { stt.cancel(); void sendMessage(); }}
                   disabled={!input.trim()}
                   className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-fuchsia-400 via-violet-500 to-sky-400 text-white shadow-[0_0_16px_rgba(168,85,247,.55)] disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation"
                   aria-label="Send"
