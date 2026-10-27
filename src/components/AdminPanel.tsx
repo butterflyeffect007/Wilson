@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { X, RefreshCw, ChevronLeft, ChevronRight, Send } from "lucide-react";
-import { fetchTelemetry, forgetAdmin, setRosterLabel, type Telemetry, type RosterLabel, type RosterEntry } from "../lib/admin";
+import { fetchTelemetry, forgetAdmin, type Telemetry } from "../lib/admin";
 import type { StoredMessage } from "../memory/LocalMemory";
 
-/** Architect view (server-verified admin only): collapsible sidebar, meaningful health numbers, claimed roster. */
-export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, onSend }: {
-  onClose: () => void; onSignOut: () => void; messages?: StoredMessage[]; busy?: boolean; onSend?: (text: string) => void;
+/** Architect view (server-verified admin only): collapsible sidebar, meaningful health numbers. Accounts live in the Architect dashboard (#architect). */
+export function AdminPanel({ onClose, onSignOut, onDashboard, messages = [], busy = false, onSend }: {
+  onClose: () => void; onSignOut: () => void; onDashboard?: () => void; messages?: StoredMessage[]; busy?: boolean; onSend?: (text: string) => void;
 }) {
   const [t, setT] = useState<Telemetry | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
   const [side, setSide] = useState(true);
   const [draft, setDraft] = useState("");
-  const [filter, setFilter] = useState<"all" | "claimed" | "unclaimed" | "labeled">("all");
   const endRef = useRef<HTMLDivElement>(null);
   const load = () => { setState("loading"); void fetchTelemetry().then((d) => { setT(d); setState(d ? "ok" : "error"); }); };
   useEffect(load, []);
@@ -40,24 +39,6 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
   const recent = messages.slice(-12);
   const send = () => { const s = draft.trim(); if (!s || busy || !onSend) return; onSend(s); setDraft(""); };
 
-  const roster: RosterEntry[] = (t?.beta.roster ?? t?.beta.latest?.map((m) => ({ number: m.number, ts: m.ts })) ?? [])
-    .slice()
-    .sort((a, b) => a.number - b.number);
-
-  const filtered = roster.filter((m) => {
-    if (filter === "claimed") return !!m.claimed;
-    if (filter === "unclaimed") return !m.claimed;
-    if (filter === "labeled") return !!m.label && m.label !== "unlabeled";
-    return true;
-  });
-
-  const claimedCount = t?.beta.claimed ?? roster.filter((m) => m.claimed).length;
-
-  const setLabel = async (number: number, label: RosterLabel) => {
-    const ok = await setRosterLabel(number, label);
-    if (ok) load();
-  };
-
   return (
     <div className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/30 backdrop-blur-sm pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] sm:p-6" role="dialog" aria-modal="true" aria-label="Architect view" onClick={onClose}>
       <div className="glass-strong rounded-3xl w-full max-w-3xl h-full sm:h-[90dvh] flex overflow-hidden text-violet-950/90" onClick={(e) => e.stopPropagation()}>
@@ -70,9 +51,7 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
               <section>
                 <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">HEALTH</h4>
                 <div className="rounded-2xl bg-white/55 px-3 py-2 leading-[1.7] space-y-0.5">
-                  <div>OG seats <b>{t.beta.count}/{t.beta.limit}</b></div>
-                  <div>Claimed <b>{claimedCount}</b></div>
-                  {t.beta.activeToday != null && <div>Active today <b>{t.beta.activeToday}</b></div>}
+                  {t.accounts && <div>Accounts <b>{t.accounts.accounts}</b> · active today <b>{t.accounts.active_today}</b></div>}
                   <div>Reports <b>{t.reports.count}</b>{t.reports.open != null ? ` · ${t.reports.open} open` : ""}</div>
                   <div>Replies 7d <b>{total7}</b></div>
                   <div>Voice 7d <b>{clips7}</b></div>
@@ -111,60 +90,7 @@ export function AdminPanel({ onClose, onSignOut, messages = [], busy = false, on
                 <p>{t.referrals.shares} shares · {t.referrals.opens} opened · {t.referrals.sharers} with stars{t.referrals.top.length ? ` · top: ${t.referrals.top.map((x) => `✦${x.stars}`).join(", ")}` : ""}</p>
               </section>}
 
-              {/* OG Roster — the important part */}
-              <section>
-                <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">
-                  OG 100 ROSTER ({t.beta.count}/{t.beta.limit} · {claimedCount} claimed)
-                </h4>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {(["all", "claimed", "unclaimed", "labeled"] as const).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setFilter(f)}
-                      className={`px-2 py-0.5 rounded-full text-[10px] tracking-wide ${
-                        filter === f ? "bg-violet-600 text-white" : "bg-white/50 text-violet-700"
-                      }`}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
-                {filtered.length === 0 ? <p className="opacity-70">None match.</p> : filtered.map((m) => (
-                  <div key={m.number} className="rounded-xl bg-white/45 px-2.5 py-1.5 mb-1.5">
-                    <div className="flex items-baseline justify-between gap-1">
-                      <span className="font-semibold">#{m.number}</span>
-                      <span className="text-[10px] opacity-60">
-                        {new Date(m.ts).toLocaleString([], { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                      </span>
-                    </div>
-                    {m.claimed ? (
-                      <div className="text-[11px] mt-0.5">
-                        <span className="text-violet-700">{m.displayName || "Claimed"}</span>
-                        {m.method && <span className="opacity-50"> · {m.method}</span>}
-                        {m.contact && <div className="opacity-70 break-all">{m.contact}</div>}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] opacity-50 mt-0.5">Unclaimed</div>
-                    )}
-                    {m.messages != null && <div className="text-[10px] opacity-60">{m.messages} msgs{m.lastActive ? ` · last ${new Date(m.lastActive).toLocaleDateString()}` : ""}</div>}
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {(["real", "bot", "duplicate", "jenny-test", "paid"] as RosterLabel[]).map((lab) => (
-                        <button
-                          key={lab}
-                          type="button"
-                          onClick={() => setLabel(m.number, m.label === lab ? "unlabeled" : lab)}
-                          className={`px-1.5 py-0.5 rounded text-[9px] tracking-wide ${
-                            m.label === lab ? "bg-violet-600 text-white" : "bg-white/60 text-violet-600"
-                          }`}
-                        >
-                          {lab}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </section>
+              {onDashboard && <button type="button" onClick={onDashboard} className="w-full rounded-xl bg-violet-600 text-white px-3 py-2 text-[12px]">Open Architect dashboard →</button>}
             </>}
             <button type="button" onClick={() => { forgetAdmin(); onSignOut(); }} className="text-[11px] text-violet-500 underline underline-offset-2">Sign out of Architect mode</button>
           </aside>
