@@ -686,9 +686,9 @@ html:not(.dark) .glass, html:not(.dark) .glass-strong, html:not(.dark) .msg-wils
 html.dark .glass, html.dark .glass-strong, html.dark .msg-wilson { box-shadow: 0 0 26px -8px rgba(110,33,176,.6), 0 0 18px -10px rgba(56,178,218,.5), 0 0 18px -10px rgba(243,159,95,.35) !important; }
 
 /* Title: WILSON in a restrained spectrum (azure -> violet -> magenta -> coral) */
-header h1 > span:first-child { background: linear-gradient(90deg, #2E80E4 0%, #6E21B0 35%, #A92FB8 65%, #DB5669 100%);
+header .wl-w { background: linear-gradient(90deg, #2E80E4 0%, #6E21B0 35%, #A92FB8 65%, #DB5669 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent; }
-html.dark header h1 > span:first-child { background: linear-gradient(90deg, #8FD3EE 0%, #CDB4FF 35%, #F2A6E2 65%, #FCBC7E 100%); -webkit-background-clip: text; background-clip: text; }
+html.dark header .wl-w { background: linear-gradient(90deg, #8FD3EE 0%, #CDB4FF 35%, #F2A6E2 65%, #FCBC7E 100%); -webkit-background-clip: text; background-clip: text; }
 header svg.lucide-sparkles { color: #EB7B59 !important; }
 html.dark header svg.lucide-sparkles { color: #FCBC7E !important; }
 [class*="text-pink-4"] { color: #EB7B59 !important; }
@@ -701,3 +701,24 @@ button[aria-label="Send"] { background: linear-gradient(135deg, #6E21B0 0%, #B43
 html.dark button[aria-label="Send"] { box-shadow: 0 0 18px rgba(209,59,178,.45), 0 0 10px rgba(243,159,95,.35) !important; }
 button[aria-label="Talk to type"] { box-shadow: 0 0 0 1.5px rgba(56,178,218,.45), 0 0 0 3px rgba(110,33,176,.12) !important; color: #2E80E4 !important; }
 html.dark button[aria-label="Talk to type"] { color: #8FD3EE !important; box-shadow: 0 0 0 1px rgba(56,178,218,.55), 0 0 12px rgba(56,178,218,.3) !important; }
+
+/* ---------- Readable buttons (WCAG AA 4.5:1) in both themes, keeping the W22 violet / magenta / gold look ---------- */
+/* Dark theme: light "frosted white" surfaces (bg-white/xx, bg-violet-100/xx) became pale boxes under the light dark-mode text. Give them a deep violet glass instead. */
+html.dark :is([class~="bg-white/45"], [class~="bg-white/50"], [class~="bg-white/55"], [class~="bg-white/60"], [class~="bg-violet-100/40"], [class~="bg-violet-100/50"], [class~="bg-violet-100/60"], [class~="bg-violet-100/80"]):not(input) {
+  background: rgba(110, 33, 176, .26) !important; border-color: rgba(196, 160, 255, .28) !important;
+}
+html.dark :is([class~="bg-white/70"], [class~="bg-white/80"], [class~="bg-violet-100"]):not(input) {
+  background: rgba(150, 80, 220, .40) !important; border-color: rgba(214, 180, 255, .40) !important;
+}
+html.dark :is(button, a, select, [role="button"]):is([class~="bg-white/45"], [class~="bg-white/50"], [class~="bg-white/55"], [class~="bg-white/60"], [class~="bg-white/70"], [class~="bg-white/80"], [class~="bg-violet-100"], [class~="bg-violet-100/40"], [class~="bg-violet-100/50"], [class~="bg-violet-100/60"], [class~="bg-violet-100/80"]) {
+  color: #F6EEFF !important; box-shadow: inset 0 0 0 1px rgba(196, 160, 255, .28);
+}
+html.dark :is(button, a)[class*="hover:bg-violet-100"]:hover { background: rgba(150, 80, 220, .45) !important; }
+html.dark select option { background: #1a0c2c; color: #F6EEFF; }
+html.dark input::placeholder { color: rgba(232, 214, 255, .6); }
+/* Both themes: solid violet buttons with white labels need a deeper violet (violet-500 + white was 4.2:1). */
+:is(button, a):is([class~="bg-violet-500"], [class~="bg-violet-500/90"]) { background-color: #6D28D9 !important; }
+/* "New thread": the cyan end of the gradient was too light for a white label. Use the W22 violet -> magenta -> rose send gradient. */
+button[class*="from-violet-500"][class*="via-fuchsia-500"][class*="to-cyan-500"] { background-image: linear-gradient(90deg, #6E21B0 0%, #A92FB8 55%, #C2367A 100%) !important; }
+/* Small rose text links (e.g. "Clear all") on light glass */
+html:not(.dark) button[class~="text-rose-500"] { color: #BE123C !important; }

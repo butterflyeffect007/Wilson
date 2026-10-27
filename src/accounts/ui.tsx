@@ -8,12 +8,22 @@ export const go = (hash: string) => { location.hash = hash; };
 export function Top({ right, onClose }: { right?: ReactNode; onClose?: () => void }) {
   return (
     <div className="top">
-      <img src={ICON} alt="" />
-      <div className="brand" aria-label="Wilson + The Only One"><div className="w">WILSON</div><div className="o">+ THE ONLY ONE</div></div>
+      <HomeTitle />
       <div className="sp" />
       {right}
       {onClose && <button type="button" className="iconbtn" aria-label="Close" onClick={onClose}>✕</button>}
     </div>
+  );
+}
+
+/** The Wilson title: tap it anywhere to get back to the landing page (#home). */
+export function HomeTitle() {
+  const home = () => { if (location.hash === "#home") document.querySelector(".wa")?.scrollTo({ top: 0, behavior: "smooth" }); else go("#home"); };
+  return (
+    <button type="button" className="rb wa-home" aria-label="Wilson home" title="Wilson home" onClick={home}>
+      <img src={ICON} alt="" />
+      <span className="brand"><span className="w">WILSON</span><span className="o">+ THE ONLY ONE</span></span>
+    </button>
   );
 }
 

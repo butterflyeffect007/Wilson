@@ -7,8 +7,9 @@ import { MessageArchitect } from "./MessageArchitect";
 import { CommunityRoom } from "./CommunityRoom";
 import { ArchitectDashboard } from "./ArchitectDashboard";
 import { AccountPage } from "./AccountPage";
+import { HomePage } from "./HomePage";
 
-export const ROUTES = ["signin", "signup", "forgot", "beta", "message", "room", "architect", "account"] as const;
+export const ROUTES = ["home", "signin", "signup", "forgot", "beta", "message", "room", "architect", "account"] as const;
 export type Route = (typeof ROUTES)[number];
 const readRoute = (): Route | null => { const h = location.hash.replace(/^#\/?/, "").split(/[?&]/)[0]; return (ROUTES as readonly string[]).includes(h) ? (h as Route) : null; };
 
@@ -39,6 +40,7 @@ export function AccountsLayer({ route, user, flags, isAdmin, chatContext, syncNo
   else if (route === "message") page = <MessageArchitect user={user} onClose={closeLayer} context={chatContext} />;
   else if (route === "room") page = <CommunityRoom user={user} onClose={closeLayer} />;
   else if (route === "architect") page = user?.architect || isAdmin ? <ArchitectDashboard user={user} onClose={closeLayer} /> : user ? <AccountPage user={user} onClose={closeLayer} onSignOut={onSignOut} syncNote={syncNote} notice="The Architect dashboard is only for the Architect account. If you have an Architect claim code, use Claim Architect below." /> : <AuthPage mode="signin" onClose={closeLayer} onSignedIn={() => { location.hash = "#architect"; }} onRecovery={setCode} signupsOpen={flags?.signups_open !== false} />;
+  else if (route === "home") page = <HomePage user={user} onStart={closeLayer} />;
   else if (route === "account") page = <AccountPage user={user} onClose={closeLayer} onSignOut={onSignOut} syncNote={syncNote} />;
   return <div className="wa" role="dialog" aria-modal="true">{page}</div>;
 }

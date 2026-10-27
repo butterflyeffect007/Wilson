@@ -53,6 +53,10 @@ import { identify, loadProfiles, saveProfiles, renameProfile, mergeProfiles, spl
 import { queryMemories, upsertMemory, listMemories, clearMemories, deleteMemory, summarizeExchange, type MemoryItem } from "./lib/longMemory";
 import { analyzeProsody, classify, EMOTION_CONFIDENCE_MIN, EMOTION_GUIDANCE, EMOTION_TTS_SPEED, type EmotionTag } from "./lib/emotion";
 
+/** The URL query at page load, before ?open= / ?beta handlers strip it. */
+const INITIAL_SEARCH = typeof location !== "undefined" ? location.search : "";
+/* Remember for this tab, so a one-time reload (e.g. cross-origin isolation) after the query is stripped still skips the landing page. */
+const SKIP_HOME = (() => { try { if (/[?&](beta|open)(=|&|$)/.test(INITIAL_SEARCH)) sessionStorage.setItem("wilson_skip_home", "1"); return !!sessionStorage.getItem("wilson_skip_home"); } catch { return false; } })();
 export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
   "https://wilson-proxy.butterflyeffect007.workers.dev";
@@ -318,6 +322,7 @@ export default function App() {
 
   /* ---------- Accounts: session, chat sync, banner ---------- */
   const acctRoute = useAccountRoute();
+  const goHome = () => { setSidebarOpen(false); setShowSettings(false); location.hash = "#home"; };
   const [acctUser, setAcctUser] = useState<AcctUser | null>(() => getUser());
   const [acctFlags, setAcctFlags] = useState<Flags | null>(null);
   const [banner, setBanner] = useState<Banner>(null);
@@ -372,14 +377,17 @@ export default function App() {
     if (tok) await api("/acct/logout", { body: {}, token: tok }).catch(() => null);
     clearSession(); closeLayer();
   }, []);
-  /* One gentle sign-in prompt per device (never blocks: "Continue without an account" is always there). */
+  /* First visit: show the landing page (#home) once. Returning users (chat history, account, or already seen it) go straight to chat; ?beta / ?open= links skip it.
+     The landing page's "Sign in / Create account" replaces the old automatic #signin prompt. */
   useEffect(() => {
     try {
-      if (getToken() || localStorage.getItem("wilson_acct_prompted") || location.hash) return;
+      if (SKIP_HOME || location.hash) return;
+      if (localStorage.getItem("wilson_seen_home")) return;
+      localStorage.setItem("wilson_seen_home", "1");
+      const returning = !!getToken() || !!localStorage.getItem("wilson_acct_prompted") || !!localStorage.getItem("wilson_architect_key")
+        || threadsRef.current.some((t) => t.messages.some((m) => m.role === "user"));
       localStorage.setItem("wilson_acct_prompted", "1");
-      if (localStorage.getItem("wilson_architect_key")) return;
-      const t = window.setTimeout(() => { if (!location.hash) location.hash = "#signin"; }, 1200);
-      return () => clearTimeout(t);
+      if (!returning) location.hash = "#home";
     } catch { /* ignore */ }
   }, []);
   const chatContext = (activeThread?.messages ?? []).slice(-6).map((m) => `${m.role === "user" ? "Me" : "Wilson"}: ${m.content.slice(0, 300)}`).join("\n");
@@ -905,9 +913,13 @@ export default function App() {
           <button type="button" onClick={() => setSidebarOpen(true)} className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Open menu">
             <Menu className="w-[22px] h-[22px]" />
           </button>
-          <div className="flex-1 min-w-0 flex items-center justify-center gap-2">
-            <Sparkles className="shrink-0 w-[18px] h-[18px] text-violet-400 wl-title" />
-            <h1 className="wl-title leading-none text-violet-900/80 min-w-0" aria-label="Wilson + The Only One"><span className="block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></h1>
+          <div className="flex-1 min-w-0 flex items-center justify-center">
+            <h1 className="m-0 min-w-0 flex">
+              <button type="button" onClick={goHome} className="rb wl-home-btn min-w-0 touch-manipulation" aria-label="Wilson home" title="Wilson home">
+                <Sparkles className="shrink-0 w-[18px] h-[18px] text-violet-400 wl-title" aria-hidden="true" />
+                <span className="wl-title block leading-none text-violet-900/80 min-w-0"><span className="wl-w block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></span>
+              </button>
+            </h1>
           </div>
           <button type="button" onClick={() => setShowSettings((v) => !v)} className="shrink-0 min-w-11 h-11 px-1 flex flex-col items-center justify-center rounded-2xl text-violet-600/90 hover:bg-violet-50/80 touch-manipulation" aria-label="Settings" title="Settings">
             <SettingsIcon className="w-[20px] h-[20px]" />
@@ -1027,7 +1039,7 @@ export default function App() {
                 </div>
                 <button type="button" onClick={doShare} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
                 {!isInstalled() && <button type="button" onClick={() => { setShowSettings(false); setInstallOpen(true); }} className="w-full text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Add Wilson to your Home Screen</button>}
-                <p className="text-[12px] text-violet-700/80">Wilson + The Only One · <span className="italic">Imagination becomes intelligence™</span></p>
+                <p className="text-[12px] text-violet-700/80"><button type="button" onClick={goHome} aria-label="Wilson home" className="underline-offset-2 hover:underline">Wilson + The Only One</button> · <span className="italic">Imagination becomes intelligence™</span></p>
                 <p className="text-[12px]"><a href="https://butterflyeffect007.github.io/Wilson/subscribe.html" className="text-violet-600 hover:underline" target="_blank" rel="noopener">Silver Harbor Alerts</a></p>
                 <p className="text-[11px] text-violet-500/70">Version {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
               </div>
