@@ -61,6 +61,16 @@ export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
   "https://wilson-proxy.butterflyeffect007.workers.dev";
 const CONTEXT_WINDOW = 10; // last 10 messages (20 kept old spec talk in view)
+
+/** Remove trailing Sources/Source lines and bare URLs so they are never spoken. */
+function stripSourcesForSpeech(text: string): string {
+  return text
+    .replace(/\n+\s*(Sources?|Source)\s*:\s*[^\n]*/gi, "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\s+$/g, "")
+    .trim();
+}
+
 const MAX_RETRIES = 2;
 
 /* ---------- greetings (logic from wilsonaibro Index.tsx @ 1816d92) ---------- */
@@ -160,7 +170,7 @@ export default function App() {
   const toggleMessageVoice = (msg: StoredMessage) => {
     if (playMsg?.id === msg.id) { stopSpeaking(); setPlayMsg(null); return; }
     setPlayMsg({ id: msg.id, phase: "loading" });
-    speakMessage(msg.content, EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], {
+    speakMessage(stripSourcesForSpeech(msg.content), EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], {
       onStart: () => setPlayMsg((p) => (p?.id === msg.id ? { id: msg.id, phase: "playing" } : p)),
       onEnd: () => setPlayMsg((p) => (p?.id === msg.id ? null : p)),
     });
@@ -592,7 +602,7 @@ export default function App() {
           if (result.finishReason !== "aborted" && clean && settings.longMemory) {
             void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
           }
-          if (result.finishReason !== "aborted" && clean && speech) speech.finish(clean);
+          if (result.finishReason !== "aborted" && clean && speech) speech.finish(stripSourcesForSpeech(clean));
           if (result.finishReason !== "aborted" && clean && settings.longMemory) {
             const recentMsgs: StoredMessage[] = [...history, { id: "u", role: "user", content, timestamp: "" }, { id: "a", role: "assistant", content: clean, timestamp: "" }];
             setTimeout(() => void maybeRefreshStateOfYou(adapter, recentMsgs), 1500);
@@ -617,7 +627,7 @@ export default function App() {
       }
 
       if (speech && abort.signal.aborted) stopSpeaking();
-      else if (speech) speech.finish(stripTagsForDisplay(raw)); // no-op if already finished
+      else if (speech) speech.finish(stripSourcesForSpeech(stripTagsForDisplay(raw))); // no-op if already finished
       abortRef.current = null;
       setThinking(false);
       setStreamingId(null);
