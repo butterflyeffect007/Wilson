@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, RefreshCw, ChevronLeft, ChevronRight, Send } from "lucide-react";
 import { fetchTelemetry, forgetAdmin, type Telemetry } from "../lib/admin";
+import { agentStatus } from "../lib/agent";
 import type { StoredMessage } from "../memory/LocalMemory";
 
 /** Architect view (server-verified admin only): collapsible sidebar, meaningful health numbers. Accounts live in the Architect dashboard (#architect). */
@@ -8,12 +9,19 @@ export function AdminPanel({ onClose, onSignOut, onDashboard, messages = [], bus
   onClose: () => void; onSignOut: () => void; onDashboard?: () => void; messages?: StoredMessage[]; busy?: boolean; onSend?: (text: string) => void;
 }) {
   const [t, setT] = useState<Telemetry | null>(null);
+  const [harbor, setHarbor] = useState<string[] | null>(null);
+  const [harborErr, setHarborErr] = useState<string | null>(null);
+  const loadHarbor = () => {
+    setHarborErr(null);
+    void agentStatus().then((r) => setHarbor(r.running ?? [])).catch((e) => { setHarbor(null); setHarborErr(String((e as Error)?.message ?? e)); });
+  };
   const [state, setState] = useState<"loading" | "ok" | "error">("loading");
   const [side, setSide] = useState(true);
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const load = () => { setState("loading"); void fetchTelemetry().then((d) => { setT(d); setState(d ? "ok" : "error"); }); };
   useEffect(load, []);
+  useEffect(loadHarbor, []);
   const closeRef = useRef(onClose); closeRef.current = onClose;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeRef.current(); };
@@ -58,6 +66,22 @@ export function AdminPanel({ onClose, onSignOut, onDashboard, messages = [], bus
                   {t.health?.uniqueHumans7d != null && <div>Unique humans 7d <b>{t.health.uniqueHumans7d}</b></div>}
                   {t.health?.retention7d != null && <div>Retention 7d <b>{Math.round(t.health.retention7d * 100)}%</b></div>}
                   <div className="break-all opacity-70">Last model {lastModel.replace(/^.*\//, "")}</div>
+                </div>
+              </section>
+
+              <section>
+                <h4 className="text-[10px] font-semibold tracking-[0.12em] text-violet-600 mb-1">SILVER HARBOR</h4>
+                <div className="rounded-2xl bg-white/55 px-3 py-2 leading-[1.7]">
+                  {harborErr && <div className="text-rose-600">Agent unreachable</div>}
+                  {!harborErr && harbor && (
+                    <>
+                      <div>Connector <b>{harbor.includes("connector") ? "running" : "stopped"}</b></div>
+                      <div>Evaluator <b>{harbor.includes("evaluator") ? "running" : "stopped"}</b></div>
+                      <div>Dispatcher <b>{harbor.includes("dispatcher") ? "running" : "stopped"}</b></div>
+                    </>
+                  )}
+                  {!harborErr && !harbor && <div className="opacity-70">Checking…</div>}
+                  <button type="button" onClick={loadHarbor} className="mt-1 text-[11px] text-violet-700 hover:underline">Refresh</button>
                 </div>
               </section>
 
