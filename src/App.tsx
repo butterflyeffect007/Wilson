@@ -60,28 +60,7 @@ const SKIP_HOME = (() => { try { if (/[?&](beta|open)(=|&|$)/.test(INITIAL_SEARC
 export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
   "https://wilson-proxy.butterflyeffect007.workers.dev";
-const CONTEXT_WINDOW = 10;
-
-/** Remove source lines and bare URLs so Wilson never reads or shows full links. */
-
-/** Remove bare URLs from displayed text so full links never appear. */
-function stripUrlsForDisplay(text: string): string {
-  return text
-    .replace(/https?:\/\/\S+/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function stripSourcesForSpeech(text: string): string {
-  return text
-    .replace(/\n?\s*(Sources?|Source)\s*:\s*[^\n]*/gi, "")
-    .replace(/https?:\/\/\S+/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
- // last 10 messages (20 kept old spec talk in view)
+const CONTEXT_WINDOW = 10; // last 10 messages (20 kept old spec talk in view)
 const MAX_RETRIES = 2;
 
 /* ---------- greetings (logic from wilsonaibro Index.tsx @ 1816d92) ---------- */
@@ -562,8 +541,8 @@ export default function App() {
               }
               raw += chunk;
               const shown = stripTagsForDisplay(raw);
-              writeAssistant(stripUrlsForDisplay(shown));
-              speech?.push(stripSourcesForSpeech(shown));
+              writeAssistant(shown);
+              speech?.push(shown);
             },
             abort.signal,
           );
@@ -583,8 +562,8 @@ export default function App() {
                 first = false;
                 raw += chunk;
                 const shown = stripTagsForDisplay(raw);
-                writeAssistant(stripUrlsForDisplay(shown));
-                speech?.push(stripSourcesForSpeech(shown));
+                writeAssistant(shown);
+                speech?.push(shown);
               },
               abort.signal,
             );
@@ -601,7 +580,7 @@ export default function App() {
           } else if (result.finishReason === "content_filter" || result.finishReason === "SAFETY") {
             finalText += "\n\n*...okay okay, the safety net just yanked me back. Try rephrasing, or ask me something adjacent and I'll get you what you need.*";
           }
-          writeAssistant(stripUrlsForDisplay(finalText));
+          writeAssistant(finalText);
 
           if (newVibe) {
             setVibe(newVibe);
@@ -613,7 +592,7 @@ export default function App() {
           if (result.finishReason !== "aborted" && clean && settings.longMemory) {
             void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
           }
-          if (result.finishReason !== "aborted" && clean && speech) speech.finish(stripSourcesForSpeech(clean));
+          if (result.finishReason !== "aborted" && clean && speech) speech.finish(clean);
           if (result.finishReason !== "aborted" && clean && settings.longMemory) {
             const recentMsgs: StoredMessage[] = [...history, { id: "u", role: "user", content, timestamp: "" }, { id: "a", role: "assistant", content: clean, timestamp: "" }];
             setTimeout(() => void maybeRefreshStateOfYou(adapter, recentMsgs), 1500);
@@ -638,7 +617,7 @@ export default function App() {
       }
 
       if (speech && abort.signal.aborted) stopSpeaking();
-      else if (speech) speech.finish(stripSourcesForSpeech(stripTagsForDisplay(raw))); // no-op if already finished
+      else if (speech) speech.finish(stripTagsForDisplay(raw)); // no-op if already finished
       abortRef.current = null;
       setThinking(false);
       setStreamingId(null);
