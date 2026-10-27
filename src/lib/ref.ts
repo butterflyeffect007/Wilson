@@ -35,10 +35,22 @@ export async function shareApp(): Promise<"shared" | "copied" | "cancelled" | "f
   const link = `${APP_URL}?ref=${refCode()}`;
   const text = "I've been talking with Wilson — a warm, kind of brilliant AI companion who actually gets you. Free, no sign-up. Come meet him ✦";
   try {
-    if (navigator.share) { await navigator.share({ title: "Wilson + The Only One", url: link }); /* URL only: iMessage shows the rich preview */ void syncStars(true); return "shared"; }
-    await navigator.clipboard.writeText(`${text}\n${link}`); void syncStars(true); return "copied";
+    if (typeof navigator.share === "function") {
+      // Include text + url. Must be called directly from the click (no await before this).
+      await navigator.share({ title: "Wilson", text, url: link });
+      void syncStars(true);
+      return "shared";
+    }
   } catch (e) {
-    if ((e as Error)?.name === "AbortError") return "cancelled";
-    try { await navigator.clipboard.writeText(link); void syncStars(true); return "copied"; } catch { return "failed"; }
+    const name = (e as Error)?.name || "";
+    if (name === "AbortError") return "cancelled";
+    // Share sheet flashed and died (common on iOS standalone / some Android). Fall through to copy.
+  }
+  try {
+    await navigator.clipboard.writeText(`${text}\n${link}`);
+    void syncStars(true);
+    return "copied";
+  } catch {
+    return "failed";
   }
 }

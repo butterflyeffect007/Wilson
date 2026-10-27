@@ -226,8 +226,14 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", vis);
   }, []);
   const doShare = () => void shareApp().then((r) => {
-    const m = r === "shared" ? "Thank you for sharing Wilson ✦ You'll earn a star when your friend opens it." : r === "copied" ? "Link copied — paste it to a friend. You'll earn a star when they open it ✦" : r === "failed" ? "Couldn't share right now — try again." : null;
-    setShareMsg(m); if (m) setTimeout(() => setShareMsg(null), 5000);
+    const m = r === "shared"
+      ? "Shared ✦ You'll earn a star when your friend opens it."
+      : r === "copied"
+      ? "Link copied. To add Wilson to your Home Screen: iPhone — Safari Share → Add to Home Screen. Android — browser menu → Install app / Add to Home screen."
+      : r === "failed"
+      ? "Couldn't open the share sheet. Copy the link from the address bar, or use Safari's Share → Add to Home Screen."
+      : null;
+    setShareMsg(m); if (m) setTimeout(() => setShareMsg(null), 8000);
   });
   const [feedback, setFeedback] = useState<FeedbackTarget | null>(null);
   const [orgTab, setOrgTab] = useState<OrgTab | null>(null);
