@@ -172,3 +172,21 @@ npm run dev
 
 Open the local URL (usually http://localhost:5173).
 >>>>>>> d7689851b3f804a4ad226ec8f680787b41413206
+
+## Biometric Unlock
+
+Wilson is gated behind a biometric unlock that runs on your own device. Until you pass it, nothing in Wilson renders.
+
+- **First run:** Wilson asks you to *Enroll this device*. Your phone or computer shows its own Face ID / Touch ID / Windows Hello / fingerprint prompt, and Wilson creates a passkey bound to this site.
+- **Every time after:** tap *Unlock Wilson* and pass the biometric prompt.
+- **Auto-lock:** Wilson locks after 15 minutes without activity, when you come back after more than 5 minutes away, or on a reload.
+- **Privacy:** your biometrics never leave the device's secure hardware. Wilson stores only encrypted records and a hash of a key derived through the WebAuthn PRF extension. Secrets Wilson keeps for you, such as a GitHub CLI token, are AES-GCM encrypted under that biometric-derived key and can only be read while Wilson is unlocked.
+
+**Enable / disable**
+
+- It is on by default (`src/main.tsx` wraps `<App/>` in `<BiometricGate>`).
+- To build without the gate (local dev or an emergency), set `VITE_BIOMETRIC_GATE=off` before `npm run dev` / `npm run build`.
+- You need a browser and device with a platform authenticator: iOS/iPadOS Safari, macOS Safari/Chrome with Touch ID, Windows Hello, or Android Chrome. In `npm run dev`, browsers without one fall back to a clearly marked, non-verifying stub. In production builds they see an "unavailable" screen.
+- To re-enroll on a new or reset device, clear Wilson's site data and open Wilson again.
+
+**Developers:** the code is in `src/lib/biometrics/` (`BiometricGate`, `KeyStore`) and `src/components/BiometricGate.tsx`. Run the tests with `npm run test:biometrics`. The design, threat model and decisions are in `artifacts/biometric-unlock-architecture.md`.

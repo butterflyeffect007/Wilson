@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "fetch-assets": "node scripts/fetch-assets.mjs"
+    "fetch-assets": "node scripts/fetch-assets.mjs",
+    "test:biometrics": "npx --yes tsx --test tests/biometrics/*.test.ts"
   },
   "dependencies": {
     "@fontsource/lexend": "^5.3.0",

@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import BiometricGate from "./components/BiometricGate";
 import "@fontsource/lexend/300.css";
 import "@fontsource/lexend/400.css";
 import "@fontsource/lexend/500.css";
@@ -13,7 +14,10 @@ import "./rainbow.css";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary label="Wilson">
-      <App />
+      {/* Wilson can't be used without passing the biometric gate (src/lib/biometrics). */}
+      <BiometricGate>
+        <App />
+      </BiometricGate>
     </ErrorBoundary>
   </React.StrictMode>
 );
