@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  silverharbor:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - AGENT_SECRET=${AGENT_SECRET:-wilson-secret-change-me}
+      - ETH_WS_URL=${ETH_WS_URL}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped

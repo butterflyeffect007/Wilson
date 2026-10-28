@@ -13,6 +13,7 @@
  *    Frankfurter, CoinGecko, Open Library, dictionaryapi.dev, Wiktionary REST, Nager.Date: ACAO *  -> direct
  *  - api.nasa.gov echoes our origin -> direct (DEMO_KEY per user IP, not the worker's shared IP)
  *  - Grants.gov search2: ACAO * on POST but the preflight is 403 -> direct with Content-Type text/plain
+ *  - DuckDuckGo Instant Answer (api.duckduckgo.com): ACAO *, no key (checked 2026-10-26) -> direct web lookup
  */
 import type { ToolCall, ToolName, ToolSource } from "./index";
 
@@ -182,6 +183,24 @@ const DIRECT: Partial<Record<ToolName, { ttl: number; run: (p: Record<string, st
     const hits = (d.oppHits || []).slice(0, 6).map((h: any) => ({ title: clip(ent(h.title), 180), agency: h.agency, number: h.number, status: h.oppStatus, opens: h.openDate || null, closes: h.closeDate || null, url: `https://www.grants.gov/search-results-detail/${h.id}` }));
     return { data: { query: q, total_matches: d.hitCount, match: exact ? "exact phrase" : "any of the words (looser)", opportunities: hits, note: "US federal grants from Grants.gov (open or forecasted). Check eligibility and deadlines on each link before applying." },
       sources: hits.length ? hits.slice(0, 3).map((h: any) => ({ title: `Grants.gov: ${h.title}`, url: h.url })) : [{ title: "Grants.gov", url: "https://www.grants.gov/search-grants" }] };
+  } },
+  web: { ttl: 3600, run: async (p) => {
+    // Keyless DuckDuckGo Instant Answer API: encyclopedia-style answers (people, channels, things), not full web results.
+    // Throws when DDG has nothing, so the worker's Brave search (if configured) gets a turn.
+    const q = String(p.q || "").replace(/\s+/g, " ").trim().slice(0, 150); if (!q) throw new Error("query required");
+    const d = await getJson(`https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1&t=wilson`, 7000);
+    const flat = (arr: any[]): any[] => (arr || []).flatMap((t: any) => (Array.isArray(t?.Topics) ? flat(t.Topics) : [t]));
+    const related = flat(d.RelatedTopics).filter((t: any) => t?.Text && t?.FirstURL).slice(0, 6).map((t: any) => ({ text: clip(t.Text, 220), url: t.FirstURL }));
+    const facts = ((d.Infobox && d.Infobox.content) || []).filter((f: any) => f?.label && f?.value != null && typeof f.value !== "object").slice(0, 12).map((f: any) => ({ label: clip(f.label, 60), value: clip(f.value, 160) }));
+    const abstract = clip(d.AbstractText || d.Abstract, 1200), answer = clip(d.Answer, 400), definition = clip(d.Definition, 400);
+    if (!abstract && !answer && !definition && !related.length && !facts.length) throw new Error("duckduckgo: no instant answer");
+    const sources: ToolSource[] = [];
+    if (d.AbstractURL) sources.push({ title: `${d.AbstractSource || "Source"}: ${clip(d.Heading || q, 120)}`, url: d.AbstractURL });
+    if (d.DefinitionURL) sources.push({ title: d.DefinitionSource || "Definition", url: d.DefinitionURL });
+    if (d.OfficialWebsite) sources.push({ title: "Official site", url: d.OfficialWebsite });
+    for (const r of related.slice(0, 2)) sources.push({ title: r.text.slice(0, 80), url: r.url });
+    sources.push({ title: "DuckDuckGo", url: `https://duckduckgo.com/?q=${encodeURIComponent(q)}` });
+    return { data: { query: q, heading: clip(d.Heading, 160) || null, answer: answer || null, summary: abstract || null, definition: definition || null, facts, related, via: "DuckDuckGo Instant Answer (no key)", note: "Instant-answer summary, not a full web search; numbers like subscriber counts may be out of date. Don't claim details beyond this." }, sources };
   } },
 };
 

@@ -1,0 +1,17 @@
+/* Rainbow glow around the tappable "WILSON + THE ONLY ONE" title (approved v3 mockup). Slow 24s hue cycle; static for reduced motion. */
+.rb{position:relative;isolation:isolate;display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:16px;cursor:pointer;
+  font:inherit;color:inherit;text-align:left;-webkit-tap-highlight-color:transparent;
+  background:linear-gradient(rgba(255,255,255,.88),rgba(255,255,255,.88)) padding-box,
+    conic-gradient(from 0deg,#38B2DA,#6E21B0,#D13BB2,#DB5669,#EB7B59,#FCBC7E,#7BD88F,#38B2DA) border-box;
+  border:1.5px solid transparent}
+.rb:before{content:"";position:absolute;inset:-7px -10px;border-radius:24px;z-index:-1;pointer-events:none;
+  background:conic-gradient(from 0deg,#38B2DA,#6E21B0,#D13BB2,#DB5669,#EB7B59,#FCBC7E,#7BD88F,#38B2DA);
+  filter:blur(13px) saturate(1.2);opacity:.45;animation:rbHue 24s linear infinite}
+html.dark .rb{background:linear-gradient(rgba(16,7,28,.82),rgba(16,7,28,.82)) padding-box,
+    conic-gradient(from 0deg,#38B2DA,#6E21B0,#D13BB2,#DB5669,#EB7B59,#FCBC7E,#7BD88F,#38B2DA) border-box}
+html.dark .rb:before{opacity:.55;filter:blur(14px);animation-name:rbHueDark}
+.rb:focus-visible{outline:2px solid #D13BB2;outline-offset:4px}
+.rb:active{transform:scale(.98)}
+@keyframes rbHue{to{filter:blur(13px) saturate(1.2) hue-rotate(360deg)}}
+@keyframes rbHueDark{to{filter:blur(14px) hue-rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.rb:before{animation:none!important}}

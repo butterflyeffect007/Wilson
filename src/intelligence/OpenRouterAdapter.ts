@@ -5,6 +5,7 @@
 import type { ModelAdapter, ModelCapabilities, ModelStatus } from "./ModelAdapter";
 import type { ModelRequest } from "./ModelRequest";
 import type { ModelResponse } from "./ModelResponse";
+import { getToken } from "../accounts/store";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
@@ -64,7 +65,11 @@ export class OpenRouterAdapter implements ModelAdapter {
     if (this.url !== OPENROUTER_URL) {
       // Architect device: send the admin key so the worker can attach live app stats (verified server-side).
       let k = ""; try { if (localStorage.getItem("wilson_is_admin") === "1") k = localStorage.getItem("wilson_architect_key") || ""; } catch { /* ignore */ }
-      return k ? { "Content-Type": "application/json", Authorization: `Bearer ${k}` } : { "Content-Type": "application/json" };
+      const hd: Record<string, string> = { "Content-Type": "application/json" };
+      if (k) hd.Authorization = `Bearer ${k}`;
+      // Signed-in account: lets the worker count active people (no message content is stored for this).
+      const sess = getToken(); if (sess) hd["X-Wilson-Session"] = sess;
+      return hd;
     }
     return {
       "Content-Type": "application/json",

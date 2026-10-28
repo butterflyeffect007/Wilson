@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" role="img" aria-label="Multi-Stream Fusion · Wilson + The Only One — Imagination becomes intelligence™">
+  <defs>
+    <radialGradient id="auraL" cx="12%" cy="75%" r="55%">
+      <stop offset="0" stop-color="#6E21B0" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#6E21B0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="auraR" cx="90%" cy="85%" r="50%">
+      <stop offset="0" stop-color="#D13BB2" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#D13BB2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ember" cx="50%" cy="30%" r="30%">
+      <stop offset="0" stop-color="#F39F5F" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#F39F5F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#B57BFF"/>
+      <stop offset=".35" stop-color="#D13BB2"/>
+      <stop offset=".7" stop-color="#EB7B59"/>
+      <stop offset="1" stop-color="#FCBC7E"/>
+    </linearGradient>
+    <linearGradient id="streamA" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38B2DA" stop-opacity="0"/>
+      <stop offset="1" stop-color="#38B2DA" stop-opacity=".9"/>
+    </linearGradient>
+    <linearGradient id="streamB" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FCBC7E" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FCBC7E" stop-opacity=".9"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-50%" width="140%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1200" height="260" rx="22" fill="#07040D"/>
+  <rect width="1200" height="260" rx="22" fill="url(#auraL)"/>
+  <rect width="1200" height="260" rx="22" fill="url(#auraR)"/>
+  <rect width="1200" height="260" rx="22" fill="url(#ember)"/>
+  <g fill="#F6EEFF">
+    <circle cx="90" cy="40" r="1.4" opacity=".8"/><circle cx="240" cy="22" r="1" opacity=".6"/>
+    <circle cx="410" cy="48" r="1.2" opacity=".7"/><circle cx="700" cy="26" r="1" opacity=".5"/>
+    <circle cx="860" cy="58" r="1.5" opacity=".8"/><circle cx="1030" cy="30" r="1.1" opacity=".6"/>
+    <circle cx="1140" cy="120" r="1" opacity=".5"/><circle cx="60" cy="200" r="1.1" opacity=".5"/>
+    <circle cx="1110" cy="220" r="1.3" opacity=".6"/><circle cx="520" cy="236" r="1" opacity=".5"/>
+  </g>
+  <!-- two streams converging into one gated point -->
+  <path d="M760 70 C 880 70, 920 130, 1010 130" stroke="url(#streamA)" stroke-width="3" fill="none"/>
+  <path d="M760 190 C 880 190, 920 130, 1010 130" stroke="url(#streamB)" stroke-width="3" fill="none"/>
+  <circle cx="1030" cy="130" r="20" fill="none" stroke="#D13BB2" stroke-width="2.5" filter="url(#glow)"/>
+  <circle cx="1030" cy="130" r="7" fill="#FCBC7E" filter="url(#glow)"/>
+  <text x="760" y="60" font-family="Lexend, system-ui, sans-serif" font-size="13" fill="#38B2DA" opacity=".9">ethereum score</text>
+  <text x="760" y="214" font-family="Lexend, system-ui, sans-serif" font-size="13" fill="#FCBC7E" opacity=".9">alpaca score</text>
+  <text x="992" y="176" font-family="Lexend, system-ui, sans-serif" font-size="13" fill="#E8D6FF" opacity=".8">human gate</text>
+  <text x="60" y="118" font-family="Lexend, system-ui, sans-serif" font-size="44" font-weight="600" fill="url(#title)" filter="url(#glow)">Multi-Stream Fusion</text>
+  <text x="62" y="160" font-family="Lexend, system-ui, sans-serif" font-size="22" fill="#F6EEFF" opacity=".92">Wilson + The Only One</text>
+  <text x="62" y="198" font-family="Lexend, system-ui, sans-serif" font-size="16" font-style="italic" fill="#FCBC7E" opacity=".85">Imagination becomes intelligence™</text>
+</svg>

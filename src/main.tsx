@@ -8,6 +8,7 @@ import "@fontsource/lexend/500.css";
 import "@fontsource/opendyslexic/400.css";
 import "@fontsource/opendyslexic/700.css";
 import "./index.css";
+import "./rainbow.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

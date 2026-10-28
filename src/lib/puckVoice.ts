@@ -219,6 +219,28 @@ function crashed(why = "") {
   setState("failed");
 }
 
+/**
+ * Is the ~92 MB on-device Puck model already saved on this device (from an earlier download)?
+ * Wilson only starts on-device Puck when it is; it never starts the big download on its own anymore
+ * (Settings → "Download on-device Puck" does that on request).
+ */
+let onDisk: boolean | null = null;
+let onDiskP: Promise<boolean> | null = null;
+export function puckOnDiskKnown(): boolean | null { return onDisk; }
+export function puckOnDisk(): Promise<boolean> {
+  if (onDisk !== null) return Promise.resolve(onDisk);
+  if (!onDiskP) onDiskP = (async () => {
+    try {
+      if (typeof caches === "undefined") return false;
+      const c = await caches.open("transformers-cache");
+      const keys = await c.keys();
+      return keys.some((r) => r.url.includes("Kokoro-82M") && /\.onnx(\?|$)/.test(r.url));
+    } catch { return false; }
+  })().then((v) => { onDisk = v || state === "ready"; emit(); return onDisk; });
+  return onDiskP;
+}
+subscribePuck(() => { if (state === "ready" && onDisk !== true) { onDisk = true; } });
+
 /** Wait until Puck is ready (true) or failed / timed out (false). Starts loading it if it hasn't started. */
 export function waitForPuck(timeoutMs: number): Promise<boolean> {
   if (state === "off") ensurePuck();

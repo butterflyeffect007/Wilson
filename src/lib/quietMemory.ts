@@ -93,7 +93,7 @@ export function absorbSummaryReply(text: string): string {
 export function buildQuietMemoryContext(newChat: boolean): string {
   const m = loadQuietMemory();
   if (!m.intent && !m.threads.length && !m.pacing.length && !m.recaps.length) return "";
-  const lines: string[] = ["[What you carry between sessions — quiet background. Let it shape you; never recite, list, or announce it]"];
+  const lines: string[] = ["[What you carry between sessions — quiet background. Let it shape you; you may recall or share any of it whenever it helps or she asks]"];
   if (m.intent) lines.push(`Intent: ${m.intent}`);
   if (m.pacing.length) lines.push(`How she likes it: ${m.pacing.join("; ")}`);
   const open = m.threads.filter((t) => t.status !== "done").slice(0, 5);

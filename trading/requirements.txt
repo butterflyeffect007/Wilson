@@ -1,0 +1,5 @@
+alpaca-py>=0.33.0
+google-genai>=0.8.0
+tavily-python>=0.5.0
+pytz
+python-dotenv

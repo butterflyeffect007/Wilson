@@ -11,13 +11,14 @@ import { useWilsonAudio } from "./hooks/useWilsonAudio";
 import { enablePush, disablePush, pushEnabled, pushSupported, isIOS, isStandalone, startReminderSync } from "./lib/push";
 import { loadStateOfYou, recordUserTurn, recordVibe, buildStateOfYouContext, maybeRefreshStateOfYou, editStateSummary, clearStateOfYou, localSignals, type StateOfYou } from "./lib/stateOfYou";
 import { subscribeSaving } from "./lib/saveBus";
+import { downloadChatExport } from "./lib/chatExport";
 import { loadQuietMemory, buildQuietMemoryContext, deleteQuietItem, clearQuietMemory, exportQuietMemory, pullArchitectMemory, type QuietMemory } from "./lib/quietMemory";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
-  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning,
+  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import GematriaObservatory from "./components/GematriaObservatory";
@@ -25,11 +26,16 @@ import Backdrop from "./components/Backdrop";
 import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
 import type { ModelRequest } from "./intelligence";
 import { prepareTools } from "./intelligence";
+import { linksIn } from "./intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
-import { joinBeta, betaNumber, APP_VERSION } from "./lib/beta";
+import { APP_VERSION } from "./lib/beta";
+import { AccountsLayer, useAccountRoute, closeLayer } from "./accounts/AccountsLayer";
+import { api, type Flags, type Banner, type AcctUser } from "./accounts/api";
+import { getToken, getUser, subscribeAccount, updateUser, clearSession } from "./accounts/store";
+import { applyRemote, pullRemote, pushChanges, noteDeleted } from "./accounts/sync";
 import { shareApp, syncStars, starsSeen, markStarsSeen, creditReferral } from "./lib/ref";
 import Organizer, { type OrgTab } from "./components/Organizer";
 import { detectAction, runAction, checkDue, dueNow } from "./lib/organizer";
@@ -49,10 +55,24 @@ import { identify, loadProfiles, saveProfiles, renameProfile, mergeProfiles, spl
 import { queryMemories, upsertMemory, listMemories, clearMemories, deleteMemory, summarizeExchange, type MemoryItem } from "./lib/longMemory";
 import { analyzeProsody, classify, EMOTION_CONFIDENCE_MIN, EMOTION_GUIDANCE, EMOTION_TTS_SPEED, type EmotionTag } from "./lib/emotion";
 
+/** The URL query at page load, before ?open= / ?beta handlers strip it. */
+const INITIAL_SEARCH = typeof location !== "undefined" ? location.search : "";
+/* Remember for this tab, so a one-time reload (e.g. cross-origin isolation) after the query is stripped still skips the landing page. */
+const SKIP_HOME = (() => { try { if (/[?&](beta|open)(=|&|$)/.test(INITIAL_SEARCH)) sessionStorage.setItem("wilson_skip_home", "1"); return !!sessionStorage.getItem("wilson_skip_home"); } catch { return false; } })();
 export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
   "https://wilson-proxy.butterflyeffect007.workers.dev";
 const CONTEXT_WINDOW = 10; // last 10 messages (20 kept old spec talk in view)
+
+/** Remove trailing Sources/Source lines and bare URLs so they are never spoken. */
+function stripSourcesForSpeech(text: string): string {
+  return text
+    .replace(/\n+\s*(Sources?|Source)\s*:\s*[^\n]*/gi, "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/\s+$/g, "")
+    .trim();
+}
+
 const MAX_RETRIES = 2;
 
 /* ---------- greetings (logic from wilsonaibro Index.tsx @ 1816d92) ---------- */
@@ -113,8 +133,6 @@ export default function App() {
   }, []);
   const [isAdmin, setIsAdmin] = useState<boolean>(() => cachedIsAdmin());
   const [showAdmin, setShowAdmin] = useState(false);
-  const [adminKeyDraft, setAdminKeyDraft] = useState("");
-  const [adminMsg, setAdminMsg] = useState<string | null>(null);
   useEffect(() => { if (cachedIsAdmin()) void verifyAdmin().then((ok) => { if (ok !== null) setIsAdmin(ok); }); }, []);
   const anchorTurnRef = useRef(0);
   const wakeSpeakRef = useRef(false);
@@ -155,7 +173,7 @@ export default function App() {
   const toggleMessageVoice = (msg: StoredMessage) => {
     if (playMsg?.id === msg.id) { stopSpeaking(); setPlayMsg(null); return; }
     setPlayMsg({ id: msg.id, phase: "loading" });
-    speakMessage(msg.content, EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], {
+    speakMessage(stripSourcesForSpeech(msg.content), EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], {
       onStart: () => setPlayMsg((p) => (p?.id === msg.id ? { id: msg.id, phase: "playing" } : p)),
       onEnd: () => setPlayMsg((p) => (p?.id === msg.id ? null : p)),
     });
@@ -183,20 +201,17 @@ export default function App() {
   const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
   /* Voice-recognition consent (voiceprints are computed + stored on this device only). */
   const [voiceConsent, setVoiceConsent] = useState<string | null>(() => { try { return localStorage.getItem("wilson_voiceprint_consent"); } catch { return null; } });
   const [askVoiceConsent, setAskVoiceConsent] = useState(false);
   const recordConsent = (v: "yes" | "no") => { try { localStorage.setItem("wilson_voiceprint_consent", v); localStorage.setItem("wilson_voiceprint_consent_at", new Date().toISOString()); } catch { /* ignore */ } setVoiceConsent(v); };
   const voiceId = settings.voiceRecognition && voiceConsent === "yes";
   const eraseVoiceData = () => { setVoiceProfiles([]); saveProfiles([]); setSpeaker(null); voiceCtxRef.current.name = ""; voiceCtxRef.current.id = "default"; };
-  /* Founders: the first 100 unique devices to open Wilson are added automatically (no signup, no link). */
+  /* Old ?beta links now open the Beta Tester page. */
   useEffect(() => {
-    try { if (new URLSearchParams(location.search).has("beta")) { const u = new URL(location.href); u.searchParams.delete("beta"); history.replaceState({}, "", u.toString()); } } catch { /* ignore */ }
-    if (betaNumber() || localStorage.getItem("wilson_founders_full")) return;
-    void joinBeta().then((n) => { if (typeof n === "number") setBetaNum(n); else if (n === "full") { setBetaFull(true); try { localStorage.setItem("wilson_founders_full", "1"); } catch { /* ignore */ } } });
+    try { if (new URLSearchParams(location.search).has("beta")) { const u = new URL(location.href); u.searchParams.delete("beta"); u.hash = "#beta"; history.replaceState({}, "", u.toString()); window.dispatchEvent(new HashChangeEvent("hashchange")); } } catch { /* ignore */ }
   }, []);
-
-  const [betaNum, setBetaNum] = useState<number | null>(() => betaNumber());
   /* ---------- Share Wilson + referral stars ---------- */
   const [stars, setStars] = useState(() => starsSeen());
   const [starMoment, setStarMoment] = useState<string | null>(null);
@@ -215,10 +230,15 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", vis);
   }, []);
   const doShare = () => void shareApp().then((r) => {
-    const m = r === "shared" ? "Thank you for sharing Wilson ✦ You'll earn a star when your friend opens it." : r === "copied" ? "Link copied — paste it to a friend. You'll earn a star when they open it ✦" : r === "failed" ? "Couldn't share right now — try again." : null;
-    setShareMsg(m); if (m) setTimeout(() => setShareMsg(null), 5000);
+    const m = r === "shared"
+      ? "Shared ✦ You'll earn a star when your friend opens it."
+      : r === "copied"
+      ? "Link copied. To add Wilson to your Home Screen: iPhone — Safari Share → Add to Home Screen. Android — browser menu → Install app / Add to Home screen."
+      : r === "failed"
+      ? "Couldn't open the share sheet. Copy the link from the address bar, or use Safari's Share → Add to Home Screen."
+      : null;
+    setShareMsg(m); if (m) setTimeout(() => setShareMsg(null), 8000);
   });
-  const [, setBetaFull] = useState(false);
   const [feedback, setFeedback] = useState<FeedbackTarget | null>(null);
   const [orgTab, setOrgTab] = useState<OrgTab | null>(null);
   const [dueBanner, setDueBanner] = useState<string[]>([]);
@@ -319,6 +339,78 @@ export default function App() {
 
   /* persistence */
   useDebouncedSave(threads, saveThreads);
+
+  /* ---------- Accounts: session, chat sync, banner ---------- */
+  const acctRoute = useAccountRoute();
+  const goHome = () => { setSidebarOpen(false); setShowSettings(false); location.hash = "#home"; };
+  const [acctUser, setAcctUser] = useState<AcctUser | null>(() => getUser());
+  const [acctFlags, setAcctFlags] = useState<Flags | null>(null);
+  const [banner, setBanner] = useState<Banner>(null);
+  const [bannerHidden, setBannerHidden] = useState<number>(() => { try { return Number(localStorage.getItem("wilson_banner_hidden")) || 0; } catch { return 0; } });
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  useEffect(() => subscribeAccount(() => setAcctUser(getUser())), []);
+  useEffect(() => {
+    const f = (e: Event) => { if ((e as CustomEvent).detail) setIsAdmin(true); else setIsAdmin(cachedIsAdmin()); };
+    window.addEventListener("wilson-architect-changed", f);
+    return () => window.removeEventListener("wilson-architect-changed", f);
+  }, []);
+  useEffect(() => {
+    let off = false;
+    void api<{ flags: Flags; banner: Banner; user: AcctUser | null }>("/acct/config").then((d) => {
+      if (off) return;
+      setAcctFlags(d.flags); setBanner(d.banner);
+      if (getToken()) { if (d.user) updateUser(d.user); else clearSession(); }
+    }).catch(() => { /* offline: keep the local session */ });
+    return () => { off = true; };
+  }, [acctUser?.id]);
+  const syncNow = useCallback(async () => {
+    if (!getToken()) return;
+    try {
+      const changes = await pullRemote();
+      if (changes.length) setThreads((prev) => { const next = applyRemote(prev, changes); threadsRef.current = next; return next; });
+      const r = await pushChanges(threadsRef.current);
+      setSyncNote(r === null ? "Sync paused, will retry." : "Chats saved to your account.");
+    } catch { setSyncNote("Sync paused, will retry."); }
+  }, []);
+  useEffect(() => {
+    if (!acctUser) { setSyncNote(null); return; }
+    void syncNow();
+    const t = window.setInterval(() => { if (document.visibilityState === "visible") void syncNow(); }, 60000);
+    const v = () => { if (document.visibilityState === "visible") void syncNow(); };
+    document.addEventListener("visibilitychange", v);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", v); };
+  }, [acctUser?.id, syncNow]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!acctUser) return;
+    const t = window.setTimeout(() => { void pushChanges(threadsRef.current).then((r) => { if (r !== null) setSyncNote("Chats saved to your account."); }); }, 4000);
+    return () => clearTimeout(t);
+  }, [threads, acctUser]);
+  const signOut = useCallback(async (removeLocal: boolean) => {
+    if (removeLocal) {
+      // Remove only chats that are safely in the account; anything never synced stays.
+      let sent: Record<string, string> = {};
+      try { sent = (JSON.parse(localStorage.getItem("wilson_sync_meta") || "null")?.sent) || {}; } catch { /* ignore */ }
+      setThreads((prev) => prev.filter((t) => !sent[t.id]));
+      setActiveId(null);
+    } else await pushChanges(threadsRef.current).catch(() => null);
+    const tok = getToken();
+    if (tok) await api("/acct/logout", { body: {}, token: tok }).catch(() => null);
+    clearSession(); closeLayer();
+  }, []);
+  /* First visit: show the landing page (#home) once. Returning users (chat history, account, or already seen it) go straight to chat; ?beta / ?open= links skip it.
+     The landing page's "Sign in / Create account" replaces the old automatic #signin prompt. */
+  useEffect(() => {
+    try {
+      if (SKIP_HOME || location.hash) return;
+      if (localStorage.getItem("wilson_seen_home")) return;
+      localStorage.setItem("wilson_seen_home", "1");
+      const returning = !!getToken() || !!localStorage.getItem("wilson_acct_prompted") || !!localStorage.getItem("wilson_architect_key")
+        || threadsRef.current.some((t) => t.messages.some((m) => m.role === "user"));
+      localStorage.setItem("wilson_acct_prompted", "1");
+      if (!returning) location.hash = "#home";
+    } catch { /* ignore */ }
+  }, []);
+  const chatContext = (activeThread?.messages ?? []).slice(-6).map((m) => `${m.role === "user" ? "Me" : "Wilson"}: ${m.content.slice(0, 300)}`).join("\n");
   useEffect(() => { saveActiveThreadId(activeId); }, [activeId]);
   useEffect(() => { saveSettings(settings); }, [settings]);
 
@@ -366,6 +458,7 @@ export default function App() {
 
   const deleteThread = useCallback((id: string) => {
     if (!window.confirm("Delete this thread?")) return;
+    noteDeleted(id);
     setThreads((prev) => prev.filter((t) => t.id !== id));
     setActiveId((cur) => (cur === id ? null : cur));
   }, []);
@@ -418,6 +511,8 @@ export default function App() {
         ]);
         toolCtx = step.context;
       } catch (e) { console.warn("[tools]", e); }
+      if (!orgAction && !toolCtx && linksIn(content).length)
+        toolCtx = `\n\n[Link reader] The link the user shared could not be opened in time (timeout). Tell them plainly you couldn't open it just now; do NOT guess what it says.`;
       const emo = voiceCtxRef.current.emotion;
       const request: ModelRequest = composeRequest(content, windowed.slice(0, -1), {
         memory: buildMemoryContext(threadsRef.current),
@@ -517,7 +612,7 @@ export default function App() {
           if (result.finishReason !== "aborted" && clean && settings.longMemory) {
             void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
           }
-          if (result.finishReason !== "aborted" && clean && speech) speech.finish(clean);
+          if (result.finishReason !== "aborted" && clean && speech) speech.finish(stripSourcesForSpeech(clean));
           if (result.finishReason !== "aborted" && clean && settings.longMemory) {
             const recentMsgs: StoredMessage[] = [...history, { id: "u", role: "user", content, timestamp: "" }, { id: "a", role: "assistant", content: clean, timestamp: "" }];
             setTimeout(() => void maybeRefreshStateOfYou(adapter, recentMsgs), 1500);
@@ -542,7 +637,7 @@ export default function App() {
       }
 
       if (speech && abort.signal.aborted) stopSpeaking();
-      else if (speech) speech.finish(stripTagsForDisplay(raw)); // no-op if already finished
+      else if (speech) speech.finish(stripSourcesForSpeech(stripTagsForDisplay(raw))); // no-op if already finished
       abortRef.current = null;
       setThinking(false);
       setStreamingId(null);
@@ -632,6 +727,13 @@ export default function App() {
     }
     void sendMessage(t);
   }, [sendMessage, analyzeUtterance, voiceId, settings.emotionDetection]);
+  // Mic dictation never auto-sends: the words land in the message box for her to review/edit, and she taps Send.
+  const dictBaseRef = useRef("");
+  const joinDict = (base: string, spoken: string) => (base && spoken ? base.replace(/\s+$/, "") + " " + spoken : base + spoken);
+  const onDictated = useCallback((t: string) => {
+    setInput(joinDict(dictBaseRef.current, t));
+    if (voiceId || settings.emotionDetection) void analyzeUtterance(t).catch((e) => console.warn("[voice]", e)); // tone/speaker ready by the time she sends
+  }, [analyzeUtterance, voiceId, settings.emotionDetection]);
 
   const nameSpeaker = useCallback((name: string) => {
     const n = name.trim();
@@ -659,8 +761,8 @@ export default function App() {
     voiceCtxRef.current.name = n;
     setNameDraft(""); setCorrecting(false);
   }, [speaker]);
-  const onInterimSpeech = useCallback((t: string) => setInput(t), []);
-  const stt = useSpeechToText(onFinalSpeech, onInterimSpeech);
+  const onInterimSpeech = useCallback((t: string) => setInput(joinDict(dictBaseRef.current, t)), []);
+  const stt = useSpeechToText(onDictated, onInterimSpeech);
 
   /* ---------- "Hey Wilson" wake word (foreground, opt-in) ---------- */
   const { speaking: wilsonSpeaking } = useWilsonAudio();
@@ -674,7 +776,7 @@ export default function App() {
       emitRipple();
       wakeSpeakRef.current = true;
       if (rest) void wakeCtx.current.onFinalSpeech(rest);
-      else wakeCtx.current.stt.start();
+      else { dictBaseRef.current = ""; wakeCtx.current.stt.start(); }
     });
     return () => stopWake();
   }, [wakeOn]);
@@ -702,8 +804,15 @@ export default function App() {
   return (
     <div className="h-[100dvh] flex flex-col relative overflow-hidden">
       <Backdrop chat={!isHome} />
+      <ErrorBoundary label="accounts"><AccountsLayer route={acctRoute} user={acctUser} flags={acctFlags} isAdmin={isAdmin} chatContext={chatContext} syncNote={syncNote} onSignOut={signOut} /></ErrorBoundary>
+      {banner && banner.at !== bannerHidden && !acctRoute && (
+        <div className="fixed z-[46] left-3 right-3 top-[max(0.5rem,env(safe-area-inset-top))] max-w-lg mx-auto glass-strong rounded-2xl px-4 py-2.5 flex items-start gap-3 shadow-lg" role="status">
+          <span className="text-[13px] mt-0.5">✦</span>
+          <p className="flex-1 text-[13.5px] leading-[1.55] text-violet-950/90"><span className="block text-[10.5px] tracking-[0.12em] text-violet-500">FROM THE ARCHITECT</span>{banner.text}</p>
+          <button type="button" aria-label="Dismiss" onClick={() => { setBannerHidden(banner.at); try { localStorage.setItem("wilson_banner_hidden", String(banner.at)); } catch { /* ignore */ } }} className="text-violet-400"><X className="w-4 h-4" /></button>
+        </div>
+      )}
       {showGematria && <ErrorBoundary label="Gematria Observatory"><GematriaObservatory onClose={() => setShowGematria(false)} /></ErrorBoundary>}
-      
       {orgTab && <ErrorBoundary label="organizer" compact><Organizer tab={orgTab} onTab={setOrgTab} onClose={() => setOrgTab(null)} /></ErrorBoundary>}
       {dueBanner.length > 0 && !orgTab && (
         <div className="fixed z-[45] left-3 right-3 top-[max(4.25rem,calc(env(safe-area-inset-top)+3.5rem))] max-w-lg mx-auto glass-strong rounded-2xl px-4 py-3 flex items-start gap-3 shadow-lg">
@@ -715,7 +824,7 @@ export default function App() {
         </div>
       )}
       {feedback && <ErrorBoundary label="feedback" compact><FeedbackSheet target={feedback} onClose={() => setFeedback(null)} /></ErrorBoundary>}
-      {showAdmin && isAdmin && <ErrorBoundary label="Architect view"><AdminPanel messages={activeThread?.messages ?? []} busy={busy} onSend={(x) => void sendMessage(x)} onClose={() => setShowAdmin(false)} onSignOut={() => { setIsAdmin(false); setShowAdmin(false); }} /></ErrorBoundary>}
+      {showAdmin && isAdmin && <ErrorBoundary label="Architect view"><AdminPanel messages={activeThread?.messages ?? []} busy={busy} onSend={(x) => void sendMessage(x)} onClose={() => setShowAdmin(false)} onSignOut={() => { setIsAdmin(false); setShowAdmin(false); }} onDashboard={() => { setShowAdmin(false); location.hash = "#architect"; }} /></ErrorBoundary>}
       {awayNote && (
         <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-[55] w-[min(92vw,30rem)] glass-strong rounded-2xl px-4 py-3 shadow-lg text-[15px] leading-[1.65] text-violet-950/90">
           <div className="text-[11px] tracking-[0.12em] text-violet-500 mb-1">WHILE YOU WERE AWAY</div>
@@ -774,12 +883,13 @@ export default function App() {
               <div className="px-3 pb-2 flex gap-2">
                 <button type="button" onClick={() => { setSidebarOpen(false); setOrgTab("notes"); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><StickyNote className="w-4 h-4" />Notes</button>
                 <button type="button" onClick={() => { setSidebarOpen(false); setOrgTab("reminders"); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><Bell className="w-4 h-4" />Reminders</button>
+                <a href="https://butterflyeffect007.github.io/Wilson/subscribe.html" target="_blank" rel="noopener" className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]">Alerts</a>
               </div>
               <div className="px-3 pb-2">
                 <button type="button" onClick={() => { setSidebarOpen(false); setFeedback({ type: "problem" }); }} className="w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><MessageSquareWarning className="w-4 h-4" />Send feedback to Jenny</button>
                 <div className="mt-2 flex gap-2">
                   <button type="button" onClick={() => { setSidebarOpen(false); setShowSettings(true); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 bg-white/50 text-violet-800 text-[14px]"><SettingsIcon className="w-4 h-4" />Settings</button>
-                  <button type="button" onClick={() => { setSidebarOpen(false); if (isAdmin) setShowAdmin(true); else { setShowSettings(true); setTimeout(() => (document.querySelector('[aria-label="Architect key"]') as HTMLInputElement | null)?.focus(), 300); } }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 bg-white/50 text-violet-800 text-[14px]">✦ Architect access</button>
+                  <button type="button" onClick={() => { setSidebarOpen(false); if (isAdmin) setShowAdmin(true); else location.hash = acctUser ? "#account" : "#signin"; }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 bg-white/50 text-violet-800 text-[14px] min-w-0"><span className="truncate">{isAdmin ? "✦ Architect access" : acctUser ? `👤 ${acctUser.username}` : "Sign in"}</span></button>
                 </div>
                 <button type="button" onClick={() => { setSidebarOpen(false); doShare(); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800 text-[14px]"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
                 {!isInstalled() && <button type="button" onClick={() => { setSidebarOpen(false); setInstallOpen(true); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]">Add to Home Screen</button>}
@@ -824,9 +934,13 @@ export default function App() {
           <button type="button" onClick={() => setSidebarOpen(true)} className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Open menu">
             <Menu className="w-[22px] h-[22px]" />
           </button>
-          <div className="flex-1 min-w-0 flex items-center justify-center gap-2">
-            <Sparkles className="shrink-0 w-[18px] h-[18px] text-violet-400 wl-title" />
-            <h1 className="wl-title leading-none text-violet-900/80 min-w-0" aria-label="Wilson + The Only One"><span className="block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></h1>
+          <div className="flex-1 min-w-0 flex items-center justify-center">
+            <h1 className="m-0 min-w-0 flex">
+              <button type="button" onClick={goHome} className="rb wl-home-btn min-w-0 touch-manipulation" aria-label="Wilson home" title="Wilson home">
+                <Sparkles className="shrink-0 w-[18px] h-[18px] text-violet-400 wl-title" aria-hidden="true" />
+                <span className="wl-title block leading-none text-violet-900/80 min-w-0"><span className="wl-w block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></span>
+              </button>
+            </h1>
           </div>
           <button type="button" onClick={() => setShowSettings((v) => !v)} className="shrink-0 min-w-11 h-11 px-1 flex flex-col items-center justify-center rounded-2xl text-violet-600/90 hover:bg-violet-50/80 touch-manipulation" aria-label="Settings" title="Settings">
             <SettingsIcon className="w-[20px] h-[20px]" />
@@ -835,11 +949,6 @@ export default function App() {
         </div>
         <div className="max-w-lg mx-auto mt-1 flex items-center justify-between gap-1 flex-wrap">
           <div className="flex items-center gap-1.5 min-w-0">
-            {betaNum && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-700/90 tracking-wide whitespace-nowrap" title={`OG 100 #${betaNum}`}>
-                {`OG·${betaNum}`}
-              </span>
-            )}
             {stars > 0 && <span className="text-[12px] text-amber-500 tracking-wide" title={`${stars} friend${stars === 1 ? "" : "s"} joined from your link`} aria-label={`${stars} stars`}>✦{stars > 1 ? stars : ""}</span>}
             {isAdmin && (
               <button type="button" onClick={() => setShowAdmin(true)} className="text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-500/20 via-violet-500/20 to-amber-400/25 text-violet-700/90 tracking-wide" title="Architect view">
@@ -904,27 +1013,49 @@ export default function App() {
                 <h3 className="text-sm font-semibold text-violet-950/90">Settings</h3>
                 <button type="button" onClick={() => setShowSettings(false)} className="text-violet-400 hover:text-violet-600" aria-label="Close settings"><X className="w-4 h-4" /></button>
               </div>
-              <div>
-                {isAdmin ? (
+              <div className="rounded-xl border border-violet-200/60 p-3">
+                {acctUser ? (
                   <>
-                  <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="w-full text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[13px] text-violet-900/90 min-w-0 truncate">Signed in as <b className="font-medium">{acctUser.username}</b>{acctUser.architect ? " · 🛡 Architect" : acctUser.beta ? " · ✦ beta" : ""}</p>
+                      <button type="button" onClick={() => { setShowSettings(false); location.hash = "#account"; }} className="shrink-0 text-[13px] px-3 py-1.5 rounded-xl bg-violet-100/80 text-violet-800">Account</button>
+                    </div>
+                    <p className="text-[11px] text-violet-700/70 mt-1">{syncNote ?? "Your chats are saved to your account."}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[13px] text-violet-900/90">Sign in to keep your chats safe and pick them up on any device.</p>
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => { setShowSettings(false); location.hash = "#signin"; }} className="flex-1 text-[13px] px-3 py-2 rounded-xl bg-violet-500 text-white">Sign in</button>
+                      <button type="button" onClick={() => { setShowSettings(false); location.hash = "#signup"; }} className="flex-1 text-[13px] px-3 py-2 rounded-xl bg-violet-100/80 text-violet-800">Create account</button>
+                    </div>
+                    <p className="text-[11px] text-violet-700/70 mt-1">Without an account, chats stay only on this device.</p>
+                  </>
+                )}
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[13px]">
+                  <button type="button" className="text-violet-700 hover:underline" onClick={() => { setShowSettings(false); location.hash = "#room"; }}>💬 Community room</button>
+                  <button type="button" className="text-violet-700 hover:underline" onClick={() => { setShowSettings(false); location.hash = "#message"; }}>✉️ Message the Architect</button>
+                  {!acctUser?.architect && <button type="button" className="text-violet-700 hover:underline" onClick={() => { setShowSettings(false); location.hash = "#beta"; }}>✨ Beta testing</button>}
+                </div>
+              </div>
+              {isAdmin && (
+                <div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
+                    <button type="button" onClick={() => { setShowSettings(false); location.hash = "#architect"; }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">🛡 Dashboard</button>
+                  </div>
                   <label className="flex items-start gap-2 text-[12px] text-violet-800/80 mt-2">
                     <input type="checkbox" className="mt-0.5" checked={nightly} onChange={(e) => { const on = e.target.checked; setNightly(on); setNightlyOptIn(on); if (on) void syncLoops(loadStateOfYou().summary); }} />
                     <span>Nightly notes — Wilson thinks about your open loops overnight and leaves you a short note. (Shares only your open loops with Wilson's server.)</span>
                   </label>
-                  </>
-                ) : (
-                  <div className="rounded-xl border border-violet-200/60 p-3">
-                    <p className="text-[13px] text-violet-900/90 mb-2">✦ Architect access (Jenny)</p>
-                    <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const k = adminKeyDraft.trim(); if (!k) return; setAdminMsg("Checking…"); void verifyAdmin(k).then((ok) => { setAdminKeyDraft(""); if (ok) { setIsAdmin(true); setAdminMsg(null); setShowSettings(false); setShowAdmin(true); } else setAdminMsg(ok === null ? "Couldn't reach Wilson — try again." : "That key didn't work."); }); }}>
-                      <input type="password" autoComplete="off" aria-label="Architect key" value={adminKeyDraft} onChange={(e) => setAdminKeyDraft(e.target.value)} placeholder="Architect key" className="flex-1 min-w-0 rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none text-violet-950" />
-                      <button type="submit" className="px-3 py-2 rounded-xl bg-violet-500 text-white text-[13px]">Unlock</button>
-                    </form>
-                    {adminMsg && <p className="mt-1 text-[12px] text-violet-700/80">{adminMsg}</p>}
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
 
+
+              <div className="space-y-1.5">
+                <button type="button" onClick={() => { setExportNote("Preparing…"); void downloadChatExport(threadsRef.current).then((n) => setExportNote(n ? `Saved ${n} chat${n === 1 ? "" : "s"} from this device.` : "No chats on this device yet.")).catch(() => setExportNote("Couldn't export — try again.")); }} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800"><Download className="w-4 h-4" />Export my chats</button>
+                <p className="text-[11px] text-violet-700/70">{exportNote ?? "Downloads every chat on this device as one file. Nothing is uploaded."}</p>
+              </div>
 
               <div className="space-y-1.5">
                 <p className="text-[12px] text-violet-700/70">Tell Jenny what's working and what isn't — she reads every one.</p>
@@ -934,7 +1065,8 @@ export default function App() {
                 </div>
                 <button type="button" onClick={doShare} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
                 {!isInstalled() && <button type="button" onClick={() => { setShowSettings(false); setInstallOpen(true); }} className="w-full text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800">Add Wilson to your Home Screen</button>}
-                <p className="text-[12px] text-violet-700/80">Wilson + The Only One · <span className="italic">Imagination becomes intelligence™</span></p>
+                <p className="text-[12px] text-violet-700/80"><button type="button" onClick={goHome} aria-label="Wilson home" className="underline-offset-2 hover:underline">Wilson + The Only One</button> · <span className="italic">Imagination becomes intelligence™</span></p>
+                <p className="text-[12px]"><a href="https://butterflyeffect007.github.io/Wilson/subscribe.html" className="text-violet-600 hover:underline" target="_blank" rel="noopener">Silver Harbor Alerts</a></p>
                 <p className="text-[11px] text-violet-500/70">Version {APP_VERSION} · build {__BUILD_ID__} · {new Date(__BUILD_AT__).toLocaleDateString([], { month: "short", day: "numeric" })} {new Date(__BUILD_AT__).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</p>
               </div>
               <div className="pt-2 border-t border-violet-200/40 text-[13px] text-violet-800/90">
@@ -952,7 +1084,6 @@ export default function App() {
               </div>
 
 
-              {betaNum && <p><span className="inline-block text-[12px] px-2 py-0.5 rounded-full bg-gradient-to-r from-pink-200/70 via-violet-200/70 to-sky-200/70 text-violet-800">✦ OG 100 #{betaNum}, one of Wilson's first 100</span></p>}
 
               {/* Voice + name settings (persisted locally) */}
               <div className="space-y-2">
@@ -1370,6 +1501,7 @@ export default function App() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
+                    stt.cancel();
                     void sendMessage();
                   }
                 }}
@@ -1386,6 +1518,7 @@ export default function App() {
                   // iOS can't share the mic between getUserMedia and speech recognition reliably: skip voice ID capture there
                   if (!iOS && !stt.listening && (voiceId || settings.emotionDetection)) void startCapture().catch((e) => console.warn("[capture]", e));
                   if (!iOS && stt.listening) setTimeout(() => void stopCapture(), 3000);
+                  if (!stt.listening) dictBaseRef.current = input; // keep anything already typed; dictation adds to it
                   stt.toggle();
                 }}
                 disabled={!stt.supported}
@@ -1413,7 +1546,7 @@ export default function App() {
                   type="button"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={() => void sendMessage()}
+                  onClick={() => { stt.cancel(); void sendMessage(); }}
                   disabled={!input.trim()}
                   className="rounded-full min-w-[44px] min-h-[44px] flex items-center justify-center p-2.5 bg-gradient-to-br from-fuchsia-400 via-violet-500 to-sky-400 text-white shadow-[0_0_16px_rgba(168,85,247,.55)] disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation"
                   aria-label="Send"
@@ -1428,3 +1561,4 @@ export default function App() {
     </div>
   );
 }
+
