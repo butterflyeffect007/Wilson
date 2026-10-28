@@ -33,6 +33,8 @@ export interface Profile {
 
 export interface WilsonSettings {
   voiceEnabled: boolean;
+  /** Free on-device Kokoro voice; kept local to this browser. */
+  kokoroVoice?: "am_puck" | "am_michael" | "am_fenrir" | "af_heart";
   displayName: string;
   voiceRecognition: boolean;
   emotionDetection: boolean;
@@ -66,6 +68,7 @@ const DEFAULT_RELATIONSHIP: RelationshipSeed = {
 
 export const DEFAULT_SETTINGS: WilsonSettings = {
   voiceEnabled: false,
+  kokoroVoice: "am_puck",
   displayName: "",
   voiceRecognition: true,
   emotionDetection: true,
