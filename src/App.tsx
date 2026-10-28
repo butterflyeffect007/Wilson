@@ -11,13 +11,14 @@ import { useWilsonAudio } from "./hooks/useWilsonAudio";
 import { enablePush, disablePush, pushEnabled, pushSupported, isIOS, isStandalone, startReminderSync } from "./lib/push";
 import { loadStateOfYou, recordUserTurn, recordVibe, buildStateOfYouContext, maybeRefreshStateOfYou, editStateSummary, clearStateOfYou, localSignals, type StateOfYou } from "./lib/stateOfYou";
 import { subscribeSaving } from "./lib/saveBus";
+import { downloadChatExport } from "./lib/chatExport";
 import { loadQuietMemory, buildQuietMemoryContext, deleteQuietItem, clearQuietMemory, exportQuietMemory, pullArchitectMemory, type QuietMemory } from "./lib/quietMemory";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
-  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning,
+  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import Backdrop from "./components/Backdrop";
@@ -198,6 +199,7 @@ export default function App() {
   const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
   /* Voice-recognition consent (voiceprints are computed + stored on this device only). */
   const [voiceConsent, setVoiceConsent] = useState<string | null>(() => { try { return localStorage.getItem("wilson_voiceprint_consent"); } catch { return null; } });
   const [askVoiceConsent, setAskVoiceConsent] = useState(false);
@@ -1046,6 +1048,11 @@ export default function App() {
                 </div>
               )}
 
+
+              <div className="space-y-1.5">
+                <button type="button" onClick={() => { setExportNote("Preparing…"); void downloadChatExport(threadsRef.current).then((n) => setExportNote(n ? `Saved ${n} chat${n === 1 ? "" : "s"} from this device.` : "No chats on this device yet.")).catch(() => setExportNote("Couldn't export — try again.")); }} className="w-full flex items-center justify-center gap-2 text-[14px] px-3 py-2.5 rounded-xl bg-violet-100/80 text-violet-800"><Download className="w-4 h-4" />Export my chats</button>
+                <p className="text-[11px] text-violet-700/70">{exportNote ?? "Downloads every chat on this device as one file. Nothing is uploaded."}</p>
+              </div>
 
               <div className="space-y-1.5">
                 <p className="text-[12px] text-violet-700/70">Tell Jenny what's working and what isn't — she reads every one.</p>
