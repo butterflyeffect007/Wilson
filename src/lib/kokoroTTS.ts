@@ -529,16 +529,24 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
         finally { inflight--; waiters.shift()?.(); }
       } catch (e) { dbg("Gemini Puck failed", e); if (my !== generation) return []; }
     }
-    if (puckUsable() || puckOnDiskKnown() === true) {
-      const parts = await viaPuck(t, first);
-      if (parts || my !== generation) return parts ?? [];
-    }
+    // Use the backup SERVER voice before attempting the large on-device model.
+    // If Gemini returns 429 (daily quota) or is unavailable, the next piece
+    // should switch to arcas immediately rather than waiting for local Kokoro.
     if (!isVoiceResting() && !serverDown) {
       try {
         await slot(); inflight++;
-        try { return [Promise.resolve(tag(await fetchClip(t, speed, my), "arcas"))]; }
-        finally { inflight--; waiters.shift()?.(); }
-      } catch { if (my !== generation) return []; }
+        try {
+          const backup = await fetchClip(t, speed, my);
+          if (backup || my !== generation) return [Promise.resolve(tag(backup, "arcas"))];
+        } finally { inflight--; waiters.shift()?.(); }
+      } catch (e) {
+        if (my !== generation) return [];
+        dbg("backup server voice unavailable; trying on-device voice", e);
+      }
+    }
+    if (puckUsable() || puckOnDiskKnown() === true) {
+      const parts = await viaPuck(t, first);
+      if (parts || my !== generation) return parts ?? [];
     }
     throw new Error("no voice available");
   };
