@@ -103,8 +103,8 @@ async function pump() {
         await load(safeMode);
         post({ type: "start", id: job.id }); // the controller times each sentence from here, not from when it was queued
         const t0 = performance.now();
-        const allowedVoices = new Set(["am_puck", "am_michael", "am_fenrir", "af_heart"]);
-        const voice = allowedVoices.has(job.voice || "") ? job.voice! : VOICE;
+        const allowedVoices = ["am_puck", "am_michael", "am_fenrir", "af_heart"] as const;
+        const voice = allowedVoices.find((candidate) => candidate === job.voice) ?? VOICE;
         const audio = await tts!.generate(job.text, { voice, speed: job.speed });
         const wav = wav16(audio.audio as Float32Array, audio.sampling_rate);
         const secs = audio.audio.length / audio.sampling_rate;
