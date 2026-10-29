@@ -48,6 +48,7 @@ import {
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
 import PuckStatus from "./components/PuckStatus";
+import { getPuckState, getPuckFail, getPuckStage, getPuckDevice } from "./lib/puckVoice";
 import { startSpeechStream, speakMessage, voiceTest, subscribeVoiceDebug, getVoiceDebug, type VoiceDebug, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus, isVoiceActive, subscribeVoiceActive } from "./lib/kokoroTTS";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
@@ -515,6 +516,27 @@ export default function App() {
         toolCtx = `\n\n[Link reader] The link the user shared could not be opened in time (timeout). Tell them plainly you couldn't open it just now; do NOT guess what it says.`;
       const emo = voiceCtxRef.current.emotion;
       const request: ModelRequest = composeRequest(content, windowed.slice(0, -1), {
+        runtimeStatus: (() => {
+          const voice = getVoiceStatus();
+          const debug = getVoiceDebug();
+          const puckState = getPuckState();
+          const fail = getPuckFail();
+          const device = getPuckDevice();
+          const speechRecognition = typeof (window as any).SpeechRecognition !== "undefined" || typeof (window as any).webkitSpeechRecognition !== "undefined";
+          return [
+            "interface=Wilson web/PWA",
+            "audioPlaybackAPI=" + (typeof Audio !== "undefined" ? "available" : "unavailable"),
+            "speechRecognitionAPI=" + (speechRecognition ? "present" : "not detected in this browser"),
+            "onDeviceVoiceRuntime=" + puckState,
+            "onDeviceVoiceStage=" + (getPuckStage() || "none"),
+            "replyVoiceStatus=" + voice.state + ", progress=" + voice.progress + (voice.reason ? ", reason=" + voice.reason : ""),
+            "lastVoiceEvent=" + (debug.lastEvent || "not tested this session"),
+            "lastVoiceError=" + (debug.lastError || "none recorded"),
+            "device=" + (device || "unknown"),
+            "lastOnDeviceFailure=" + (fail ? fail.stage + ": " + fail.plain + " (technical: " + fail.error.slice(0, 140) + "; build " + fail.build + ")" : "none recorded"),
+            "voiceTelemetry=anonymous technical diagnostics only; no conversation text or account identifiers"
+          ].join("\n");
+        })(),
         memory: buildMemoryContext(threadsRef.current),
         recalled,
         speakerName: voiceCtxRef.current.name,

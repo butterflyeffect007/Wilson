@@ -39,12 +39,15 @@ export interface TurnContext {
   /** Quiet cross-session memory (intent, pacing, threads, recaps), compact. */
   quietMemory?: string;
   anchor?: { vision: string; weave: boolean } | null;
+  /** Current local interface diagnostics used for evidence-based troubleshooting. */
+  runtimeStatus?: string;
 }
 
 /** Builds Wilson's one system prompt: identity + principles + turn context. */
 export function buildSystemContext(ctx: TurnContext = {}): string {
   const parts = [WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES];
   if (ctx.memory) parts.push(ctx.memory);
+  if (ctx.runtimeStatus) parts.push(`[LIVE WILSON INTERFACE DIAGNOSTICS — current session]\n${ctx.runtimeStatus}\nUse this snapshot to distinguish text generation, voice synthesis, playback, and microphone input. Do not claim a feature works unless the snapshot supports it.`);
   if (ctx.lessons?.length) parts.push(`[What Wilson has learned from her — always follow these]\n${ctx.lessons.map((l) => `- ${l}`).join("\n")}`);
   if (ctx.newLesson) parts.push(`[She just corrected you] New lesson saved: "${ctx.newLesson}". Start your reply with one short, calm line confirming you'll remember it (e.g. "Got it — I'll remember that."), then continue normally.`);
   if (ctx.recalled?.length) parts.push(`[Things you remember about her life — people, projects, goals, preferences. Weave in only what genuinely fits this moment, naturally, the way a friend would ("How's Charlie doing?"); never list them or say "according to my memory"]\n${ctx.recalled.map((r) => `- ${r}`).join("\n")}`);
