@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-﻿Initialize Silver Harbor core architecture
-=======
 # WILSON
 
 **+ THE ONLY ONE**  
@@ -153,7 +150,7 @@ The goal is one Wilson intelligence that can travel across platforms, not separa
 
 Existing core and intelligence contracts in `src/core` and `src/intelligence` remain the foundation.
 
-The UI sits on top of those contracts and will be wired to the IntelligenceRouter in a later step.
+The UI currently uses the Wilson Core, IntelligenceRouter, and model adapter path described above.
 
 Do not move model logic into visual components.
 
@@ -163,12 +160,19 @@ Do not replace Wilson’s established visual DNA with a generic AI interface.
 
 Do not fragment Wilson into artificial modes when the underlying intelligence can determine the appropriate response itself.
 
+## Diagnostics and deployment
+
+- The app supplies the current session's voice/runtime status to Wilson; that is not full repository access or proof that audio playback works.
+- The Cloudflare Worker source is maintained separately in the private `butterflyeffect007/wilson-proxy` repository.
+- A successful GitHub Pages deployment verifies the app build, not end-to-end microphone, voice synthesis, or audio playback on every device.
+- Keep secrets in deployment environment settings; never commit API keys.
+
 ## Run
 
 ```bash
 npm install
 npm run dev
+npm run build
 ```
 
 Open the local URL (usually http://localhost:5173).
->>>>>>> d7689851b3f804a4ad226ec8f680787b41413206
