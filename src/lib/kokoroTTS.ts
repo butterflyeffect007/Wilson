@@ -522,6 +522,15 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     return splitForPuck(t, first).map((p) => { const pr = puckPiece(p); pr.catch(() => {}); return pr; });
   };
   const clip = async (t: string, first: boolean): Promise<Promise<Blob | null>[]> => {
+    // If the local model is already initialized, use it before network TTS. This avoids cloud timeout chains on repeat sessions.
+    let localFirstAttempted = false;
+    if (getPuckState() === "ready") {
+      localFirstAttempted = true;
+      try {
+        const local = await viaPuck(t, first);
+        if (local) { dbg("using ready on-device Puck first"); return local; }
+      } catch (e) { dbg("ready on-device Puck failed; trying network voice", e); }
+    }
     if (geminiUsable()) {
       try {
         await slot(); inflight++;
@@ -544,7 +553,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
         dbg("backup server voice unavailable; trying on-device voice", e);
       }
     }
-    if (puckUsable() || puckOnDiskKnown() === true) {
+    if (!localFirstAttempted && (puckUsable() || puckOnDiskKnown() === true)) {
       const parts = await viaPuck(t, first);
       if (parts || my !== generation) return parts ?? [];
     }
