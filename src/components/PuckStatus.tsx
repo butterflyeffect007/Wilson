@@ -38,12 +38,12 @@ export default function PuckStatus() {
     : st === "loading" ? (getPuckStage() === "downloading" ? `downloading ${getPuckProgress()}% (one time, ~92 MB; keep Wilson open)` : `starting: ${getPuckStage() || "loading"}…`)
     : st === "failed" ? `couldn't start${fail ? `: ${fail.plain}` : ""}`
     : blocked ? `off: ${blocked}`
-    : saved ? "saved on this phone; starts when needed" : "not downloaded (optional, only used if Gemini Puck is resting)";
+    : saved ? "downloaded on this device · no daily limit" : "not downloaded yet · free backup voice · no daily limit after setup";
   return (
     <div className="space-y-0.5 text-[11px] text-violet-700/80">
       <p data-testid="voice-now"><b>Now speaking:</b> {v.now ? v.now : "nothing"}{v.last ? ` · last voice: ${v.last}${v.lastAt ? ` (${time(v.lastAt)})` : ""}` : ""}</p>
       <p><b>1. Gemini Puck (main):</b> {gLine}</p>
-      <p><b>2. Puck on this phone (optional backup):</b> {pLine}</p>
+      <p><b>2. Free voice on this device:</b> {pLine}</p>
       {st === "ready" && puckStats.clips.length > 0 && (
         <p className="text-[10px] text-violet-500/80 break-all">Last sentences: {puckStats.clips.slice(-5).map((c) => `${(c.ms / 1000).toFixed(1)} s for ${c.secs} s of speech`).join(" · ")}.</p>
       )}
@@ -53,7 +53,7 @@ export default function PuckStatus() {
       )}
       {st !== "ready" && st !== "loading" && (
         <button type="button" onClick={() => retryPuck()} className="mt-1 rounded-full bg-violet-100 px-3 py-1 text-[12px] text-violet-800 touch-manipulation">
-          {saved ? "Start on-device Puck" : st === "failed" ? "Try on-device Puck again" : "Download on-device Puck (92 MB, optional)"}
+          {saved ? "Start on-device Puck" : st === "failed" ? "Try on-device Puck again" : "Download free voice to this device (92 MB)"}
         </button>
       )}
       {st === "failed" && <p className="text-[10px] text-violet-500/70">Device: {getPuckDevice()}</p>}
