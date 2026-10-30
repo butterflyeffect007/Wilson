@@ -111,7 +111,7 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
                   <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                     <label className="block min-w-0"><span className="go-label mb-2 block">ACTIVE CIPHER</span>
                       <select value={cipherId} onChange={(e) => setCipherId(e.target.value as CipherId)} className="go-input w-full px-3 py-3 text-sm">
-                        {CIPHERS.filter((c) => c.alphabet === "latin").map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                        {CIPHERS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
                       </select>
                     </label>
                     <button type="submit" disabled={!phraseDraft.trim()} className="go-primary mt-auto min-h-11 px-5 py-3 text-xs font-semibold disabled:opacity-40">RUN ANALYSIS ↗</button>
