@@ -304,7 +304,7 @@ async function fetchOnce(text: string, speed: number, timeoutMs: number): Promis
   try {
     const res = await fetch(SERVER_TTS_URL, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, speed }), signal: ctrl.signal,
+      body: JSON.stringify({ text, speed, voice: "aura-2-orion-en", voiceGender: "male" }), signal: ctrl.signal,
     });
     if (res.status === 503) { serverDown = true; throw new Error("voice server not configured (503)"); }
     if (res.status === 429) { markResting(); throw new VoiceLimitError(); }
@@ -338,7 +338,7 @@ async function fetchGemini(text: string, my: number): Promise<Blob | null> {
   const to = setTimeout(() => ctrl.abort(), 15000);
   const t0 = Date.now();
   try {
-    const res = await fetch(GEMINI_TTS_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }), signal: ctrl.signal });
+    const res = await fetch(GEMINI_TTS_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice: "Fenrir", voiceGender: "male" }), signal: ctrl.signal });
     if (res.status === 429) {
       let j: { daily?: boolean; until?: number } = {}; try { j = await res.json(); } catch { /* ignore */ }
       const ra = Number(res.headers.get("Retry-After")) || 60;
@@ -490,7 +490,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
    *  3. arcas (Aura-2, online) unless it's resting.
    *  4. Nothing works: skip the piece and show a small note (later pieces still get their chance).
    */
-  dbg(`voice order: ${geminiUsable() ? "Gemini Puck" : "Gemini Puck resting"} → ${getPuckState() === "ready" ? "Puck on device (ready)" : puckOnDiskKnown() ? "Puck on device (saved)" : "no on-device Puck"} → arcas`);
+  dbg(`voice order: ${geminiUsable() ? "Gemini Fenrir (male)" : "Gemini resting"} → Aura-2 Orion (male backup)`);
   /** On-device Puck ready (waiting briefly if it's loading from storage)? */
   const puckReady = async (): Promise<boolean> => {
     if (getPuckState() === "ready") return true;
@@ -521,20 +521,10 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     return splitForPuck(t, first).map((p) => { const pr = puckPiece(p); pr.catch(() => {}); return pr; });
   };
   const clip = async (t: string, first: boolean): Promise<Promise<Blob | null>[]> => {
-    // Local Kokoro is the primary engine. viaPuck checks whether its model is already
-    // stored on this device and starts it from cache; it never downloads the model.
-    try {
-      const local = await viaPuck(t, first);
-      if (local || my !== generation) {
-        if (local) dbg("using free on-device voice first");
-        return local ?? [];
-      }
-    } catch (e) {
-      dbg("on-device voice unavailable; trying cloud fallback", e);
-      if (my !== generation) return [];
-    }
+    // Kokoro/on-device Puck is intentionally disabled: Wilson must use male cloud voices only.
+    // Gemini Fenrir is preferred; Deepgram Aura-2 Orion is the male backup.
+    if (my !== generation) return [];
 
-    // Cloud voices are fallbacks only; their free tiers may have daily limits.
     if (geminiUsable()) {
       try {
         await slot(); inflight++;
