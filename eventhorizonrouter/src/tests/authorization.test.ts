@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { authorizeIntent } from '../authorization.js';
 import { canonicalizeIntent } from '../canonical.js';
 import { executeAuthorizedIntent, SqliteNonceReservationStore } from '../execution.js';
@@ -70,6 +73,14 @@ test('malformed keys and registry identity mismatches fail closed', () => {
   assert.equal(authorizeIntent(intent, [a.bundle], new Map([[a.publicKey, { ...a.record, publicKey: 'abcd' }]]), 1, NOW).success, false);
 });
 
+test('registry records and signature bundles reject accessor properties', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  const badRecord = Object.defineProperty({ ...a.record }, 'revoked', { enumerable: true, get: () => false });
+  assert.equal(authorizeIntent(intent, [a.bundle], new Map([[a.publicKey, badRecord]]), 1, NOW).success, false);
+  const badBundle = Object.defineProperty({}, 'signerPublicKey', { enumerable: true, get: () => a.publicKey }) as SignatureBundle;
+  assert.equal(authorizeIntent(intent, [badBundle], registryOf(a), 1, NOW).success, false);
+});
+
 test('case-folded duplicate registry identities are rejected', () => {
   const intent = makeIntent(); const a = makeSigner(intent);
   const duplicate = new Map([[a.publicKey, a.record], [a.publicKey.toUpperCase(), a.record]]);
@@ -120,15 +131,33 @@ test('authorization returns an immutable snapshot without mutating the caller in
   assert.equal(intent.expiry, NOW + 60_000);
 });
 
-test('SQLite nonce reservation is unique per scope and nonce', () => {
-  const db = new DatabaseSync(':memory:');
-  const storeA = new SqliteNonceReservationStore(db, 'solana:wallet-A');
-  const storeB = new SqliteNonceReservationStore(db, 'solana:wallet-A');
-  assert.equal(storeA.reserve(9, 'a'.repeat(64)), true);
-  assert.equal(storeB.reserve(9, 'b'.repeat(64)), false);
-  const otherScope = new SqliteNonceReservationStore(db, 'solana:wallet-B');
-  assert.equal(otherScope.reserve(9, 'c'.repeat(64)), true);
-  db.close();
+test('SQLite nonce reservation is atomic across connections and durable across restart', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'event-horizon-nonce-'));
+  const filename = join(directory, 'reservations.sqlite');
+  const firstDb = new DatabaseSync(filename);
+  const secondDb = new DatabaseSync(filename);
+  try {
+    const first = new SqliteNonceReservationStore(firstDb, 'solana:wallet-A');
+    const second = new SqliteNonceReservationStore(secondDb, 'solana:wallet-A');
+    assert.equal(first.reserve(9, 'a'.repeat(64)), true);
+    assert.equal(second.reserve(9, 'b'.repeat(64)), false);
+    const otherScope = new SqliteNonceReservationStore(secondDb, 'solana:wallet-B');
+    assert.equal(otherScope.reserve(9, 'c'.repeat(64)), true);
+  } finally {
+    firstDb.close();
+    secondDb.close();
+  }
+  try {
+    const reopenedDb = new DatabaseSync(filename);
+    try {
+      const reopened = new SqliteNonceReservationStore(reopenedDb, 'solana:wallet-A');
+      assert.equal(reopened.reserve(9, 'd'.repeat(64)), false);
+    } finally {
+      reopenedDb.close();
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('execution reserves before executor and retains nonce after uncertain failure', async () => {
