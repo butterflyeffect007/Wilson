@@ -94,7 +94,6 @@ export function subscribeVoiceStatus(l: (s: VoiceStatus) => void) { statusListen
  * audio element so iOS lets that element play later (after async fetches) without another tap.
  */
 export function primePlayback(): void {
-  schedulePuck();
   if (unlocked) return;
   const a = audioEl();
   try {
@@ -233,7 +232,7 @@ function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListe
 export function subscribeVoicePending(l: (p: boolean) => void) { pendingListeners.add(l); return () => { pendingListeners.delete(l); }; }
 
 /** Typing / opening: start getting Puck ready in the background (Workers AI itself needs no warm-up). */
-export function warmVoice(): void { schedulePuck(); }
+export function warmVoice(): void { /* cloud voice endpoints require no local model warm-up */ }
 
 // Once Puck is ready, the Aura daily limit no longer silences Wilson.
 subscribePuck(() => {
