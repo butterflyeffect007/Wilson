@@ -1,0 +1,302 @@
+[
+  {
+    "id": "corpus-001",
+    "phrase": "LOVE",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-002",
+    "phrase": "PEACE",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-003",
+    "phrase": "TRUTH",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-004",
+    "phrase": "LIGHT",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-005",
+    "phrase": "UNITY",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-006",
+    "phrase": "FREEDOM",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-007",
+    "phrase": "HOPE",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-008",
+    "phrase": "FAITH",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-009",
+    "phrase": "LIFE",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-010",
+    "phrase": "DREAM",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-011",
+    "phrase": "WISDOM",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-012",
+    "phrase": "POWER",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-013",
+    "phrase": "COURAGE",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-014",
+    "phrase": "GRACE",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-015",
+    "phrase": "HARMONY",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-016",
+    "phrase": "BALANCE",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-017",
+    "phrase": "ENERGY",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-018",
+    "phrase": "CREATION",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-019",
+    "phrase": "INFINITY",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-020",
+    "phrase": "ETERNITY",
+    "category": "Concept",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-021",
+    "phrase": "THE ONLY ONE",
+    "category": "Wilson",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-022",
+    "phrase": "IMAGINATION",
+    "category": "Wilson",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-023",
+    "phrase": "INTELLIGENCE",
+    "category": "Wilson",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-024",
+    "phrase": "WILSON",
+    "category": "Wilson",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-025",
+    "phrase": "JENNY COX",
+    "category": "Wilson",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-026",
+    "phrase": "HELLO WORLD",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-027",
+    "phrase": "KNOW THYSELF",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-028",
+    "phrase": "AS ABOVE SO BELOW",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-029",
+    "phrase": "WHAT IS HIDDEN",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-030",
+    "phrase": "THE BEGINNING",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-031",
+    "phrase": "THE END",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-032",
+    "phrase": "WE ARE ONE",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-033",
+    "phrase": "ALL IS ONE",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-034",
+    "phrase": "LOVE IS ALL",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-035",
+    "phrase": "TIME WILL TELL",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-036",
+    "phrase": "OPEN YOUR MIND",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-037",
+    "phrase": "FOLLOW THE LIGHT",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-038",
+    "phrase": "THE GOLDEN RATIO",
+    "category": "Mathematics",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-039",
+    "phrase": "PHI",
+    "category": "Mathematics",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-040",
+    "phrase": "FIBONACCI",
+    "category": "Mathematics",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-041",
+    "phrase": "SACRED GEOMETRY",
+    "category": "Mathematics",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-042",
+    "phrase": "UNIVERSAL MIND",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-043",
+    "phrase": "DIVINE ORDER",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-044",
+    "phrase": "NEW BEGINNING",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-045",
+    "phrase": "INNER PEACE",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-046",
+    "phrase": "TRUE NORTH",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-047",
+    "phrase": "STAY CURIOUS",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-048",
+    "phrase": "BE THE CHANGE",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-049",
+    "phrase": "KNOWLEDGE IS POWER",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  },
+  {
+    "id": "corpus-050",
+    "phrase": "IMAGINE THE POSSIBLE",
+    "category": "Common phrase",
+    "source": "Wilson foundational corpus"
+  }
+]
