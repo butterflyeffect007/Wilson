@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import {
   calculateCipher,
   CIPHERS,
@@ -52,7 +52,7 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
     [library, search],
   );
 
-  function calculatePhrase(event?: React.FormEvent<HTMLFormElement>) {
+  function calculatePhrase(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     const clean = phraseDraft.trim().replace(/\s+/g, " ");
     if (!clean) return;
