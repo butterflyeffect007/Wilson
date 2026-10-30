@@ -37,4 +37,6 @@ export interface VerificationResult {
   approvedSigners?: string[];
 }
 
-export type AuthorizedSignerRegistry = Map<string, SignerRecord> | Record<string, SignerRecord>;
+export type AuthorizedSignerRegistry =
+  | Map<string, SignerRecord>
+  | Record<string, SignerRecord>;

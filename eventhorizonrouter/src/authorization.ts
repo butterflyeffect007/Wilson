@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-
 import { canonicalizeIntent } from './canonical.js';
 import type {
   AuthorizedSignerRegistry,
@@ -10,35 +9,25 @@ import type {
 } from './types.js';
 
 function normalizeRegistry(registry: AuthorizedSignerRegistry): Map<string, SignerRecord> {
-  if (registry instanceof Map) {
-    return new Map(registry);
+  const source = registry instanceof Map ? registry : new Map(Object.entries(registry));
+  const normalized = new Map<string, SignerRecord>();
+
+  for (const [key, value] of source) {
+    normalized.set(key.toLowerCase(), value);
   }
 
-  return new Map(Object.entries(registry));
+  return normalized;
 }
 
 function getIntentExpiry(intent: TransactionIntent): number {
-  if (typeof intent.expiry === 'number') {
-    return intent.expiry;
-  }
-
-  if (typeof intent.expiresAt === 'number') {
-    return intent.expiresAt;
-  }
-
+  if (typeof intent.expiry === 'number') return intent.expiry;
+  if (typeof intent.expiresAt === 'number') return intent.expiresAt;
   return Number.MAX_SAFE_INTEGER;
 }
 
-function resolveThreshold(signatureBundles: SignatureBundle[], explicitThreshold?: number): number {
-  if (typeof explicitThreshold === 'number' && explicitThreshold > 0) {
-    return explicitThreshold;
-  }
-
-  if (signatureBundles.length === 0) {
-    return 1;
-  }
-
-  return Math.max(1, Math.ceil((signatureBundles.length * 2) / 3));
+function resolveThreshold(signatureCount: number, explicit?: number): number {
+  if (typeof explicit === 'number' && explicit > 0) return explicit;
+  return Math.max(1, Math.ceil((signatureCount * 2) / 3));
 }
 
 export function authorizeIntent(
@@ -54,18 +43,18 @@ export function authorizeIntent(
   if (Number.isFinite(expiry) && now >= expiry) {
     return {
       success: false,
-      error: 'intent expired',
       valid: false,
+      error: 'intent expired',
       reason: 'intent expired',
       approvedSigners: [],
     };
   }
 
-  if (seenNonces && seenNonces.has(intent.nonce)) {
+  if (seenNonces?.has(intent.nonce)) {
     return {
       success: false,
-      error: 'nonce replay',
       valid: false,
+      error: 'nonce replay',
       reason: 'nonce replay',
       approvedSigners: [],
     };
@@ -74,16 +63,17 @@ export function authorizeIntent(
   const registry = normalizeRegistry(authorizedSigners);
   const approvedSigners: string[] = [];
   const canonical = canonicalizeIntent(intent);
+  const message = Buffer.from(canonical, 'utf-8');
+
+  let sawUnknownOrRevoked = false;
 
   for (const bundle of signatureBundles) {
-    const publicKeyHex = (bundle.signerPublicKey ?? '').trim();
+    const publicKeyHex = (bundle.signerPublicKey ?? '').trim().toLowerCase();
+    if (!publicKeyHex) continue;
 
-    if (!publicKeyHex) {
-      continue;
-    }
-
-    const signer = registry.get(publicKeyHex.toLowerCase());
+    const signer = registry.get(publicKeyHex);
     if (!signer || signer.revoked) {
+      sawUnknownOrRevoked = true;
       continue;
     }
 
@@ -95,39 +85,38 @@ export function authorizeIntent(
       });
 
       const signatureBuffer = Buffer.from(bundle.signature ?? '', 'hex');
-      const isValid = crypto.verify(
-        null,
-        Buffer.from(canonical, 'utf-8'),
-        publicKeyObject,
-        signatureBuffer
-      );
+      const isValid = crypto.verify(null, message, publicKeyObject, signatureBuffer);
 
       if (isValid) {
-        approvedSigners.push(publicKeyHex.toLowerCase());
+        approvedSigners.push(publicKeyHex);
       }
     } catch {
-      // ignore malformed or invalid signatures and continue verifying the remaining bundle
+      // malformed key or signature — ignore and continue
     }
   }
 
-  const requiredThreshold = resolveThreshold(signatureBundles, threshold);
-  const verifiedCount = approvedSigners.length;
+  const required = resolveThreshold(signatureBundles.length, threshold);
 
-  if (verifiedCount < requiredThreshold) {
+  if (approvedSigners.length < required) {
+    const reason =
+      sawUnknownOrRevoked && approvedSigners.length === 0
+        ? 'unknown or revoked signer'
+        : 'threshold not met';
+
     return {
       success: false,
-      error: `threshold not met: ${verifiedCount}/${requiredThreshold}`,
       valid: false,
-      reason: 'threshold not met',
+      error: reason,
+      reason,
       approvedSigners,
     };
   }
 
   return {
     success: true,
-    verifiedIntent: intent,
     valid: true,
     reason: 'authorized',
+    verifiedIntent: intent,
     approvedSigners,
   };
 }

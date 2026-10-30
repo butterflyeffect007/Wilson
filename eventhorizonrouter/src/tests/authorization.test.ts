@@ -1,17 +1,6 @@
-import { createWriteStream } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
-
-async function ensureDir(path: string) {
-  await mkdir(path, { recursive: true });
-}
-
-await ensureDir('eventhorizonrouter/src/tests');
-
-const out = createWriteStream('eventhorizonrouter/src/tests/authorization.test.ts');
-out.write(`import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import { TransactionIntent, SignerRecord, SignatureBundle } from '../types.js';
 import { canonicalizeIntent } from '../canonical.js';
 import { authorizeIntent } from '../authorization.js';
@@ -21,14 +10,16 @@ function createTestSignerAndSig(intent: TransactionIntent) {
   const canonical = canonicalizeIntent(intent);
   const signature = crypto.sign(null, Buffer.from(canonical, 'utf-8'), privateKey);
 
+  const publicKeyHex = publicKey.export({ type: 'spki', format: 'der' }).toString('hex');
+
   return {
-    publicKeyHex: publicKey.export({ type: 'spki', format: 'der' }).toString('hex'),
+    publicKeyHex,
     signatureBundle: {
-      signerPublicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('hex'),
+      signerPublicKey: publicKeyHex,
       signature: signature.toString('hex'),
     } as SignatureBundle,
     signerRecord: {
-      publicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('hex'),
+      publicKey: publicKeyHex,
       revoked: false,
       weight: 1,
     } as SignerRecord,
@@ -54,7 +45,8 @@ test('valid threshold authorization succeeds', () => {
 
   const result = authorizeIntent(intent, [signatureBundle], signers, 1);
   assert.strictEqual(result.valid, true);
-  assert.strictEqual(result.approvedSigners.length, 1);
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(result.approvedSigners?.length, 1);
 });
 
 test('expired intent fails', () => {
@@ -76,6 +68,7 @@ test('expired intent fails', () => {
 
   const result = authorizeIntent(intent, [signatureBundle], signers, 1);
   assert.strictEqual(result.valid, false);
+  assert.strictEqual(result.success, false);
   assert.strictEqual(result.reason, 'intent expired');
 });
 
@@ -95,10 +88,11 @@ test('nonce replay fails', () => {
 
   const { publicKeyHex, signatureBundle, signerRecord } = createTestSignerAndSig(intent);
   const signers = new Map([[publicKeyHex, signerRecord]]);
-  const seenNonces = new Set<number>([103]);
+  const seenNonces = new Set([103]);
 
   const result = authorizeIntent(intent, [signatureBundle], signers, 1, seenNonces);
   assert.strictEqual(result.valid, false);
+  assert.strictEqual(result.success, false);
   assert.strictEqual(result.reason, 'nonce replay');
 });
 
@@ -122,7 +116,6 @@ test('revoked signer fails', () => {
 
   const result = authorizeIntent(intent, [signatureBundle], signers, 1);
   assert.strictEqual(result.valid, false);
+  assert.strictEqual(result.success, false);
   assert.strictEqual(result.reason, 'unknown or revoked signer');
 });
-`);
-out.end();
