@@ -722,3 +722,52 @@ html.dark input::placeholder { color: rgba(232, 214, 255, .6); }
 button[class*="from-violet-500"][class*="via-fuchsia-500"][class*="to-cyan-500"] { background-image: linear-gradient(90deg, #6E21B0 0%, #A92FB8 55%, #C2367A 100%) !important; }
 /* Small rose text links (e.g. "Clear all") on light glass */
 html:not(.dark) button[class~="text-rose-500"] { color: #BE123C !important; }
+
+
+/* ================= GEMATRIA OBSERVATORY / OBSIDIAN HUD =================
+   Scoped to the Observatory overlay. The main Wilson interface is untouched. */
+.go-shell {
+  --go-bg: #050505;
+  --go-panel: rgba(10, 11, 16, .96);
+  --go-card: rgba(11, 13, 19, .88);
+  --go-line: rgba(112, 245, 255, .34);
+  --go-cyan: #70f5ff;
+  --go-violet: #b28cff;
+  --go-pink: #ff62cf;
+  --go-text: #effcff;
+  --go-muted: #8da1aa;
+  color: var(--go-text);
+  background: radial-gradient(ellipse at 12% 0%, rgba(112,245,255,.08), transparent 32%),
+              radial-gradient(ellipse at 90% 90%, rgba(178,140,255,.08), transparent 35%), #050505;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.go-panel { background: var(--go-panel); border: 1px solid rgba(112,245,255,.28); box-shadow: 0 0 0 1px rgba(255,98,207,.08), 0 0 42px rgba(0,220,255,.08), inset 0 0 36px rgba(112,245,255,.025); }
+.go-header { border-bottom: 1px solid var(--go-line); background: rgba(5,5,7,.94); }
+.go-header h1 { color: var(--go-text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .055em; }
+.go-kicker, .go-label { color: var(--go-cyan); font-size: 10px; font-weight: 700; letter-spacing: .18em; }
+.go-muted { color: var(--go-muted); }
+.go-card { border: 1px solid rgba(112,245,255,.25); border-radius: 10px; background: linear-gradient(145deg, rgba(13,17,24,.96), rgba(7,8,12,.96)); box-shadow: inset 0 0 24px rgba(112,245,255,.025), 0 0 18px rgba(0,0,0,.35); }
+.go-input { min-height: 44px; border: 1px solid rgba(112,245,255,.36); border-radius: 6px; background: #070a0e; color: var(--go-text); outline: none; }
+.go-input:focus { border-color: var(--go-cyan); box-shadow: 0 0 0 1px rgba(112,245,255,.22), 0 0 16px rgba(112,245,255,.12); }
+.go-input::placeholder { color: #60717a; }
+.go-input option { background: #070a0e; color: var(--go-text); }
+.go-button { min-height: 40px; border: 1px solid rgba(178,140,255,.55); border-radius: 6px; color: #e7d9ff; background: rgba(178,140,255,.08); }
+.go-button:hover { background: rgba(178,140,255,.16); }
+.go-primary { border: 1px solid rgba(112,245,255,.7); border-radius: 6px; color: #020709; background: linear-gradient(100deg, #70f5ff, #a5faff 55%, #c2a2ff); box-shadow: 0 0 20px rgba(112,245,255,.18); }
+.go-status { color: var(--go-cyan); font-size: 9px; letter-spacing: .12em; white-space: nowrap; }
+.go-number { color: #fff; font-size: clamp(3.5rem, 11vw, 5.5rem); line-height: 1; font-weight: 300; letter-spacing: -.06em; text-shadow: 0 0 22px rgba(112,245,255,.22); font-variant-numeric: tabular-nums; }
+.go-metric { min-width: 88px; border: 1px solid rgba(178,140,255,.28); border-radius: 6px; padding: 9px 11px; background: rgba(178,140,255,.045); }
+.go-metric span { display:block; color: var(--go-muted); font-size: 9px; letter-spacing: .12em; }
+.go-metric strong { display:block; margin-top: 3px; color: var(--go-violet); font-size: 1.35rem; font-variant-numeric: tabular-nums; }
+.go-letter { display:inline-flex; min-width: 34px; flex-direction:column; align-items:center; gap:2px; border:1px solid rgba(112,245,255,.22); border-radius:4px; padding:5px 7px; background:#070b10; }
+.go-letter b { color:var(--go-text); font-size:12px; font-weight:500; }
+.go-letter small { color:var(--go-cyan); font-size:10px; }
+.go-count { border:1px solid rgba(112,245,255,.35); border-radius:5px; padding:5px 9px; color:var(--go-cyan); font-size:12px; }
+.go-table { min-width: 560px; border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:11px; }
+.go-table th { position:sticky; top:0; padding:11px 12px; color:#8da1aa; background:#090c11; border-bottom:1px solid rgba(112,245,255,.24); font-size:9px; letter-spacing:.13em; white-space:nowrap; }
+.go-table td { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.055); color:#c6d3d8; white-space:nowrap; }
+.go-table tbody tr:hover { background:rgba(112,245,255,.055); }
+.go-table td:first-child strong { display:block; color:#f0fbff; font-size:11px; font-weight:600; }
+.go-table td:first-child small { display:block; margin-top:3px; color:#75858d; font-size:9px; }
+.go-table .go-exact { color:#70f5ff; font-weight:700; text-shadow:0 0 10px rgba(112,245,255,.35); }
+@media (prefers-reduced-motion: reduce) { .go-shell * { scroll-behavior:auto !important; transition:none !important; animation:none !important; } }
