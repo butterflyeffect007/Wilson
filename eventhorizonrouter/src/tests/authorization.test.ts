@@ -1,128 +1,181 @@
-import { createWriteStream } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
-
-async function ensureDir(path: string) {
-  await mkdir(path, { recursive: true });
-}
-
-await ensureDir('eventhorizonrouter/src/tests');
-
-const out = createWriteStream('eventhorizonrouter/src/tests/authorization.test.ts');
-out.write(`import test from 'node:test';
-import assert from 'node:assert';
-import crypto from 'crypto';
-import { TransactionIntent, SignerRecord, SignatureBundle } from '../types.js';
-import { canonicalizeIntent } from '../canonical.js';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { authorizeIntent } from '../authorization.js';
+import { canonicalizeIntent } from '../canonical.js';
+import { executeAuthorizedIntent, SqliteNonceReservationStore } from '../execution.js';
+import type { SignerRecord, SignatureBundle, TransactionIntent } from '../types.js';
 
-function createTestSignerAndSig(intent: TransactionIntent) {
-  const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
-  const canonical = canonicalizeIntent(intent);
-  const signature = crypto.sign(null, Buffer.from(canonical, 'utf-8'), privateKey);
-
+const NOW = 2_000_000_000_000;
+function makeIntent(nonce = 7): TransactionIntent {
+  return { nonce, expiry: NOW + 60_000, tokenMint: 'mint', amount: '10' };
+}
+function makeSigner(intent: TransactionIntent) {
+  const pair = crypto.generateKeyPairSync('ed25519');
+  const publicKey = pair.publicKey.export({ format: 'der', type: 'spki' }).toString('hex');
+  const signature = crypto.sign(null, Buffer.from(canonicalizeIntent(intent), 'utf8'), pair.privateKey).toString('hex');
   return {
-    publicKeyHex: publicKey.export({ type: 'spki', format: 'der' }).toString('hex'),
-    signatureBundle: {
-      signerPublicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('hex'),
-      signature: signature.toString('hex'),
-    } as SignatureBundle,
-    signerRecord: {
-      publicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('hex'),
-      revoked: false,
-      weight: 1,
-    } as SignerRecord,
+    publicKey,
+    bundle: { signerPublicKey: publicKey, signature } as SignatureBundle,
+    record: { publicKey, revoked: false, weight: 1 } as SignerRecord,
   };
 }
+function registryOf(...signers: ReturnType<typeof makeSigner>[]): Map<string, SignerRecord> {
+  return new Map<string, SignerRecord>(signers.map((signer) => [signer.publicKey, signer.record] as const));
+}
 
-test('valid threshold authorization succeeds', () => {
-  const intent: TransactionIntent = {
-    idempotencyKey: 'idemp-001',
-    nonce: 101,
-    timestamp: Date.now(),
-    expiresAt: Date.now() + 60000,
-    sourceChain: 'solana',
-    destinationChain: 'solana',
-    destinationAddress: '11111111111111111111111111111111',
-    tokenMint: 'So11111111111111111111111111111111111111112',
-    amount: '1000000',
-    maxSlippageBps: 50,
-  };
-
-  const { publicKeyHex, signatureBundle, signerRecord } = createTestSignerAndSig(intent);
-  const signers = new Map([[publicKeyHex, signerRecord]]);
-
-  const result = authorizeIntent(intent, [signatureBundle], signers, 1);
-  assert.strictEqual(result.valid, true);
-  assert.strictEqual(result.approvedSigners.length, 1);
+test('distinct verified Ed25519 signers satisfy a threshold of two', () => {
+  const intent = makeIntent(); const a = makeSigner(intent); const b = makeSigner(intent);
+  const result = authorizeIntent(intent, [a.bundle, b.bundle], registryOf(a, b), 2, NOW);
+  assert.equal(result.success, true);
+  assert.deepEqual(result.approvedSigners, [a.publicKey, b.publicKey]);
 });
 
-test('expired intent fails', () => {
-  const intent: TransactionIntent = {
-    idempotencyKey: 'idemp-002',
-    nonce: 102,
-    timestamp: Date.now() - 120000,
-    expiresAt: Date.now() - 60000,
-    sourceChain: 'solana',
-    destinationChain: 'solana',
-    destinationAddress: '11111111111111111111111111111111',
-    tokenMint: 'So11111111111111111111111111111111111111112',
-    amount: '1000000',
-    maxSlippageBps: 50,
-  };
-
-  const { publicKeyHex, signatureBundle, signerRecord } = createTestSignerAndSig(intent);
-  const signers = new Map([[publicKeyHex, signerRecord]]);
-
-  const result = authorizeIntent(intent, [signatureBundle], signers, 1);
-  assert.strictEqual(result.valid, false);
-  assert.strictEqual(result.reason, 'intent expired');
+test('the same signer cannot inflate threshold with a repeated bundle', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  const result = authorizeIntent(intent, [a.bundle, a.bundle], registryOf(a), 1, NOW);
+  assert.equal(result.reason, 'duplicate signer submission');
+  assert.equal(result.success, false);
 });
 
-test('nonce replay fails', () => {
-  const intent: TransactionIntent = {
-    idempotencyKey: 'idemp-003',
-    nonce: 103,
-    timestamp: Date.now(),
-    expiresAt: Date.now() + 60000,
-    sourceChain: 'solana',
-    destinationChain: 'solana',
-    destinationAddress: '11111111111111111111111111111111',
-    tokenMint: 'So11111111111111111111111111111111111111112',
-    amount: '1000000',
-    maxSlippageBps: 50,
-  };
-
-  const { publicKeyHex, signatureBundle, signerRecord } = createTestSignerAndSig(intent);
-  const signers = new Map([[publicKeyHex, signerRecord]]);
-  const seenNonces = new Set<number>([103]);
-
-  const result = authorizeIntent(intent, [signatureBundle], signers, 1, seenNonces);
-  assert.strictEqual(result.valid, false);
-  assert.strictEqual(result.reason, 'nonce replay');
+test('duplicate identity is rejected even when repeated signature differs', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  const result = authorizeIntent(intent, [a.bundle, { ...a.bundle, signature: '00'.repeat(64) }], registryOf(a), 1, NOW);
+  assert.equal(result.reason, 'duplicate signer submission');
 });
 
-test('revoked signer fails', () => {
-  const intent: TransactionIntent = {
-    idempotencyKey: 'idemp-004',
-    nonce: 104,
-    timestamp: Date.now(),
-    expiresAt: Date.now() + 60000,
-    sourceChain: 'solana',
-    destinationChain: 'solana',
-    destinationAddress: '11111111111111111111111111111111',
-    tokenMint: 'So11111111111111111111111111111111111111112',
-    amount: '1000000',
-    maxSlippageBps: 50,
-  };
-
-  const { publicKeyHex, signatureBundle, signerRecord } = createTestSignerAndSig(intent);
-  signerRecord.revoked = true;
-  const signers = new Map([[publicKeyHex, signerRecord]]);
-
-  const result = authorizeIntent(intent, [signatureBundle], signers, 1);
-  assert.strictEqual(result.valid, false);
-  assert.strictEqual(result.reason, 'unknown or revoked signer');
+test('valid plus revoked signer below threshold preserves exact failure reason', () => {
+  const intent = makeIntent(); const a = makeSigner(intent); const b = makeSigner(intent); b.record.revoked = true;
+  const result = authorizeIntent(intent, [a.bundle, b.bundle], registryOf(a, b), 2, NOW);
+  assert.equal(result.reason, 'unknown or revoked signer');
 });
-`);
-out.end();
+
+test('unknown or revoked extras do not invalidate an already satisfied quorum', () => {
+  const intent = makeIntent(); const a = makeSigner(intent); const b = makeSigner(intent); const c = makeSigner(intent);
+  c.record.revoked = true;
+  assert.equal(authorizeIntent(intent, [a.bundle, b.bundle, c.bundle], registryOf(a, b, c), 2, NOW).success, true);
+});
+
+test('invalid signatures and malformed encodings fail closed', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  assert.equal(authorizeIntent(intent, [{ ...a.bundle, signature: '00'.repeat(64) }], registryOf(a), 1, NOW).reason, 'invalid signature');
+  assert.equal(authorizeIntent(intent, [{ ...a.bundle, signature: 'xyz' }], registryOf(a), 1, NOW).reason, 'malformed signature bundle');
+});
+
+test('malformed keys and registry identity mismatches fail closed', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  assert.equal(authorizeIntent(intent, [{ ...a.bundle, signerPublicKey: 'abcd' }], registryOf(a), 1, NOW).success, false);
+  assert.equal(authorizeIntent(intent, [a.bundle], new Map([['abcd', a.record]]), 1, NOW).success, false);
+  assert.equal(authorizeIntent(intent, [a.bundle], new Map([[a.publicKey, { ...a.record, publicKey: 'abcd' }]]), 1, NOW).success, false);
+});
+
+test('registry records and signature bundles reject accessor properties', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  const badRecord = Object.defineProperty({ ...a.record }, 'revoked', { enumerable: true, get: () => false });
+  assert.equal(authorizeIntent(intent, [a.bundle], new Map([[a.publicKey, badRecord]]), 1, NOW).success, false);
+  const badBundle = Object.defineProperty({}, 'signerPublicKey', { enumerable: true, get: () => a.publicKey }) as SignatureBundle;
+  assert.equal(authorizeIntent(intent, [badBundle], registryOf(a), 1, NOW).success, false);
+});
+
+test('case-folded duplicate registry identities are rejected', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  const duplicate = new Map([[a.publicKey, a.record], [a.publicKey.toUpperCase(), a.record]]);
+  assert.equal(authorizeIntent(intent, [a.bundle], duplicate, 1, NOW).success, false);
+});
+
+test('thresholds must be positive safe integers within registered signer population', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  for (const threshold of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(authorizeIntent(intent, [a.bundle], registryOf(a), threshold, NOW).success, false);
+  }
+});
+
+test('missing, conflicting, non-finite and malformed expiration fail closed', () => {
+  const intent = makeIntent(); const a = makeSigner(intent); const signers = registryOf(a);
+  const missing = { nonce: 7, tokenMint: 'mint', amount: '10' } as TransactionIntent;
+  const malformed = { ...intent, expiry: Number.NaN };
+  const conflicting = { ...intent, expiresAt: NOW + 30_000 };
+  assert.equal(authorizeIntent(missing, [a.bundle], signers, 1, NOW).success, false);
+  assert.equal(authorizeIntent(malformed, [a.bundle], signers, 1, NOW).success, false);
+  assert.equal(authorizeIntent(conflicting, [a.bundle], signers, 1, NOW).success, false);
+});
+
+test('now equal to expiry is expired', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  assert.equal(authorizeIntent(intent, [a.bundle], registryOf(a), 1, NOW + 60_000).reason, 'intent expired');
+});
+
+test('canonicalization sorts keys and rejects unsupported values', () => {
+  assert.equal(canonicalizeIntent({ z: 1, a: 2 } as unknown as TransactionIntent), '{"a":2,"z":1}');
+  assert.throws(() => canonicalizeIntent({ ...makeIntent(), extra: undefined }));
+  assert.throws(() => canonicalizeIntent({ ...makeIntent(), extra: Number.NaN }));
+  assert.throws(() => canonicalizeIntent({ ...makeIntent(), extra: Infinity }));
+  assert.throws(() => canonicalizeIntent({ ...makeIntent(), extra: 1n }));
+  assert.throws(() => canonicalizeIntent({ ...makeIntent(), extra: new Date() }));
+  const circular: Record<string, unknown> = {}; circular.self = circular;
+  assert.throws(() => canonicalizeIntent(circular as TransactionIntent));
+  const accessor = Object.defineProperty({ ...makeIntent() }, 'danger', { enumerable: true, get: () => 'value' });
+  assert.throws(() => canonicalizeIntent(accessor));
+});
+
+test('authorization returns an immutable snapshot without mutating the caller intent', () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  const result = authorizeIntent(intent, [a.bundle], registryOf(a), 1, NOW);
+  assert.equal(result.success, true);
+  assert.notEqual(result.verifiedIntent, intent);
+  assert.equal(Object.isFrozen(result.verifiedIntent), true);
+  assert.equal(intent.expiry, NOW + 60_000);
+});
+
+test('SQLite nonce reservation is atomic across connections and durable across restart', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'event-horizon-nonce-'));
+  const filename = join(directory, 'reservations.sqlite');
+  const firstDb = new DatabaseSync(filename);
+  const secondDb = new DatabaseSync(filename);
+  try {
+    const first = new SqliteNonceReservationStore(firstDb, 'solana:wallet-A');
+    const second = new SqliteNonceReservationStore(secondDb, 'solana:wallet-A');
+    assert.equal(first.reserve(9, 'a'.repeat(64)), true);
+    assert.equal(second.reserve(9, 'b'.repeat(64)), false);
+    const otherScope = new SqliteNonceReservationStore(secondDb, 'solana:wallet-B');
+    assert.equal(otherScope.reserve(9, 'c'.repeat(64)), true);
+  } finally {
+    firstDb.close();
+    secondDb.close();
+  }
+  try {
+    const reopenedDb = new DatabaseSync(filename);
+    try {
+      const reopened = new SqliteNonceReservationStore(reopenedDb, 'solana:wallet-A');
+      assert.equal(reopened.reserve(9, 'd'.repeat(64)), false);
+    } finally {
+      reopenedDb.close();
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('execution reserves before executor and retains nonce after uncertain failure', async () => {
+  const intent = makeIntent(); const a = makeSigner(intent);
+  const db = new DatabaseSync(':memory:');
+  const store = new SqliteNonceReservationStore(db, 'test:wallet');
+  let calls = 0;
+  const result = await executeAuthorizedIntent(intent, [a.bundle], registryOf(a), 1, NOW, store, async () => {
+    calls++;
+    throw new Error('simulated uncertain outcome');
+  });
+  assert.equal(result.reason, 'execution failed; nonce remains consumed');
+  assert.equal(calls, 1);
+  const replay = await executeAuthorizedIntent(intent, [a.bundle], registryOf(a), 1, NOW, store, async () => {
+    calls++;
+    return 'must not run';
+  });
+  assert.equal(replay.reason, 'nonce replay');
+  assert.equal(calls, 1);
+  db.close();
+});

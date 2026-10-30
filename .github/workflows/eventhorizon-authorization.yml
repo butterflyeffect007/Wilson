@@ -1,0 +1,28 @@
+name: Event Horizon authorization security
+on:
+  push:
+    paths:
+      - "eventhorizonrouter/**"
+      - ".github/workflows/eventhorizon-authorization.yml"
+  pull_request:
+    paths:
+      - "eventhorizonrouter/**"
+      - ".github/workflows/eventhorizon-authorization.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  authorization-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install isolated TypeScript test tooling
+        run: npm install --no-save --package-lock=false tsx typescript @types/node
+      - name: Run adversarial authorization tests
+        run: npx tsx --test eventhorizonrouter/src/tests/authorization.test.ts
+      - name: Strict TypeScript compilation
+        run: npx tsc -p eventhorizonrouter/tsconfig.json --noEmit
