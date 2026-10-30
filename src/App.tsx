@@ -908,6 +908,17 @@ export default function App() {
                 <a href="https://butterflyeffect007.github.io/Wilson/subscribe.html" target="_blank" rel="noopener" className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]">Alerts</a>
               </div>
               <div className="px-3 pb-2">
+                <button
+                  type="button"
+                  onClick={() => { setSidebarOpen(false); setShowGematria(true); }}
+                  aria-label="Open Gematria Observatory"
+                  className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 border border-violet-200/70 bg-gradient-to-r from-fuchsia-500/10 via-violet-500/10 to-cyan-500/10 text-violet-800 text-[13px] font-medium"
+                >
+                  <Sparkles className="w-4 h-4 text-fuchsia-500" />
+                  Gematria Observatory
+                </button>
+              </div>
+              <div className="px-3 pb-2">
                 <button type="button" onClick={() => { setSidebarOpen(false); setFeedback({ type: "problem" }); }} className="w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]"><MessageSquareWarning className="w-4 h-4" />Send feedback to Jenny</button>
                 <div className="mt-2 flex gap-2">
                   <button type="button" onClick={() => { setSidebarOpen(false); setShowSettings(true); }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 bg-white/50 text-violet-800 text-[14px]"><SettingsIcon className="w-4 h-4" />Settings</button>
