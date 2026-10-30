@@ -1,11 +1,10 @@
 /**
  * Wilson's voice, in this order (per piece of a reply):
- * 1) Gemini Puck: Google's prebuilt "Puck" voice through the Wilson worker /tts/gemini-puck (key stays on the
- *    server; WAV; free tier, daily limit resets at midnight Pacific). Fast (~4x real time), so pieces play back to back.
- * 2) On-device Kokoro "Puck" (am_puck, puckVoice.ts) ONLY if its ~92 MB model is already saved on this device.
- *    Wilson never starts that download by itself (Settings → Voice has a button for it).
- * 3) Deepgram Aura-2 (arcas) via Cloudflare Workers AI through the worker /tts (MP3).
- * 4) If nothing works, Wilson stays text-only with a small note (never the phone's built-in voice).
+ * 1) On-device Kokoro (puckVoice.ts): free local synthesis with no daily usage quota once its model is downloaded.
+ *    It is preferred whenever the model is saved; it never starts the ~92 MB download without the user's action.
+ * 2) Gemini Puck through the Wilson worker /tts/gemini-puck (free tier, daily limit).
+ * 3) Deepgram Aura-2 (arcas) through the Wilson worker /tts (free tier, daily limit).
+ * 4) If every available engine fails, Wilson stays text-only with a clear status note.
  * Playback: ONE reused HTMLAudioElement (playsinline), unlocked by playing a silent clip inside the first tap.
  * HTMLAudioElement is not muted by the iPhone ringer switch the way Web Audio is, and avoids
  * AudioContext "suspended"/"interrupted" states in home-screen PWAs. Web Audio is only used for
@@ -522,25 +521,32 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     return splitForPuck(t, first).map((p) => { const pr = puckPiece(p); pr.catch(() => {}); return pr; });
   };
   const clip = async (t: string, first: boolean): Promise<Promise<Blob | null>[]> => {
-    // If the local model is already initialized, use it before network TTS. This avoids cloud timeout chains on repeat sessions.
-    let localFirstAttempted = false;
-    if (getPuckState() === "ready") {
-      localFirstAttempted = true;
-      try {
-        const local = await viaPuck(t, first);
-        if (local) { dbg("using ready on-device Puck first"); return local; }
-      } catch (e) { dbg("ready on-device Puck failed; trying network voice", e); }
+    // Local Kokoro is the primary engine. viaPuck checks whether its model is already
+    // stored on this device and starts it from cache; it never downloads the model.
+    try {
+      const local = await viaPuck(t, first);
+      if (local || my !== generation) {
+        if (local) dbg("using free on-device voice first");
+        return local ?? [];
+      }
+    } catch (e) {
+      dbg("on-device voice unavailable; trying cloud fallback", e);
+      if (my !== generation) return [];
     }
+
+    // Cloud voices are fallbacks only; their free tiers may have daily limits.
     if (geminiUsable()) {
       try {
         await slot(); inflight++;
-        try { const b = await fetchGemini(t, my); if (b || my !== generation) return [Promise.resolve(tag(b, "Gemini Puck"))]; }
-        finally { inflight--; waiters.shift()?.(); }
-      } catch (e) { dbg("Gemini Puck failed", e); if (my !== generation) return []; }
+        try {
+          const b = await fetchGemini(t, my);
+          if (b || my !== generation) return [Promise.resolve(tag(b, "Gemini Puck"))];
+        } finally { inflight--; waiters.shift()?.(); }
+      } catch (e) {
+        dbg("Gemini Puck fallback failed", e);
+        if (my !== generation) return [];
+      }
     }
-    // Use the backup SERVER voice before attempting the large on-device model.
-    // If Gemini returns 429 (daily quota) or is unavailable, the next piece
-    // should switch to arcas immediately rather than waiting for local Kokoro.
     if (!isVoiceResting() && !serverDown) {
       try {
         await slot(); inflight++;
@@ -550,12 +556,8 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
         } finally { inflight--; waiters.shift()?.(); }
       } catch (e) {
         if (my !== generation) return [];
-        dbg("backup server voice unavailable; trying on-device voice", e);
+        dbg("arcas fallback unavailable", e);
       }
-    }
-    if (!localFirstAttempted && (puckUsable() || puckOnDiskKnown() === true)) {
-      const parts = await viaPuck(t, first);
-      if (parts || my !== generation) return parts ?? [];
     }
     throw new Error("no voice available");
   };
@@ -627,10 +629,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     flush(final);
   };
 
-  if (!geminiUsable() && (isVoiceResting() || serverDown) && !puckUsable() && puckOnDiskKnown() !== true) {
-    setStatus(noVoiceStatus());
-    return { push: () => {}, finish: () => { end(); } };
-  }
+  // Let the local-first clip router probe the on-device cache before declaring voice unavailable.
   setPending(true);
   setActive(true);
   return {
