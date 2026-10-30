@@ -1544,17 +1544,18 @@ export default function App() {
                 ref={inputRef}
                 rows={1}
                 value={input}
-                onChange={(e) => { setInput(e.target.value); if (settings.voiceEnabled) warmVoice(); }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    stt.cancel();
-                    void sendMessage();
-                  }
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  if (settings.voiceEnabled) warmVoice();
+                  const field = e.currentTarget;
+                  field.style.height = "auto";
+                  field.style.height = Math.min(field.scrollHeight, Math.round(window.innerHeight * 0.32)) + "px";
+                  field.style.overflowY = field.scrollHeight > Math.round(window.innerHeight * 0.32) ? "auto" : "hidden";
                 }}
                 placeholder={stt.listening ? "Listening…" : "Type a message..."}
-                enterKeyHint="send"
-                className="flex-1 resize-none bg-transparent px-3 py-2.5 text-[16px] leading-6 text-violet-950 placeholder-violet-400/50 outline-none touch-manipulation"
+                enterKeyHint="enter"
+                aria-label="Message Wilson"
+                className="flex-1 resize-none overflow-y-hidden bg-transparent px-3 py-2.5 text-[16px] leading-6 text-violet-950 placeholder-violet-400/50 outline-none touch-manipulation"
               />
               <button
                 type="button"
