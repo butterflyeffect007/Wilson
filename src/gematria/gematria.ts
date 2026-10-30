@@ -131,7 +131,11 @@ export function findPhraseMatches(
   cipherId: CipherId,
   options: { limit?: number; excludeExactText?: boolean } = {},
 ): PhraseMatch[] {
-  const limit = Math.max(0, Math.min(500, Math.floor(options.limit ?? 50)));
+  // By default, compare against the entire supplied phrase library.
+  // A caller may still request an explicit non-negative limit.
+  const limit = options.limit === undefined
+    ? Number.POSITIVE_INFINITY
+    : Math.max(0, Math.floor(options.limit));
   if (limit === 0) return [];
 
   const targetResult = calculateCipher(target, cipherId);
