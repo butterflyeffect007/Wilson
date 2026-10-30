@@ -5,7 +5,7 @@ import { isVoiceResting, getVoicePlaying, subscribeVoicePlaying, geminiRestingUn
 const PROXY = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev");
 type GStatus = { ok: boolean; used?: Record<string, number>; caps?: Record<string, number>; available?: boolean; resets?: number };
 
-/** Settings → Voice: which voice is speaking, plus plain-words status of each voice in Wilson's order. */
+/** Settings → Voice: which voice is speaking, plus plain-words status of the local-first voice order. */
 export default function PuckStatus() {
   const [, tick] = useState(0);
   const [g, setG] = useState<GStatus | null>(null);
@@ -42,12 +42,12 @@ export default function PuckStatus() {
   return (
     <div className="space-y-0.5 text-[11px] text-violet-700/80">
       <p data-testid="voice-now"><b>Now speaking:</b> {v.now ? v.now : "nothing"}{v.last ? ` · last voice: ${v.last}${v.lastAt ? ` (${time(v.lastAt)})` : ""}` : ""}</p>
-      <p><b>1. Gemini Puck (main):</b> {gLine}</p>
-      <p><b>2. Free voice on this device:</b> {pLine}</p>
+      <p><b>1. Free on-device voice (no daily limit):</b> {pLine}</p>
+      <p><b>2. Gemini Puck (limited free fallback):</b> {gLine}</p>
       {st === "ready" && puckStats.clips.length > 0 && (
         <p className="text-[10px] text-violet-500/80 break-all">Last sentences: {puckStats.clips.slice(-5).map((c) => `${(c.ms / 1000).toFixed(1)} s for ${c.secs} s of speech`).join(" · ")}.</p>
       )}
-      <p><b>3. arcas (backup):</b> {isVoiceResting() ? "resting until 7 PM Central (daily free limit)" : "available"}</p>
+      <p><b>3. arcas (limited free backup):</b> {isVoiceResting() ? "resting until 7 PM Central (daily free limit)" : "available"}</p>
       {fail && st !== "ready" && st !== "off" && (
         <p className="text-[10px] text-rose-500/80 break-all">Last on-device Puck problem ({time(fail.at)}): {fail.plain}. Step: {fail.stage}. Details: {fail.error}. Phone: {fail.device}.</p>
       )}
