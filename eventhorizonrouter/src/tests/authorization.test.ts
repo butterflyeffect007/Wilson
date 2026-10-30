@@ -99,7 +99,7 @@ test('now equal to expiry is expired', () => {
 });
 
 test('canonicalization sorts keys and rejects unsupported values', () => {
-  assert.equal(canonicalizeIntent({ z: 1, a: 2 } as TransactionIntent), '{"a":2,"z":1}');
+  assert.equal(canonicalizeIntent({ z: 1, a: 2 } as unknown as TransactionIntent), '{"a":2,"z":1}');
   assert.throws(() => canonicalizeIntent({ ...makeIntent(), extra: undefined }));
   assert.throws(() => canonicalizeIntent({ ...makeIntent(), extra: Number.NaN }));
   assert.throws(() => canonicalizeIntent({ ...makeIntent(), extra: Infinity }));
