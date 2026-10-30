@@ -21,8 +21,8 @@ function makeSigner(intent: TransactionIntent) {
     record: { publicKey, revoked: false, weight: 1 } as SignerRecord,
   };
 }
-function registryOf(...signers: ReturnType<typeof makeSigner>[]) {
-  return new Map(signers.map((signer) => [signer.publicKey, signer.record]));
+function registryOf(...signers: ReturnType<typeof makeSigner>[]): Map<string, SignerRecord> {
+  return new Map<string, SignerRecord>(signers.map((signer) => [signer.publicKey, signer.record] as const));
 }
 
 test('distinct verified Ed25519 signers satisfy a threshold of two', () => {
@@ -76,7 +76,7 @@ test('case-folded duplicate registry identities are rejected', () => {
   assert.equal(authorizeIntent(intent, [a.bundle], duplicate, 1, NOW).success, false);
 });
 
-test('thresholds must be positive safe integers within active signer population', () => {
+test('thresholds must be positive safe integers within registered signer population', () => {
   const intent = makeIntent(); const a = makeSigner(intent);
   for (const threshold of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2, Number.MAX_SAFE_INTEGER + 1]) {
     assert.equal(authorizeIntent(intent, [a.bundle], registryOf(a), threshold, NOW).success, false);

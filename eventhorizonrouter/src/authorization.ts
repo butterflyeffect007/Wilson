@@ -16,22 +16,38 @@ function parseEd25519PublicKey(hex: string): crypto.KeyObject {
   return key;
 }
 
-function validateRegistry(input: AuthorizedSignerRegistry): Map<string, ValidatedSigner> {
-  if (!(input instanceof Map) && (!input || typeof input !== 'object' ||
-      (Object.getPrototypeOf(input) !== Object.prototype && Object.getPrototypeOf(input) !== null))) {
-    throw new TypeError('invalid signer registry');
+function assertPlainDataObject(value: object): void {
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) throw new TypeError('non-plain object');
+  if (Object.getOwnPropertySymbols(value).length) throw new TypeError('symbol properties are unsupported');
+  const names = Object.getOwnPropertyNames(value);
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  if (names.some((name) => !descriptors[name].enumerable || !('value' in descriptors[name]))) {
+    throw new TypeError('accessors and hidden properties are unsupported');
   }
-  const entries: [string, SignerRecord][] = input instanceof Map ? Array.from(input.entries()) : Object.entries(input);
+}
+
+function validateRegistry(input: AuthorizedSignerRegistry): Map<string, ValidatedSigner> {
+  if (input instanceof Map) {
+    if (Object.getPrototypeOf(input) !== Map.prototype || Reflect.ownKeys(input).length !== 0) {
+      throw new TypeError('invalid signer registry map');
+    }
+  } else {
+    if (!input || typeof input !== 'object') throw new TypeError('invalid signer registry');
+    assertPlainDataObject(input);
+  }
+  const entries: [string, SignerRecord][] = input instanceof Map
+    ? Array.from(input.entries())
+    : Object.entries(input);
   if (entries.length === 0) throw new TypeError('empty signer registry');
+
   const validated = new Map<string, ValidatedSigner>();
   for (const [registryId, candidate] of entries) {
     if (typeof registryId !== 'string') throw new TypeError('invalid registry identity');
     const id = registryId.toLowerCase();
     if (validated.has(id)) throw new TypeError('duplicate registry identity');
-    if (!candidate || typeof candidate !== 'object' ||
-        (Object.getPrototypeOf(candidate) !== Object.prototype && Object.getPrototypeOf(candidate) !== null)) {
-      throw new TypeError('invalid registry entry');
-    }
+    if (!candidate || typeof candidate !== 'object') throw new TypeError('invalid registry entry');
+    assertPlainDataObject(candidate);
     if (typeof candidate.publicKey !== 'string' || candidate.publicKey.toLowerCase() !== id ||
         typeof candidate.revoked !== 'boolean' || !Number.isSafeInteger(candidate.weight) || candidate.weight < 1) {
       throw new TypeError('invalid registry entry');
@@ -72,18 +88,17 @@ export function authorizeIntent(
       return failure('malformed intent expiration');
     }
     if (nowMs >= expiry) return failure('intent expired');
-    if (!Array.isArray(signatureBundles)) return failure('malformed signature bundles');
 
+    const bundleSnapshot = JSON.parse(canonicalizeIntent(signatureBundles as unknown as TransactionIntent)) as SignatureBundle[];
     const registry = validateRegistry(authorizedSigners);
-    const activeSignerCount = Array.from(registry.values()).filter((entry) => !entry.record.revoked).length;
-    if (!Number.isSafeInteger(threshold) || threshold < 1 || threshold > activeSignerCount) {
+    if (!Number.isSafeInteger(threshold) || threshold < 1 || threshold > registry.size) {
       return failure('invalid threshold');
     }
 
     const message = Buffer.from(canonical, 'utf8');
     const seen = new Set<string>();
     let sawUnknownOrRevoked = false;
-    for (const bundle of signatureBundles) {
+    for (const bundle of bundleSnapshot) {
       if (!bundle || typeof bundle !== 'object' || typeof bundle.signerPublicKey !== 'string' ||
           typeof bundle.signature !== 'string' || !/^(?:[0-9a-fA-F]{2})+$/.test(bundle.signature)) {
         return failure('malformed signature bundle', approvedSigners);
