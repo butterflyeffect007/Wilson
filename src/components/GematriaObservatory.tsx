@@ -81,15 +81,15 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
   }
 
   return (
-    <div className="fixed inset-0 z-[80] overflow-y-auto bg-[#18232d]/85 backdrop-blur-xl p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Wilson Gematria Observatory">
-      <section className="mx-auto my-2 w-full max-w-3xl overflow-hidden rounded-[2rem] border border-white/80 bg-gradient-to-br from-[#fffdf8] via-[#eefcff] to-[#fff0f5] shadow-[0_25px_100px_rgba(23,55,72,.35)] text-slate-900">
-        <header className="relative overflow-hidden border-b border-slate-300/90 px-5 py-5 sm:px-7">
+    <div className="fixed inset-0 z-[80] overflow-y-auto bg-[#101827]/95 p-2 sm:p-5" role="dialog" aria-modal="true" aria-label="Wilson Gematria Observatory">
+      <section className="mx-auto my-2 w-full max-w-5xl overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-[0_25px_100px_rgba(23,55,72,.35)] text-slate-900">
+        <header className="relative overflow-hidden border-b-2 border-slate-300 bg-[#f4f7fb] px-4 py-5 sm:px-8">
           <div className="pointer-events-none absolute -right-12 -top-24 h-56 w-56 rounded-full bg-gradient-to-br from-[#ffe0c2]/75 via-[#b7f5f1]/65 to-[#cde5ff]/80 blur-3xl" />
           <div className="relative flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[.2em] text-slate-900">Wilson · Discovery Lab</p>
-              <h1 className="mt-1 text-2xl font-light tracking-tight sm:text-3xl">Gematria Observatory</h1>
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-900">Explore letter values, compare ciphers, and find phrases that share a number. Every match is calculated from the library shown here.</p>
+              <p className="text-sm font-bold uppercase tracking-[.16em] text-slate-950">Wilson · Discovery Lab</p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">Gematria Observatory</h1>
+              <p className="mt-2 max-w-2xl text-base leading-relaxed text-slate-800">Explore letter values, compare ciphers, and find phrases that share a number. Every match is calculated from the library shown here.</p>
             </div>
             <button type="button" onClick={onClose} className="rounded-full border border-slate-300 bg-white/95 px-3 py-2 text-sm text-slate-900 hover:bg-white" aria-label="Close Observatory">Close</button>
           </div>
@@ -112,8 +112,8 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
           <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-[#f0fcff] to-[#fff8f3] p-5 shadow-sm">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[.18em] text-slate-900">{result.label}</p>
-                <p className="mt-1 text-5xl font-light tracking-tight tabular-nums">{result.total ?? "—"}</p>
+                <p className="text-sm font-semibold uppercase tracking-[.14em] text-slate-800">{result.label}</p>
+                <p className="mt-1 text-6xl font-semibold tracking-tight tabular-nums text-slate-950">{result.total ?? "—"}</p>
               </div>
               <p className="max-w-xs text-right text-xs leading-relaxed text-slate-900">{CIPHERS.find((cipher) => cipher.id === cipherId)?.description}</p>
             </div>
@@ -122,57 +122,57 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
                 {result.letters.map((letter, index) => (
                   <span key={`${index}-${letter.character}`} className="inline-flex min-w-10 flex-col items-center rounded-xl border border-slate-300 bg-white px-2 py-1.5">
                     <span className="text-sm text-violet-950">{letter.character}</span>
-                    <span className="text-[10px] tabular-nums text-slate-900">{letter.value}</span>
+                    <span className="text-xs font-medium tabular-nums text-slate-800">{letter.value}</span>
                   </span>
                 ))}
               </div>
             )}
-            {result.total === null && <p className="mt-3 text-sm text-slate-900/70">No letters from this cipher were found in the phrase.</p>}
+            {result.total === null && <p className="mt-3 text-sm text-slate-700">No letters from this cipher were found in the phrase.</p>}
           </div>
 
           <section>
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
                 <h2 className="text-lg font-medium">Matching phrases</h2>
-                <p className="text-xs text-slate-900">Exact same total · {matches.length} found in your current library</p>
+                <p className="text-sm text-slate-800">Exact same total · {matches.length} found in your current library</p>
               </div>
             </div>
             {matches.length ? (
               <div className="grid gap-2 sm:grid-cols-2">
                 {matches.map((match) => (
-                  <button key={match.id} type="button" onClick={() => setPhrase(match.phrase)} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-300 bg-white/95 px-4 py-3 text-left transition hover:border-violet-300 hover:bg-white">
-                    <span><span className="block text-sm font-medium">{match.phrase}</span><span className="block text-[11px] text-slate-900/60">{match.source ?? match.category ?? "Phrase library"}</span></span>
+                  <button key={match.id} type="button" onClick={() => setPhrase(match.phrase)} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-300 bg-white px-4 py-4 text-left transition hover:border-violet-300 hover:bg-white">
+                    <span><span className="block text-sm font-medium">{match.phrase}</span><span className="block text-sm text-slate-700">{match.source ?? match.category ?? "Phrase library"}</span></span>
                     <span className="rounded-full bg-[#dff7f5] px-3 py-1 text-sm tabular-nums text-slate-900">{match.total}</span>
                   </button>
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white/90 px-4 py-5 text-sm text-slate-900">No exact matches yet. Add phrases below to grow your searchable library; Wilson will only report matches that calculate to the same total.</div>
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-900">No exact matches yet. Add phrases below to grow your searchable library; Wilson will only report matches that calculate to the same total.</div>
             )}
           </section>
 
-          <section className="rounded-3xl border border-slate-300 bg-white/85 p-4 sm:p-5">
+          <section className="rounded-3xl border border-slate-300 bg-[#f8fafc] p-4 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div><h2 className="text-lg font-medium">Your phrase library</h2><p className="text-xs text-slate-900">Saved locally in this browser. No external API required.</p></div>
-              <span className="rounded-full bg-[#dff7f5] px-3 py-1 text-xs text-slate-900">{library.length} phrases</span>
+              <div><h2 className="text-lg font-medium">Your phrase library</h2><p className="text-sm text-slate-800">Saved locally in this browser. No external API required.</p></div>
+              <span className="rounded-full bg-[#dff7f5] px-3 py-1 text-sm text-slate-800">{library.length} phrases</span>
             </div>
             <form className="mt-4 flex gap-2" onSubmit={(event) => { event.preventDefault(); addPhrase(); }}>
               <input value={newPhrase} onChange={(event) => setNewPhrase(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-400" placeholder="Add a word or phrase…" aria-label="New phrase" />
               <button type="submit" disabled={!newPhrase.trim()} className="rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-40">Add phrase</button>
             </form>
             <input value={search} onChange={(event) => setSearch(event.target.value)} className="mt-3 w-full rounded-xl border border-violet-200/70 bg-white/70 px-3 py-2 text-sm outline-none focus:border-violet-400" placeholder="Search saved phrases…" aria-label="Search phrase library" />
-            <div className="mt-3 max-h-80 space-y-1 overflow-y-auto">
+            <div className="mt-3 max-h-[28rem] space-y-1 overflow-y-auto rounded-xl border border-slate-300 bg-white p-2">
               {filteredLibrary.map((item) => (
                 <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 hover:bg-white/70">
                   <button type="button" onClick={() => setPhrase(item.phrase)} className="min-w-0 flex-1 truncate text-left text-sm">{item.phrase}</button>
-                  <span className="shrink-0 text-[10px] text-slate-900/70">{calculateCipher(item.phrase, cipherId).total ?? "—"}</span>
+                  <span className="shrink-0 text-[10px] text-slate-700">{calculateCipher(item.phrase, cipherId).total ?? "—"}</span>
                   {!item.id.startsWith("starter-") && <button type="button" onClick={() => removePhrase(item.id)} className="shrink-0 px-1 text-xs text-rose-500" aria-label={`Remove ${item.phrase}`}>Remove</button>}
                 </div>
               ))}
-              {!filteredLibrary.length && <p className="px-3 py-4 text-sm text-slate-900/70">No phrases match that search.</p>}
+              {!filteredLibrary.length && <p className="px-3 py-4 text-sm text-slate-700">No phrases match that search.</p>}
             </div>
           </section>
-          <p className="text-[11px] leading-relaxed text-slate-900">Calculation note: English and Hebrew ciphers are kept separate. Hebrew “final-letter large values” is explicitly labeled; it is not the same as standard Hebrew values. The built-in phrase set is only a starter library, not an exhaustive internet-wide search.</p>
+          <p className="text-sm leading-relaxed text-slate-800">Calculation note: English and Hebrew ciphers are kept separate. Hebrew “final-letter large values” is explicitly labeled; it is not the same as standard Hebrew values. The built-in phrase set is only a starter library, not an exhaustive internet-wide search.</p>
         </div>
       </section>
     </div>
