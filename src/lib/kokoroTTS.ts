@@ -10,7 +10,7 @@
  * AudioContext "suspended"/"interrupted" states in home-screen PWAs. Web Audio is only used for
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
  */
-import { attachAudio, detachAudio, setSpeakingFlag } from "./audioBus";
+import { attachAudio, detachAudio, setSpeakingFlag, unlockAudioContext } from "./audioBus";
 import { ensurePuck, getPuckFail, getPuckState, puckBlockedReason, puckCancel, puckOnDisk, puckOnDiskKnown, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
 
 /** Start on-device Puck in an idle moment, but only if its model is already saved here (never the 92 MB download). */
@@ -94,6 +94,9 @@ export function subscribeVoiceStatus(l: (s: VoiceStatus) => void) { statusListen
  * audio element so iOS lets that element play later (after async fetches) without another tap.
  */
 export function primePlayback(): void {
+  // Create/resume Web Audio synchronously during the tap, before async TTS fetches.
+  // Otherwise Chrome/Samsung browsers can leave the later MediaElementSource silent.
+  void unlockAudioContext();
   if (unlocked) return;
   const a = audioEl();
   try {
