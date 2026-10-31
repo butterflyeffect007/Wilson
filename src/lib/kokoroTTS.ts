@@ -224,7 +224,7 @@ export function toSpeakable(text: string): string {
   // Drop leading stage directions the model sometimes emits despite the system prompt
   s = s.replace(/^(?:say\s+)?in\s+a\s+(?:warm|relaxed|friendly|calm|gentle|steady|soft|bright|excited|neutral)(?:\s*,?\s*(?:warm|relaxed|friendly|calm|gentle|steady|soft|bright|excited|neutral))*\s+(?:voice|tone|way)\s*[,.:;\-–—]*\s*/i, "");
   s = s.replace(/^(?:\*\s*)?(?:in\s+a\s+)?(?:warm|relaxed|friendly|calm|gentle)\s+(?:voice|tone)\s*\*?\s*[,.:;\-–—]*\s*/i, "");
-  return s.trim().slice(0, 1500);
+  return s.trim();
 }
 
 /* ---------------- streaming voice (continuous chunking) ---------------- */
@@ -515,11 +515,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     for (let i = 0; i < 2 && my === generation; i++) {
       if (!(await puckReady())) return null;
       const t0 = Date.now();
-      let voice = "am_fenrir";
-      try {
-        const saved = JSON.parse(localStorage.getItem("wilson_settings_v1") || "{}");
-        if (["am_puck", "am_michael", "am_fenrir"].includes(saved.kokoroVoice)) voice = saved.kokoroVoice;
-      } catch { /* keep the default voice */ }
+      const voice = "am_michael";
       const b = await puckSynth(t, speed, my, voice);
       if (my !== generation) return null;
       if (b) { dbg(`puck ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`); return tag(b, "Puck (on this phone)"); }

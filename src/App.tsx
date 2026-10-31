@@ -1268,19 +1268,6 @@ export default function App() {
                     ))}
                   </div>
                 )}
-                <label className="block text-[12px] text-violet-800/80">
-                  <span className="block mb-1">Free on-device voice</span>
-                  <select
-                    value={["am_puck", "am_michael", "am_fenrir"].includes(settings.kokoroVoice || "") ? settings.kokoroVoice : "am_fenrir"}
-                    onChange={(e) => setSettings((s) => ({ ...s, kokoroVoice: e.target.value as WilsonSettings["kokoroVoice"] }))}
-                    className="w-full rounded-xl px-3 py-2 bg-white/70 border border-violet-200/60 text-violet-950"
-                  >
-                    <option value="am_fenrir">Fenrir — distinctive masculine (default)</option>
-                    <option value="am_michael">Michael — clear masculine</option>
-                    
-                  </select>
-                  <span className="block mt-1 text-[10px] text-violet-500/80">Voice Test auditions the selected voice when the free on-device engine is ready. First download is about 92 MB.</span>
-                </label>
                 <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
                   <input
                     type="checkbox"

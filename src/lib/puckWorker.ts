@@ -19,7 +19,7 @@ import { KokoroTTS } from "kokoro-js";
 import { configureOrt } from "./ortSetup";
 
 const MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
-const VOICE = "am_puck";
+const VOICE = "am_michael";
 
 type Job = { id: number; gen: number; text: string; speed: number; voice?: string };
 let tts: KokoroTTS | null = null;
@@ -103,7 +103,7 @@ async function pump() {
         await load(safeMode);
         post({ type: "start", id: job.id }); // the controller times each sentence from here, not from when it was queued
         const t0 = performance.now();
-        const allowedVoices = ["am_puck", "am_michael", "am_fenrir", "af_heart"] as const;
+        const allowedVoices = ["am_michael"] as const;
         const voice = allowedVoices.find((candidate) => candidate === job.voice) ?? VOICE;
         const audio = await tts!.generate(job.text, { voice, speed: job.speed });
         const wav = wav16(audio.audio as Float32Array, audio.sampling_rate);
