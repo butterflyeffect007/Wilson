@@ -68,7 +68,7 @@ const DEFAULT_RELATIONSHIP: RelationshipSeed = {
 
 export const DEFAULT_SETTINGS: WilsonSettings = {
   voiceEnabled: true,
-  kokoroVoice: "am_puck",
+  kokoroVoice: "am_michael",
   displayName: "",
   voiceRecognition: true,
   emotionDetection: true,
