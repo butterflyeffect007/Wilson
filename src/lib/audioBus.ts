@@ -96,7 +96,17 @@ export function attachAudio(audio: HTMLAudioElement): void {
   }
 
   if (ctx.state === "suspended") {
-    ctx.resume().catch(() => {});
+    // Resume was requested, but browsers may defer it until a user gesture.
+    // Never route media through a suspended context: that can make valid audio silent.
+    void ctx.resume().catch(() => {});
+    if (ctx.state !== "running") {
+      speaking = true;
+      emit();
+      const handleEnd = () => detachAudio(audio);
+      audio.addEventListener("ended", handleEnd, { once: true });
+      audio.addEventListener("error", handleEnd, { once: true });
+      return; // Keep the HTMLAudioElement's direct output audible.
+    }
   }
 
   try {
