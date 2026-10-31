@@ -151,12 +151,21 @@ function playBlob(blob: Blob, my: number): Promise<void> {
       if (finishCurrentClip === done) finishCurrentClip = null;
       resolve();
     };
-    const onErr = () => { dbg("audio element error", a.error ? { name: "MediaError", message: `code ${a.error.code} ${a.error.message ?? ""}` } : "unknown"); done(); };
+    const onErr = () => {
+      const detail = a.error ? `MediaError code ${a.error.code} ${a.error.message ?? ""}` : "unknown media error";
+      dbg("audio element error", detail);
+      setStatus({ state: "unavailable", reason: `Audio playback failed: ${detail}` });
+      done();
+    };
     // iOS may interrupt playback temporarily. Give the same clip several bounded resume attempts
     // instead of abandoning it after two pauses, which can make Wilson skip words mid-answer.
     const resumeAfterPause = () => {
       if (settled || my !== generation || a.ended || !a.paused) return;
-      if (resumeAttempts >= 5) { dbg("audio resume retries exhausted"); done(); return; }
+      if (resumeAttempts >= 5) {
+        dbg("audio resume retries exhausted");
+        setStatus({ state: "unavailable", reason: "Audio playback kept getting interrupted; resume retries exhausted." });
+        done(); return;
+      }
       const delay = Math.min(2000, 250 * (2 ** resumeAttempts++));
       setTimeout(() => {
         if (settled || my !== generation || a.ended || !a.paused) return;
@@ -191,6 +200,7 @@ function playBlob(blob: Blob, my: number): Promise<void> {
           setTimeout(tryPlay, Math.min(1600, 300 * (2 ** (playAttempts - 1))));
         } else if (!settled) {
           dbg("play retries exhausted");
+          setStatus({ state: "unavailable", reason: `Browser rejected audio playback: ${errText(e)}` });
           done();
         }
       });
