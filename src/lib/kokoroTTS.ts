@@ -232,7 +232,7 @@ function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListe
 export function subscribeVoicePending(l: (p: boolean) => void) { pendingListeners.add(l); return () => { pendingListeners.delete(l); }; }
 
 /** Typing / opening: start getting Puck ready in the background (Workers AI itself needs no warm-up). */
-export function warmVoice(): void { /* cloud voice endpoints require no local model warm-up */ }
+export function warmVoice(): void { schedulePuck(); }
 
 // Once Puck is ready, the Aura daily limit no longer silences Wilson.
 subscribePuck(() => {
@@ -463,7 +463,7 @@ export type SpeechStream = { push: (textSoFar: string) => void; finish: (finalTe
 
 /**
  * Start speaking a reply while it is still streaming. Call push() with the full displayed text so far,
- * then finish() with the final text. server voice only: if it never answers, Wilson stays silent (no device voice).
+ * then finish() with the final text. Prefer downloaded on-device Kokoro; use limited cloud voices only as fallbacks.
  */
 export type StreamHooks = { onStart?: () => void; onEnd?: () => void };
 let endCurrent: (() => void) | null = null;
@@ -484,12 +484,12 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   const slot = () => inflight < MAX_PARALLEL ? Promise.resolve() : new Promise<void>((r) => waiters.push(r));
   /*
    * Which voice speaks each piece:
-   *  1. Gemini Puck (online, fast) unless it's resting (daily/minute limit) or offline.
-   *  2. On-device Kokoro Puck, only if its model is already saved on this device.
-   *  3. arcas (Aura-2, online) unless it's resting.
+   *  1. On-device Kokoro Puck (downloaded locally; no daily cloud quota).
+   *  2. Gemini Puck (limited cloud fallback).
+   *  3. arcas / Aura-2 (secondary limited cloud fallback).
    *  4. Nothing works: skip the piece and show a small note (later pieces still get their chance).
    */
-  dbg(`voice order: ${geminiUsable() ? "Gemini Fenrir (male)" : "Gemini resting"} → Aura-2 Orion (male backup)`);
+  dbg(`voice order: downloaded Kokoro first${geminiUsable() ? " → Gemini Puck fallback" : " → Gemini resting"} → Aura-2 Orion fallback`);
   /** On-device Puck ready (waiting briefly if it's loading from storage)? */
   const puckReady = async (): Promise<boolean> => {
     if (getPuckState() === "ready") return true;
@@ -520,10 +520,22 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     return splitForPuck(t, first).map((p) => { const pr = puckPiece(p); pr.catch(() => {}); return pr; });
   };
   const clip = async (t: string, first: boolean): Promise<Promise<Blob | null>[]> => {
-    // Kokoro/on-device Puck is intentionally disabled: Wilson must use male cloud voices only.
-    // Gemini Fenrir is preferred; Deepgram Aura-2 Orion is the male backup.
     if (my !== generation) return [];
 
+    // PRIMARY: use the downloaded Kokoro model on this device. Never trigger its large download
+    // automatically; puckReady() only starts it when the model is already saved locally.
+    try {
+      const local = await viaPuck(t, first);
+      if (local && my === generation) {
+        dbg("using downloaded on-device Kokoro (unlimited local voice)");
+        return local;
+      }
+    } catch (e) {
+      dbg("on-device Kokoro unavailable; trying cloud fallback", e);
+      if (my !== generation) return [];
+    }
+
+    // FALLBACK 1: Gemini Puck (limited cloud voice).
     if (geminiUsable()) {
       try {
         await slot(); inflight++;
