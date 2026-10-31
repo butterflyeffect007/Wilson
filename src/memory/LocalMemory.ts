@@ -34,7 +34,7 @@ export interface Profile {
 export interface WilsonSettings {
   voiceEnabled: boolean;
   /** Free on-device Kokoro voice; kept local to this browser. */
-  kokoroVoice?: "am_puck" | "am_michael" | "am_fenrir" | "af_heart";
+  kokoroVoice?: "am_michael";
   displayName: string;
   voiceRecognition: boolean;
   emotionDetection: boolean;
