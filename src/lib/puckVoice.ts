@@ -257,7 +257,7 @@ export function puckSynth(text: string, speed: number, gen: number, voice = "am_
   if (!worker || state !== "ready") return Promise.resolve(null);
   const id = nextId++;
   const allowed = new Set(["am_michael"]);
-  const selectedVoice = allowed.has(voice) ? voice : "am_fenrir";
+  const selectedVoice = allowed.has(voice) ? voice : "am_michael";
   return new Promise((resolve) => {
     if (!waiting.size) lastMsgAt = Date.now();
     waiting.set(id, { resolve, text, startedAt: 0, queuedAt: Date.now() });
