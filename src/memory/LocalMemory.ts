@@ -67,7 +67,7 @@ const DEFAULT_RELATIONSHIP: RelationshipSeed = {
 };
 
 export const DEFAULT_SETTINGS: WilsonSettings = {
-  voiceEnabled: false,
+  voiceEnabled: true,
   kokoroVoice: "am_puck",
   displayName: "",
   voiceRecognition: true,
@@ -182,8 +182,14 @@ export function saveProfile(patch: Partial<Profile>): Profile {
 /* ---------- settings ---------- */
 
 export function loadSettings(): WilsonSettings {
-  const saved = safeGet<Partial<WilsonSettings> & { autoSpeakV2?: boolean }>(SETTINGS_KEY) ?? {};
-  if (!saved.autoSpeakV2) { saved.voiceEnabled = false; saved.autoSpeakV2 = true; safeSet(SETTINGS_KEY, { ...DEFAULT_SETTINGS, ...saved }); }
+  const saved = safeGet<Partial<WilsonSettings> & { autoSpeakV3?: boolean }>(SETTINGS_KEY) ?? {};
+  // Enable spoken replies once for existing installations. After this migration,
+  // the user's explicit Voice on/off choice is preserved across reloads.
+  if (!saved.autoSpeakV3) {
+    saved.voiceEnabled = true;
+    saved.autoSpeakV3 = true;
+    safeSet(SETTINGS_KEY, { ...DEFAULT_SETTINGS, ...saved });
+  }
   return { ...DEFAULT_SETTINGS, ...saved };
 }
 export function saveSettings(s: WilsonSettings): void {
