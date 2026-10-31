@@ -502,10 +502,10 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     for (let i = 0; i < 2 && my === generation; i++) {
       if (!(await puckReady())) return null;
       const t0 = Date.now();
-      let voice = "am_puck";
+      let voice = "am_fenrir";
       try {
         const saved = JSON.parse(localStorage.getItem("wilson_settings_v1") || "{}");
-        if (["am_puck", "am_michael", "am_fenrir", "af_heart"].includes(saved.kokoroVoice)) voice = saved.kokoroVoice;
+        if (["am_puck", "am_michael", "am_fenrir"].includes(saved.kokoroVoice)) voice = saved.kokoroVoice;
       } catch { /* keep the default voice */ }
       const b = await puckSynth(t, speed, my, voice);
       if (my !== generation) return null;
