@@ -224,7 +224,7 @@ const pieceTarget = (idx: number) => (idx <= 1 ? 160 : 420);
 const PIECE_MAX = 450;
 const CLIP_TIMEOUT_MS = 20000;
 /** How long a reply waits for Puck to finish downloading (~92 MB) when the server voice can't help. */
-const PUCK_WAIT_MS = 30000; // only used when the model is already saved on this device (loading from storage)
+const PUCK_WAIT_MS = 1500; // never let a cold local-worker start delay the cloud voice fallback
 let pending = false;
 const pendingListeners = new Set<(p: boolean) => void>();
 function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListeners.forEach((l) => l(p)); } }
