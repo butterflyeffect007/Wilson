@@ -253,11 +253,11 @@ export function waitForPuck(timeoutMs: number): Promise<boolean> {
 }
 
 /** Synthesize one sentence with Puck. Resolves to a WAV blob, or null on any failure / cancel. */
-export function puckSynth(text: string, speed: number, gen: number, voice = "am_puck"): Promise<Blob | null> {
+export function puckSynth(text: string, speed: number, gen: number, voice = "am_fenrir"): Promise<Blob | null> {
   if (!worker || state !== "ready") return Promise.resolve(null);
   const id = nextId++;
-  const allowed = new Set(["am_puck", "am_michael", "am_fenrir", "af_heart"]);
-  const selectedVoice = allowed.has(voice) ? voice : "am_puck";
+  const allowed = new Set(["am_puck", "am_michael", "am_fenrir"]);
+  const selectedVoice = allowed.has(voice) ? voice : "am_fenrir";
   return new Promise((resolve) => {
     if (!waiting.size) lastMsgAt = Date.now();
     waiting.set(id, { resolve, text, startedAt: 0, queuedAt: Date.now() });
