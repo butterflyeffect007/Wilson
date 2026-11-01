@@ -3,8 +3,10 @@
  * 1) On-device Kokoro (puckVoice.ts): free local synthesis with no daily usage quota once its model is downloaded.
  *    It is preferred whenever the model is saved; it never starts the ~92 MB download without the user's action.
  * 2) Gemini Puck through the Wilson worker /tts/gemini-puck (free tier, daily limit).
- * 3) Deepgram Aura-2 (arcas) through the Wilson worker /tts (free tier, daily limit).
- * 4) If every available engine fails, Wilson stays text-only with a clear status note.
+ * 3) Edge Andrew (en-US-AndrewMultilingualNeural, Microsoft neural voice) through the Wilson worker
+ *    /tts/edge: free with NO daily cap, so it is the reliable server voice when Gemini is resting.
+ * 4) Deepgram Aura-2 (arcas) through the Wilson worker /tts (free tier, daily limit).
+ * 5) If every available engine fails, Wilson stays text-only with a clear status note (never a browser voice).
  * Playback: ONE reused HTMLAudioElement (playsinline), unlocked by playing a silent clip inside the first tap.
  * HTMLAudioElement is not muted by the iPhone ringer switch the way Web Audio is, and avoids
  * AudioContext "suspended"/"interrupted" states in home-screen PWAs. Web Audio is only used for
@@ -29,7 +31,7 @@ function puckUsable(): boolean {
 }
 
 /* ---- which voice is speaking (shown in Settings → Voice test) ---- */
-export type VoiceName = "Gemini Puck" | "Puck (on this phone)" | "arcas" | "";
+export type VoiceName = "Gemini Puck" | "Puck (on this phone)" | "Edge Andrew" | "arcas" | "";
 export type VoicePlaying = { now: VoiceName; last: VoiceName; lastAt: number };
 let playingVoice: VoicePlaying = (() => { try { const r = localStorage.getItem("wilson-voice-last"); if (r) return { now: "", ...JSON.parse(r) } as VoicePlaying; } catch { /* ignore */ } return { now: "", last: "", lastAt: 0 }; })();
 const playingListeners = new Set<(v: VoicePlaying) => void>();
@@ -47,6 +49,9 @@ const SPEED = 1.1;
 const PROXY = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev");
 const SERVER_TTS_URL = PROXY + "/tts";
 const GEMINI_TTS_URL = PROXY + "/tts/gemini-puck";
+const EDGE_TTS_URL = PROXY + "/tts/edge";
+/** Closest uncapped match to Puck: young, quick, natural, conversational male (Microsoft's Copilot-style voice). */
+const EDGE_VOICE = "en-US-AndrewMultilingualNeural";
 const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/84TAAAAAAAAAAAAASW5mbwAAAA8AAAAFAAACoABtbW1tbW1tbW1tbW1tbW1tbW1tkpKSkpKSkpKSkpKSkpKSkpKSkpK2tra2tra2tra2tra2tra2tra2ttvb29vb29vb29vb29vb29vb29vb//////////////////////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJARQAAAAAAAAAqC9P8vrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80TEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEUwAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEpgAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=";
 let serverDown = false;
 
@@ -262,7 +267,8 @@ function noVoiceStatus(): Partial<VoiceStatus> {
   const g = geminiRestingUntil();
   const gWhy = g ? `Gemini Puck is resting until ${new Date(g).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Gemini Puck didn't answer";
   const pWhy = getPuckState() === "failed" ? `on-device Puck couldn't start${detail ? `: ${detail}` : ""}` : puckBlockedReason();
-  const why = [gWhy, pWhy, isVoiceResting() ? "arcas is resting (daily free limit)" : "arcas didn't answer"].filter(Boolean).join("; ");
+  const eWhy = edgeUsable() ? "Edge Andrew didn't answer" : "Edge Andrew is unreachable right now";
+  const why = [gWhy, pWhy, eWhy, isVoiceResting() ? "arcas is resting (daily free limit)" : "arcas didn't answer"].filter(Boolean).join("; ");
   return { state: g && isVoiceResting() ? "resting" : "unavailable", reason: why };
 }
 
@@ -370,6 +376,39 @@ async function fetchGemini(text: string, my: number): Promise<Blob | null> {
     if (!/resting|limit|busy/.test(String((e as Error)?.message))) { if (++gFails >= 3) { gFails = 0; geminiRest(Date.now() + 60000, false); } }
     throw e;
   } finally { clearTimeout(to); }
+}
+
+/* ---- Edge Andrew (free, no daily cap; worker /tts/edge) ---- */
+let edgeFails = 0, edgeSkipUntil = 0; // after 3 straight failures (endpoint down/offline) skip it for a minute
+function edgeUsable() { return Date.now() >= edgeSkipUntil; }
+const EDGE_TIMEOUT_MS = 20000; // Microsoft streams near real time: a short piece is 1-5 s, a long one up to ~12 s
+async function fetchEdge(text: string, my: number): Promise<Blob | null> {
+  const key = await clipKey("edge|" + EDGE_VOICE + "|" + text).catch(() => "");
+  if (key) { const hit = await cacheGet(key); if (hit) { dbg("Edge Andrew clip from device cache"); return hit; } }
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 2 && my === generation; attempt++) {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), EDGE_TIMEOUT_MS);
+    const t0 = Date.now();
+    try {
+      const res = await fetch(EDGE_TTS_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice: EDGE_VOICE }), signal: ctrl.signal });
+      if (res.status === 404) { edgeSkipUntil = Date.now() + 10 * 60000; throw new Error("Edge voice not on this worker yet (404)"); }
+      if (!res.ok) throw new Error("edge tts http " + res.status);
+      const blob = await res.blob();
+      if (blob.size < 500) throw new Error("edge tts empty audio");
+      edgeFails = 0;
+      dbg(`Edge Andrew ${(blob.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s (${res.headers.get("X-Voice-Cache") || "?"})`);
+      const out = new Blob([blob], { type: "audio/mpeg" });
+      if (key) void cachePut(key, out);
+      return my === generation ? out : null;
+    } catch (e) {
+      lastErr = e;
+      dbg("Edge Andrew request failed" + (attempt === 0 ? ", retrying" : ""), e);
+      if (/404/.test(String((e as Error)?.message))) break;
+    } finally { clearTimeout(to); }
+  }
+  if (++edgeFails >= 3) { edgeFails = 0; edgeSkipUntil = Date.now() + 60000; }
+  throw lastErr ?? new Error("Edge Andrew failed");
 }
 
 /** Fetch one clip (MP3 blob). One quick retry on a transient error. */
@@ -499,10 +538,11 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
    * Which voice speaks each piece:
    *  1. On-device Kokoro Puck (downloaded locally; no daily cloud quota).
    *  2. Gemini Puck (limited cloud fallback).
-   *  3. arcas / Aura-2 (secondary limited cloud fallback).
-   *  4. Nothing works: skip the piece and show a small note (later pieces still get their chance).
+   *  3. Edge Andrew (uncapped cloud voice; the reliable fallback whenever Gemini is resting or fails).
+   *  4. arcas / Aura-2 (secondary limited cloud fallback).
+   *  5. Nothing works: skip the piece and show a small note (later pieces still get their chance).
    */
-  dbg(`voice order: downloaded Kokoro first${geminiUsable() ? " → Gemini Puck fallback" : " → Gemini resting"} → Aura-2 Orion fallback`);
+  dbg(`voice order: downloaded Kokoro first${geminiUsable() ? " → Gemini Puck fallback" : " → Gemini resting"} → Edge Andrew (uncapped) → Aura-2 Orion fallback`);
   /** On-device Puck ready (waiting briefly if it's loading from storage)? */
   const puckReady = async (): Promise<boolean> => {
     if (getPuckState() === "ready") return true;
@@ -554,6 +594,28 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
         } finally { inflight--; waiters.shift()?.(); }
       } catch (e) {
         dbg("Gemini Puck fallback failed", e);
+        if (my !== generation) return [];
+      }
+    }
+    // FALLBACK 2: Edge Andrew (free, uncapped). Split into short pieces so the first words arrive fast;
+    // each piece is requested right away (at most 2 at a time) and played in order.
+    if (edgeUsable()) {
+      const pieces = splitForPuck(t, first);
+      let running = 0; const wait: (() => void)[] = [];
+      const run = async (p: string): Promise<Blob | null> => {
+        if (running >= 2) await new Promise<void>((r) => wait.push(r));
+        running++;
+        try { return tag(await fetchEdge(p, my), "Edge Andrew"); } finally { running--; wait.shift()?.(); }
+      };
+      try {
+        const firstClip = await run(pieces[0]);
+        if (my !== generation) return [];
+        if (firstClip) {
+          const rest = pieces.slice(1).map((p) => { const pr = run(p).catch((e) => { dbg("Edge Andrew piece failed", e); return null; }); return pr; });
+          return [Promise.resolve(firstClip), ...rest];
+        }
+      } catch (e) {
+        dbg("Edge Andrew fallback failed", e);
         if (my !== generation) return [];
       }
     }
