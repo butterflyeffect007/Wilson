@@ -32,8 +32,9 @@ export default function PuckStatus() {
     <div className="space-y-0.5 text-[11px] text-violet-700/80">
       <p data-testid="voice-now"><b>Now speaking:</b> {v.now ? v.now : "nothing"}{v.last ? ` · last voice: ${v.last}${v.lastAt ? ` (${time(v.lastAt)})` : ""}` : ""}</p>
       <p><b>Cloud voice 1. Gemini Fenrir:</b> male voice · fallback · {gLine}</p>
-      <p><b>2. Deepgram Aura-2 Orion:</b> male backup voice · {isVoiceResting() ? "daily free limit reached" : "fallback available"}</p>
-      <p className="text-[10px] text-violet-500/80">Speech routing prefers the on-device Puck model when it is already downloaded; otherwise it tries Gemini Fenrir and then Aura-2 Orion. Only male cloud voice profiles are requested.</p>
+      <p><b>2. Edge Andrew:</b> male voice · free, no daily limit · always-on fallback</p>
+      <p><b>3. Deepgram Aura-2 Orion:</b> male backup voice · {isVoiceResting() ? "daily free limit reached" : "fallback available"}</p>
+      <p className="text-[10px] text-violet-500/80">Speech routing prefers the on-device Puck model when it is already downloaded; otherwise it tries Gemini Fenrir, then the uncapped Edge Andrew voice, then Aura-2 Orion. Only male cloud voice profiles are requested.</p>
     </div>
   );
 }
