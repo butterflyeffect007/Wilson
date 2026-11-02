@@ -381,7 +381,7 @@ async function fetchGemini(text: string, my: number): Promise<Blob | null> {
 /* ---- Edge Andrew (free, no daily cap; worker /tts/edge) ---- */
 let edgeFails = 0, edgeSkipUntil = 0; // after 3 straight failures (endpoint down/offline) skip it for a minute
 function edgeUsable() { return Date.now() >= edgeSkipUntil; }
-const EDGE_TIMEOUT_MS = 8000; // Microsoft streams near real time: a short piece is 1-5 s, a long one up to ~12 s
+const EDGE_TIMEOUT_MS = 15000; // Microsoft streams near real time: a short piece is 1-5 s, a long one up to ~12 s
 async function fetchEdge(text: string, my: number): Promise<Blob | null> {
   const key = await clipKey("edge|" + EDGE_VOICE + "|" + text).catch(() => "");
   if (key) { const hit = await cacheGet(key); if (hit) { dbg("Edge Andrew clip from device cache"); return hit; } }
@@ -584,26 +584,20 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       if (my !== generation) return [];
     }
 
-    // FALLBACK 1: Edge Andrew (uncapped, preferred) (free, uncapped). Split into short pieces so the first words arrive fast;
-    // each piece is requested right away (at most 2 at a time) and played in order.
+    // FALLBACK 1: Edge Andrew (uncapped, preferred). Always queue every sub-piece.
+    // Don't abandon the whole message if the first sub-piece fails.
     if (edgeUsable()) {
       const pieces = splitForPuck(t, first);
-      let running = 0; const wait: (() => void)[] = [];
-      const run = async (p: string): Promise<Blob | null> => {
-        if (running >= 2) await new Promise<void>((r) => wait.push(r));
-        running++;
-        try { return tag(await fetchEdge(p, my), "Edge Andrew"); } finally { running--; wait.shift()?.(); }
-      };
-      try {
-        const firstClip = await run(pieces[0]);
-        if (my !== generation) return [];
-        if (firstClip) {
-          const rest = pieces.slice(1).map((p) => { const pr = run(p).catch((e) => { dbg("Edge Andrew piece failed", e); return null; }); return pr; });
-          return [Promise.resolve(firstClip), ...rest];
-        }
-      } catch (e) {
-        dbg("Edge Andrew fallback failed", e);
-        if (my !== generation) return [];
+      if (pieces.length) {
+        let running = 0; const wait: (() => void)[] = [];
+        const run = async (p: string): Promise<Blob | null> => {
+          if (running >= 2) await new Promise<void>((r) => wait.push(r));
+          running++;
+          try { return tag(await fetchEdge(p, my), "Edge Andrew"); } finally { running--; wait.shift()?.(); }
+        };
+        const all = pieces.map((p) => run(p).catch((e) => { dbg("Edge Andrew piece failed", e); return null; }));
+        // Return immediately so playback can start as soon as any piece is ready.
+        return all;
       }
     }
 
@@ -644,7 +638,8 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       for (let pi = 0; pi < parts.length && my === generation; pi++) {
         let buf: Blob | null = null;
         try { buf = await parts[pi]; } catch { /* ignore */ }
-        if (!buf || my !== generation) continue;
+        if (!buf) { dbg("skipped empty/failed clip"); continue; }
+        if (my !== generation) continue;
         // Start playback as soon as the first synthesized clip is ready.
         // Waiting for a second clip here added up to 6 seconds before Wilson spoke,
         // and the !played guard meant this wait only ever affected initial playback.
