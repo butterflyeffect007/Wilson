@@ -13,6 +13,7 @@
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
  */
 import { attachAudio, detachAudio, setSpeakingFlag, unlockAudioContext } from "./audioBus";
+import { primeScreenAwake } from "./screenAwake";
 import { ensurePuck, getPuckFail, getPuckState, puckBlockedReason, puckCancel, puckOnDisk, puckOnDiskKnown, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
 
 /** Start on-device Puck in an idle moment, but only if its model is already saved here (never the 92 MB download). */
@@ -102,6 +103,7 @@ export function primePlayback(): void {
   // Create/resume Web Audio synchronously during the tap, before async TTS fetches.
   // Otherwise Chrome/Samsung browsers can leave the later MediaElementSource silent.
   void unlockAudioContext();
+  primeScreenAwake(); // same tap lets the iOS Home Screen keep-awake fallback start later
   if (unlocked) return;
   const a = audioEl();
   try {
@@ -275,15 +277,21 @@ function noVoiceStatus(): Partial<VoiceStatus> {
 /* ---- client-side clip cache (IndexedDB) so replays don't spend the daily voice allowance ---- */
 const IDB_NAME = "wilson-voice", IDB_STORE = "clips";
 let idbP: Promise<IDBDatabase | null> | null = null;
+/** Resolve to `fallback` if `p` hasn't settled in `ms` (iOS can leave IndexedDB / Cache Storage calls pending forever). */
+export function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((res) => { const t = setTimeout(() => res(fallback), ms); p.then((v) => { clearTimeout(t); res(v); }, () => { clearTimeout(t); res(fallback); }); });
+}
+const IDB_WAIT_MS = 1500;
 function idb(): Promise<IDBDatabase | null> {
-  if (!idbP) idbP = new Promise((res) => {
+  if (!idbP) idbP = within(new Promise<IDBDatabase | null>((res) => {
     try {
       const r = indexedDB.open(IDB_NAME, 1);
       r.onupgradeneeded = () => r.result.createObjectStore(IDB_STORE);
       r.onsuccess = () => res(r.result);
       r.onerror = () => res(null);
+      r.onblocked = () => res(null);
     } catch { res(null); }
-  });
+  }), IDB_WAIT_MS, null).then((db) => { if (!db) dbg("voice clip cache unavailable (skipped)"); return db; });
   return idbP;
 }
 async function clipKey(text: string) {
@@ -292,13 +300,13 @@ async function clipKey(text: string) {
 }
 async function cacheGet(key: string): Promise<Blob | null> {
   const db = await idb(); if (!db) return null;
-  return new Promise((res) => {
+  return within(new Promise<Blob | null>((res) => {
     try {
       const q = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
       q.onsuccess = () => res(q.result ? new Blob([q.result as ArrayBuffer], { type: "audio/mpeg" }) : null);
       q.onerror = () => res(null);
     } catch { res(null); }
-  });
+  }), IDB_WAIT_MS, null);
 }
 async function cachePut(key: string, blob: Blob) {
   const db = await idb(); if (!db) return;
@@ -595,7 +603,16 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
           running++;
           try { return tag(await fetchEdge(p, my), "Edge Andrew"); } finally { running--; wait.shift()?.(); }
         };
-        const all = pieces.map((p) => run(p).catch((e) => { dbg("Edge Andrew piece failed", e); return null; }));
+        // If Edge Andrew can't voice a piece, that same piece falls back to Gemini Puck, then arcas,
+        // instead of being silently skipped (which left the reply mute with the status stuck on "idle").
+        const backup = async (p: string): Promise<Blob | null> => {
+          if (my !== generation) return null;
+          if (geminiUsable()) { try { const b = await fetchGemini(p, my); if (b) return tag(b, "Gemini Puck"); } catch (e) { dbg("Gemini Puck piece fallback failed", e); } }
+          if (my !== generation) return null;
+          if (!isVoiceResting() && !serverDown) { try { const b = await fetchClip(p, speed, my); if (b) return tag(b, "arcas"); } catch (e) { dbg("arcas piece fallback failed", e); } }
+          return null;
+        };
+        const all = pieces.map((p) => run(p).catch((e) => { dbg("Edge Andrew piece failed; trying backup voice", e); return backup(p); }));
         // Return immediately so playback can start as soon as any piece is ready.
         return all;
       }
@@ -658,7 +675,10 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     playing = false;
     if (playingVoice.now) setPlayingVoice("");
     if (my !== generation) return;
-    if (done && playIdx >= queue.length) { setPending(false); end(); }
+    if (done && playIdx >= queue.length) {
+      if (!played && spoken.length && status.state !== "preparing") { dbg("no voice clip could be made for this reply"); setStatus(noVoiceStatus()); }
+      setPending(false); end();
+    }
   };
 
   const dispatch = (text: string) => {

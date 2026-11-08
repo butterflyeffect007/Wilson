@@ -232,9 +232,13 @@ export function puckOnDisk(): Promise<boolean> {
   if (!onDiskP) onDiskP = (async () => {
     try {
       if (typeof caches === "undefined") return false;
-      const c = await caches.open("transformers-cache");
-      const keys = await c.keys();
-      return keys.some((r) => r.url.includes("Kokoro-82M") && /\.onnx(\?|$)/.test(r.url));
+      // Bounded: on some iPhones Cache Storage calls never settle, which used to stall every reply's voice.
+      const check = (async () => {
+        const c = await caches.open("transformers-cache");
+        const keys = await c.keys();
+        return keys.some((r) => r.url.includes("Kokoro-82M") && /\.onnx(\?|$)/.test(r.url));
+      })();
+      return await new Promise<boolean>((res) => { const t = setTimeout(() => res(false), 2000); check.then((v) => { clearTimeout(t); res(v); }, () => { clearTimeout(t); res(false); }); });
     } catch { return false; }
   })().then((v) => { onDisk = v || state === "ready"; emit(); return onDisk; });
   return onDiskP;

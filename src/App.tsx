@@ -51,6 +51,7 @@ import PuckStatus from "./components/PuckStatus";
 import { getPuckState, getPuckFail, getPuckStage, getPuckDevice } from "./lib/puckVoice";
 import { startSpeechStream, speakMessage, voiceTest, subscribeVoiceDebug, getVoiceDebug, type VoiceDebug, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus, isVoiceActive, subscribeVoiceActive } from "./lib/kokoroTTS";
 import { useSpeechToText } from "./hooks/useSpeechToText";
+import { startScreenAwake } from "./lib/screenAwake";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
 import { identify, loadProfiles, saveProfiles, renameProfile, mergeProfiles, splitLast, DEFAULT_THRESHOLD, type SpeakerProfile } from "./lib/speakerMatch";
 import { queryMemories, upsertMemory, listMemories, clearMemories, deleteMemory, summarizeExchange, type MemoryItem } from "./lib/longMemory";
@@ -258,6 +259,8 @@ export default function App() {
   useEffect(() => subscribeVoiceStatus(setVoiceStatus), []);
   const [voiceActive, setVoiceActive] = useState<boolean>(() => isVoiceActive());
   useEffect(() => subscribeVoiceActive(setVoiceActive), []);
+  // Keep the screen on while Wilson speaks or listens (Screen Wake Lock + iOS Home Screen fallback).
+  useEffect(() => startScreenAwake({ isActive: isVoiceActive, subscribe: subscribeVoiceActive }), []);
   const [voiceDebug, setVoiceDebug] = useState<VoiceDebug>(() => getVoiceDebug());
   useEffect(() => subscribeVoiceDebug(setVoiceDebug), []);
   /* Add-to-Home-Screen card: once, after Wilson's first reply (never before), hidden when installed. */
