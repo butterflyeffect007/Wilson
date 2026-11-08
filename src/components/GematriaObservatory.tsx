@@ -1,319 +1,148 @@
-import { useMemo, useState, type FormEvent } from "react";
-import skyTall from "../assets/observatory/sky-tall.webp";
-import skyWide from "../assets/observatory/sky-wide.webp";
-import crystalHero from "../assets/observatory/crystal-hero.webp";
+import { useEffect, useMemo, useRef, useState } from "react";
+import scene from "../assets/observatory/cloud-reference-scene.webp";
+import clouds from "../assets/observatory/cloud-reference-edge.webp";
 import "./GematriaObservatory.css";
-import {
-  calculateCipher,
-  CIPHERS,
-  findPhraseMatches,
-  type CipherId,
-  type PhraseEntry,
-} from "../gematria/gematria";
+import { calculateCipher, CIPHERS, findPhraseMatches, type CipherId, type PhraseEntry } from "../gematria/gematria";
 
 const STORAGE_KEY = "wilson_gematria_phrase_library_v1";
+const WATER_KEY = "wilson_observatory_water_memory_v1";
+const IMPORT_ENDPOINT = import.meta.env.VITE_GEMATRIX_ENDPOINT || "https://wilson-proxy.butterflyeffect007.workers.dev/gematrix";
 const STARTER_PHRASES: PhraseEntry[] = [
-  { id: "starter-hello", phrase: "HELLO", category: "Starter", source: "Built-in example" },
-  { id: "starter-well", phrase: "WELL", category: "Starter", source: "Built-in example" },
-  { id: "starter-love", phrase: "LOVE", category: "Starter", source: "Built-in example" },
-  { id: "starter-wilson", phrase: "WILSON", category: "Starter", source: "Built-in example" },
-  { id: "starter-the-only-one", phrase: "THE ONLY ONE", category: "Starter", source: "Built-in example" },
-  { id: "starter-imagination", phrase: "IMAGINATION", category: "Starter", source: "Built-in example" },
-  { id: "starter-intelligence", phrase: "INTELLIGENCE", category: "Starter", source: "Built-in example" },
+  ...["COSMIC PEACE", "HEART MIND", "INNER LIFE", "SACRED SELF", "THE KEY IS HIDDEN", "DIVINE LIGHT", "STAR OF DAVID", "COSMIC WISDOM", "HELLO", "WELL", "LOVE", "WILSON", "THE ONLY ONE", "IMAGINATION", "INTELLIGENCE"].map((phrase) => ({ id: "starter-" + phrase.toLowerCase().replace(/ /g, "-"), phrase, category: "Starter", source: "Built-in example" })),
 ];
-
 function loadPhraseLibrary(): PhraseEntry[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return STARTER_PHRASES;
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return STARTER_PHRASES;
-    const valid = parsed.filter((item): item is PhraseEntry =>
-      Boolean(item && typeof item.id === "string" && typeof item.phrase === "string"),
-    );
-    return [...STARTER_PHRASES, ...valid.filter((item) => !item.id.startsWith("starter-"))];
-  } catch {
-    return STARTER_PHRASES;
-  }
+    const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    if (!Array.isArray(saved)) return STARTER_PHRASES;
+    return [...STARTER_PHRASES, ...saved.filter((p): p is PhraseEntry => !!p && typeof p.id === "string" && typeof p.phrase === "string" && !p.id.startsWith("starter-"))];
+  } catch { return STARTER_PHRASES; }
 }
-
-async function fetchGematrixMatches(word: string): Promise<string[]> {
-  const url = `https://gematrix.org/?word=${encodeURIComponent(word)}`;
-  // Try direct, fall back to a CORS proxy if needed
-  const proxies = [
-    url,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  ];
-  for (const target of proxies) {
-    try {
-      const res = await fetch(target);
-      if (!res.ok) continue;
-      const html = await res.text();
-      const phrases = new Set<string>();
-      // Extract words from table links like <a href="/?word=...">word</a>
-      const re = /<a[^>]+href="\/?\?word=([^"]+)"[^>]*>([^<]+)<\/a>/gi;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(html))) {
-        const phrase = decodeURIComponent(m[2]).trim();
-        if (phrase && phrase.length > 1 && !/^\d+$/.test(phrase)) phrases.add(phrase);
-      }
-      if (phrases.size) return Array.from(phrases).slice(0, 80);
-    } catch { /* try next */ }
-  }
-  return [];
+interface WaterEntry { id: string; phrase: string; note: string; at: string }
+function loadWater(): WaterEntry[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(WATER_KEY) || "[]");
+    return Array.isArray(saved) ? saved.filter((p): p is WaterEntry => !!p && typeof p.id === "string" && typeof p.phrase === "string" && typeof p.note === "string" && typeof p.at === "string") : [];
+  } catch { return []; }
 }
-
-const PRIMARY_CIPHERS: { label: string; ids: CipherId[] }[] = [
-  { label: "English", ids: ["english-ordinal", "english-reverse-ordinal"] },
-  { label: "Reduction", ids: ["english-reduction", "english-reverse-reduction"] },
-  { label: "Hebrew", ids: ["hebrew-ordinal", "hebrew-final-large"] },
-];
+export async function fetchGematrixMatches(word: string, signal?: AbortSignal): Promise<string[]> {
+  const res = await fetch(`${IMPORT_ENDPOINT}?word=${encodeURIComponent(word)}`, { signal });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Could not import from gematrix.org.");
+  if (!Array.isArray(data.phrases)) throw new Error("The import returned an unreadable response.");
+  return [...new Set<string>(data.phrases.map((p: { phrase?: unknown }) => p?.phrase).filter((p: unknown): p is string => typeof p === "string" && p.trim().length > 0))];
+}
+const PRIMARY = [
+  { label: "English", id: "english-gematria" },
+  { label: "Simple", id: "english-ordinal" },
+  { label: "Hebrew", id: "hebrew-ordinal" },
+] as const;
 
 export default function GematriaObservatory({ onClose }: { onClose: () => void }) {
-  const [phraseDraft, setPhraseDraft] = useState("Wilson");
+  const [phraseDraft, setPhraseDraft] = useState("WILSON");
   const phrase = phraseDraft.trim().replace(/\s+/g, " ");
   const [cipherId, setCipherId] = useState<CipherId>("english-ordinal");
   const [tab, setTab] = useState<"matches" | "library">("matches");
   const [library, setLibrary] = useState<PhraseEntry[]>(loadPhraseLibrary);
   const [newPhrase, setNewPhrase] = useState("");
   const [search, setSearch] = useState("");
-  const [gematrixLoading, setGematrixLoading] = useState(false);
-  const [gematrixPhrases, setGematrixPhrases] = useState<string[]>([]);
-  const [gematrixError, setGematrixError] = useState("");
-
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [water, setWater] = useState(loadWater);
+  const [note, setNote] = useState("");
+  const [waterNotice, setWaterNotice] = useState("");
+  const request = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const result = useMemo(() => calculateCipher(phrase, cipherId), [phrase, cipherId]);
-  const matches = useMemo(
-    () => (phrase ? findPhraseMatches(phrase, library, cipherId, { excludeExactText: true }) : []),
-    [phrase, library, cipherId],
-  );
-  const filteredLibrary = useMemo(
-    () => library.filter((item) => item.phrase.toLocaleLowerCase().includes(search.toLocaleLowerCase())),
-    [library, search],
-  );
-  const cipherDef = CIPHERS.find((cipher) => cipher.id === cipherId);
-  const activeGroup = PRIMARY_CIPHERS.find((group) => group.ids.includes(cipherId)) ?? PRIMARY_CIPHERS[0];
-  const isReverseVariant = activeGroup.ids[1] === cipherId;
-  const total = result.total;
+  const matches = useMemo(() => phrase ? findPhraseMatches(phrase, library, cipherId, { excludeExactText: true }) : [], [phrase, library, cipherId]);
+  const filtered = useMemo(() => library.filter(p => p.phrase.toLowerCase().includes(search.toLowerCase())), [library, search]);
+  const totalText = result.total === null ? "—" : String(result.total);
 
+  useEffect(() => {
+    opener.current = document.activeElement as HTMLElement;
+    rootRef.current?.focus({ preventScroll: true });
+    return () => { request.current?.abort(); opener.current?.focus({ preventScroll: true }); };
+  }, []);
   function persist(next: PhraseEntry[]) {
     setLibrary(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next.filter((item) => !item.id.startsWith("starter-"))));
-    } catch { /* Keep the current session usable when storage is unavailable. */ }
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next.filter(p => !p.id.startsWith("starter-")))); }
+    catch { setError("Device storage is unavailable. Changes will last only for this session."); }
   }
-
-  function onPhraseChange(value: string) {
-    setPhraseDraft(value);
-    setGematrixPhrases([]);
-    setGematrixError("");
+  function changePhrase(value: string) {
+    request.current?.abort(); request.current = null;
+    setLoading(false); setError(""); setNotice(""); setPhraseDraft(value);
   }
-
-  function submitPhrase(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setPhraseDraft(phrase);
+  function chooseCipher(id: CipherId) {
+    request.current?.abort(); request.current = null;
+    setLoading(false); setError(""); setNotice(""); setCipherId(id);
   }
-
-  async function importFromGematrix() {
-    if (!phrase) return;
-    setGematrixLoading(true);
-    setGematrixError("");
-    try {
-      const found = await fetchGematrixMatches(phrase);
-      setGematrixPhrases(found);
-      if (!found.length) setGematrixError("No phrases returned from gematrix.org (or blocked).");
-    } catch {
-      setGematrixError("Could not reach gematrix.org");
-    } finally {
-      setGematrixLoading(false);
-    }
-  }
-
-  function addImportedPhrases() {
-    const existing = new Set(library.map((p) => p.phrase.toLocaleUpperCase()));
-    const toAdd: PhraseEntry[] = gematrixPhrases
-      .filter((p) => !existing.has(p.toLocaleUpperCase()))
-      .map((p) => ({
-        id: "gematrix-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6),
-        phrase: p,
-        category: "gematrix.org",
-        source: "Imported from gematrix.org",
-      }));
-    if (toAdd.length) persist([...library, ...toAdd]);
-    setGematrixPhrases([]);
-  }
-
-  function choosePhrase(value: string) {
-    onPhraseChange(value);
-  }
-
   function addPhrase() {
     const clean = newPhrase.trim().replace(/\s+/g, " ");
     if (!clean) return;
-    const key = clean.toLocaleUpperCase();
-    if (library.some((item) => item.phrase.toLocaleUpperCase() === key)) {
-      setNewPhrase("");
-      return;
-    }
-    persist([...library, {
-      id: "user-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7),
-      phrase: clean,
-      category: "My phrases",
-      source: "Added on this device",
-    }]);
+    if (!library.some(p => p.phrase.toUpperCase() === clean.toUpperCase())) persist([...library, { id: crypto.randomUUID(), phrase: clean, category: "My phrases", source: "Added on this device" }]);
     setNewPhrase("");
   }
-
-  function removePhrase(id: string) {
-    if (id.startsWith("starter-")) return;
-    persist(library.filter((item) => item.id !== id));
+  async function importPhrases() {
+    if (!phrase || loading) return;
+    request.current?.abort();
+    const controller = new AbortController(); request.current = controller;
+    const timeout = window.setTimeout(() => controller.abort("timeout"), 22000);
+    setLoading(true); setError(""); setNotice("");
+    try {
+      const found = await fetchGematrixMatches(phrase, controller.signal);
+      if (controller.signal.aborted) return;
+      const existing = new Set(library.map(p => p.phrase.toUpperCase()));
+      const entries = found.filter(p => !existing.has(p.toUpperCase())).map(p => ({ id: "gematrix-" + crypto.randomUUID(), phrase: p, category: "gematrix.org", source: "Imported from gematrix.org" }));
+      if (entries.length) persist([...entries, ...library]);
+      const exact = findPhraseMatches(phrase, [...library, ...entries], cipherId, { excludeExactText: true });
+      setNotice(`Imported ${entries.length} new phrases from gematrix.org. ${exact.length} exact matches in the selected cipher.`);
+      setTab("matches");
+    } catch (e) {
+      if (controller.signal.reason === "timeout") setError("The import timed out. Please try again.");
+      else if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Could not reach gematrix.org.");
+    } finally { window.clearTimeout(timeout); if (request.current === controller) { setLoading(false); request.current = null; } }
   }
-
-  const totalText = total === null ? "—" : String(total);
-  const totalSize = totalText.length >= 4 ? "obs-total--xs" : totalText.length === 3 ? "obs-total--sm" : "";
-
-  return (
-    <div
-      className="obs-root"
-      style={{ ["--obs-sky-tall" as string]: `url(${skyTall})`, ["--obs-sky-wide" as string]: `url(${skyWide})` }}
-      role="dialog"
-      aria-modal="true"
-      aria-label="Wilson Gematria Observatory"
-    >
-      <div className="obs-sky" aria-hidden="true" />
-      <div className="obs-stars" aria-hidden="true" />
-      <div className="obs-scroll">
-        <div className="obs-column">
-          <header className="obs-header">
-            <h1 className="obs-title">Gematria Observatory</h1>
-            <button type="button" onClick={onClose} className="obs-close" aria-label="Close Observatory">
-              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
-            </button>
-          </header>
-
-          <div className="obs-hero" aria-live="polite">
-            <div className="obs-hero-float">
-              <img src={crystalHero} alt="" className="obs-hero-img" draggable={false} />
-              <p className={"obs-total " + totalSize} aria-label={`${cipherDef?.label ?? "Total"}: ${totalText}`}>{totalText}</p>
-            </div>
-            <span className="obs-sparkle obs-sparkle--a" aria-hidden="true" />
-            <span className="obs-sparkle obs-sparkle--b" aria-hidden="true" />
-            <span className="obs-sparkle obs-sparkle--c" aria-hidden="true" />
-          </div>
-
-          <form onSubmit={submitPhrase} className="obs-input-wrap">
-            <input
-              value={phraseDraft}
-              onChange={(event) => onPhraseChange(event.target.value)}
-              className="obs-input"
-              placeholder="Type a word or phrase"
-              aria-label="Phrase or name to calculate"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <span className="obs-input-sheen" aria-hidden="true" />
-          </form>
-
-          <div className="obs-ciphers" role="radiogroup" aria-label="Cipher">
-            {PRIMARY_CIPHERS.map((group, index) => {
-              const active = group === activeGroup;
-              return (
-                <span key={group.label} className="obs-cipher-item">
-                  {index > 0 && <span className="obs-cipher-sep" aria-hidden="true">|</span>}
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setCipherId(active ? cipherId : group.ids[0])}
-                    className={"obs-cipher" + (active ? " is-active" : "")}
-                  >{group.label}</button>
-                </span>
-              );
-            })}
-          </div>
-          <div className="obs-cipher-meta">
-            <span>{cipherDef?.label}</span>
-            <button type="button" className="obs-variant" onClick={() => setCipherId(activeGroup.ids[isReverseVariant ? 0 : 1])}>
-              {activeGroup.label === "Hebrew" ? (isReverseVariant ? "Standard finals" : "Large finals") : (isReverseVariant ? "Forward" : "Reverse")}
-            </button>
-          </div>
-          {total === null && phrase && (
-            <p className="obs-hint">{cipherDef?.alphabet === "hebrew" ? "Type Hebrew letters (א–ת) to use a Hebrew cipher." : "No letters from this cipher were found."}</p>
-          )}
-
-          <div className="obs-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={tab === "matches"} className={"obs-tab" + (tab === "matches" ? " is-active" : "")} onClick={() => setTab("matches")}>Matches</button>
-            <button type="button" role="tab" aria-selected={tab === "library"} className={"obs-tab" + (tab === "library" ? " is-active" : "")} onClick={() => setTab("library")}>Library of Light</button>
-          </div>
-
-          <section className="obs-card" role="tabpanel">
-            {tab === "matches" ? (
-              <>
-                {matches.length ? (
-                  <ul className="obs-rows">
-                    {matches.map((match) => (
-                      <li key={match.id}>
-                        <button type="button" className="obs-row" onClick={() => choosePhrase(match.phrase)}>
-                          <span className="obs-row-phrase">{match.phrase}</span>
-                          <span className="obs-row-value">{match.total}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="obs-empty">
-                    {total === null ? "Type a phrase to find matches." : <>No phrases in your Library of Light equal <span className="obs-gold">{total}</span> yet.</>}
-                  </p>
-                )}
-                {gematrixPhrases.length > 0 && (
-                  <div className="obs-import">
-                    <div className="obs-import-head">
-                      <span>From gematrix.org · {gematrixPhrases.length}</span>
-                      <button type="button" className="obs-link" onClick={addImportedPhrases}>Add all to library</button>
-                    </div>
-                    <ul className="obs-rows obs-rows--compact">
-                      {gematrixPhrases.map((p) => (
-                        <li key={p}>
-                          <button type="button" className="obs-row" onClick={() => choosePhrase(p)}>
-                            <span className="obs-row-phrase">{p}</span>
-                            <span className="obs-row-value">{calculateCipher(p, cipherId).total ?? "—"}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                <button type="button" className="obs-more" onClick={importFromGematrix} disabled={gematrixLoading || !phrase}>
-                  {gematrixLoading ? "Searching gematrix.org…" : "Find more matches on gematrix.org"}
-                </button>
-                {gematrixError && <p className="obs-error">{gematrixError}</p>}
-              </>
-            ) : (
-              <>
-                <form className="obs-lib-add" onSubmit={(event) => { event.preventDefault(); addPhrase(); }}>
-                  <input value={newPhrase} onChange={(event) => setNewPhrase(event.target.value)} className="obs-field" placeholder="Add a word or phrase…" aria-label="New phrase" />
-                  <button type="submit" className="obs-add" disabled={!newPhrase.trim()}>Add</button>
-                </form>
-                <input value={search} onChange={(event) => setSearch(event.target.value)} className="obs-field obs-field--search" placeholder={`Search ${library.length} saved phrases…`} aria-label="Search saved phrases" />
-                <ul className="obs-rows obs-rows--library">
-                  {filteredLibrary.map((item) => (
-                    <li key={item.id} className="obs-lib-item">
-                      <button type="button" className="obs-row" onClick={() => choosePhrase(item.phrase)}>
-                        <span className="obs-row-phrase">{item.phrase}</span>
-                        <span className="obs-row-value">{calculateCipher(item.phrase, cipherId).total ?? "—"}</span>
-                      </button>
-                      {!item.id.startsWith("starter-") && (
-                        <button type="button" onClick={() => removePhrase(item.id)} className="obs-remove" aria-label={"Remove " + item.phrase}>×</button>
-                      )}
-                    </li>
-                  ))}
-                  {!filteredLibrary.length && <li className="obs-empty">No phrases match that search.</li>}
-                </ul>
-              </>
-            )}
-          </section>
-        </div>
-      </div>
-    </div>
-  );
+  function saveWater() {
+    if (!note.trim()) return;
+    const next = [{ id: crypto.randomUUID(), phrase, note: note.trim(), at: new Date().toISOString() }, ...water];
+    setWater(next); setNote("");
+    try { localStorage.setItem(WATER_KEY, JSON.stringify(next)); setWaterNotice("Reflection saved on this device."); }
+    catch { setWaterNotice("Saved for this session only; device storage is unavailable."); }
+  }
+  function trapKeys(event: React.KeyboardEvent) {
+    if (event.key === "Escape") { event.stopPropagation(); onClose(); }
+    if (event.key !== "Tab") return;
+    const nodes = [...(rootRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input, textarea, select, summary, a[href], [tabindex="0"]') || [])].filter(n => n.getClientRects().length);
+    const first = nodes[0], last = nodes[nodes.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  }
+  return <div ref={rootRef} tabIndex={-1} className="obs-root" style={{ "--obs-scene": `url(${scene})`, "--obs-clouds": `url(${clouds})` } as React.CSSProperties} role="dialog" aria-modal="true" aria-label="Wilson Gematria Observatory" onKeyDown={trapKeys}>
+    <div className="obs-scroll"><div className="obs-column">
+      <header className="obs-header"><h1>GEMATRIA OBSERVATORY</h1><button type="button" className="obs-close" aria-label="Close Observatory" onClick={onClose}>×</button></header>
+      <div className="obs-hero" aria-live="polite"><p className={`obs-total${totalText.length > 3 ? " obs-total--xs" : totalText.length === 3 ? " obs-total--sm" : ""}`} aria-label={`${result.label}: ${totalText}`}>{totalText}</p></div>
+      <form className="obs-input-wrap" onSubmit={e => { e.preventDefault(); setPhraseDraft(phrase); }}><input ref={inputRef} className="obs-input" value={phraseDraft} onChange={e => changePhrase(e.target.value)} placeholder="Type a word or phrase" aria-label="Phrase or name to calculate" autoComplete="off" spellCheck={false}/></form>
+      <div className="obs-ciphers" role="radiogroup" aria-label="Cipher" onKeyDown={e => { if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return; e.preventDefault(); const current = PRIMARY.findIndex(c => c.id === cipherId || (c.id === "hebrew-ordinal" && cipherId === "hebrew-final-large")); const index = (Math.max(0,current) + (["ArrowLeft", "ArrowUp"].includes(e.key) ? 2 : 1)) % 3; chooseCipher(PRIMARY[index].id); e.currentTarget.querySelectorAll<HTMLButtonElement>("button")[index]?.focus(); }}>{PRIMARY.map((cipher, i) => <span key={cipher.id}>{i > 0 && <span className="obs-cipher-sep" aria-hidden="true">|</span>}<button type="button" className="obs-cipher" role="radio" tabIndex={cipherId === cipher.id || (cipher.id === "hebrew-ordinal" && cipherId === "hebrew-final-large") ? 0 : -1} aria-checked={cipherId === cipher.id || (cipher.id === "hebrew-ordinal" && cipherId === "hebrew-final-large")} onClick={() => chooseCipher(cipher.id)}>{cipher.label}</button></span>)}</div>
+      <div className="obs-tabs" role="tablist" aria-label="Observatory panels" onKeyDown={e => { if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return; e.preventDefault(); const next = e.key === "Home" ? "matches" : e.key === "End" ? "library" : tab === "matches" ? "library" : "matches"; setTab(next); requestAnimationFrame(() => document.getElementById(`obs-tab-${next}`)?.focus()); }}>{([['matches', 'Matches'], ['library', 'Library of Light']] as const).map(([id, label]) => <button type="button" key={id} id={`obs-tab-${id}`} role="tab" tabIndex={tab === id ? 0 : -1} aria-controls={`obs-panel-${id}`} aria-selected={tab === id} className={`obs-tab${tab === id ? ' is-active' : ''}`} onClick={() => setTab(id)}>{label}</button>)}</div>
+      <section className={`obs-card${tab === 'library' ? ' obs-card--library' : ''}`} id={`obs-panel-${tab}`} role="tabpanel" aria-labelledby={`obs-tab-${tab}`}>
+        {tab === "matches" ? <>
+          {matches.length ? <ul className="obs-rows">{matches.map(match => <li key={match.id}><button type="button" className="obs-row" title={match.source} onClick={() => changePhrase(match.phrase)}><span className="obs-row-phrase">{match.phrase}</span><span className="obs-row-value">{match.total}</span></button></li>)}</ul> : <p className="obs-empty">{result.total === null ? (cipherId.startsWith('hebrew') ? 'Enter Hebrew letters (א–ת) for the Hebrew cipher.' : 'Enter a phrase to find matches.') : `No saved phrases equal ${result.total} yet. Open Library of Light to import more.`}</p>}
+        </> : <div className="obs-library">
+          <button type="button" className="obs-action" disabled={loading || !phrase} onClick={importPhrases}>{loading ? 'Importing gematrix.org…' : 'Import matching phrases from gematrix.org'}</button>
+          <p className="obs-caption">Imports all three result tables; Matches compares using your selected cipher. Gematrix’s Latin “Jewish” cipher is not Wilson’s Hebrew-letter cipher.</p>
+          <details><summary>Cipher options</summary><select className="obs-field" aria-label="All cipher options" value={cipherId} onChange={e => chooseCipher(e.target.value as CipherId)}>{CIPHERS.map(c => <option key={c.id} value={c.id}>{c.id === 'english-ordinal' ? 'Simple (A=1 … Z=26)' : c.label}</option>)}</select></details>
+          <details open><summary>Living Library · {library.length} saved phrases</summary>
+            <form className="obs-lib-add" onSubmit={e => { e.preventDefault(); addPhrase(); }}><input className="obs-field" aria-label="New phrase" placeholder="Add a phrase…" value={newPhrase} onChange={e => setNewPhrase(e.target.value)}/><button className="obs-action" disabled={loading || !newPhrase.trim()}>Add</button></form>
+            <input className="obs-field" aria-label="Search saved phrases" placeholder="Search saved phrases…" value={search} onChange={e => setSearch(e.target.value)}/>
+            <ul className="obs-rows obs-library-rows">{filtered.map(p => <li key={p.id} className="obs-lib-item"><button type="button" className="obs-row" onClick={() => { changePhrase(p.phrase); setTab('matches'); }} title={p.source}><span className="obs-row-phrase">{p.phrase}</span><span className="obs-row-value">{calculateCipher(p.phrase, cipherId).total ?? '—'}</span></button>{!p.id.startsWith('starter-') && <button type="button" className="obs-remove" disabled={loading} aria-label={`Remove ${p.phrase}`} onClick={() => persist(library.filter(entry => entry.id !== p.id))}>×</button>}</li>)}</ul>
+          </details>
+          <details><summary>Water Memory · personal reflections</summary><p className="obs-caption">A private reflection journal on this device, not a scientific claim about water.</p><textarea className="obs-field" aria-label="Water Memory reflection" placeholder="Your reflection on this phrase…" value={note} onChange={e => setNote(e.target.value)}/><button type="button" className="obs-action" disabled={!note.trim()} onClick={saveWater}>Save reflection</button><p className="obs-caption" role="status">{waterNotice}</p>{water.map(entry => <article key={entry.id} className="obs-water-entry"><strong>{entry.phrase}</strong><p>{entry.note}</p><time dateTime={entry.at}>{new Date(entry.at).toLocaleString('en-US', { timeZone: 'America/Chicago' })} Central</time></article>)}</details>
+        </div>}
+      </section>
+      {error && <p className="obs-error" role="alert">{error}</p>}
+      {notice && <p className="obs-notice" role="status">{notice}</p>}
+    </div></div>
+  </div>;
 }

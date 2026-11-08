@@ -4,6 +4,7 @@
  */
 
 export type CipherId =
+  | "english-gematria"
   | "english-ordinal"
   | "english-reverse-ordinal"
   | "english-reduction"
@@ -33,6 +34,7 @@ export interface CipherResult {
 }
 
 export const CIPHERS: readonly CipherDefinition[] = [
+  { id: "english-gematria", label: "English Gematria", alphabet: "latin", description: "A=6 through Z=156 (Simple × 6)." },
   { id: "english-ordinal", label: "English Ordinal", alphabet: "latin", description: "A=1 through Z=26." },
   { id: "english-reverse-ordinal", label: "English Reverse Ordinal", alphabet: "latin", description: "Z=1 through A=26." },
   { id: "english-reduction", label: "English Full Reduction", alphabet: "latin", description: "A=1 through I=9, then repeats 1–9." },
@@ -62,6 +64,7 @@ export function normalizePhrase(input: string): string {
 function englishValue(character: string, cipherId: CipherId): number | undefined {
   const ordinal = ENGLISH[character];
   if (ordinal === undefined) return undefined;
+  if (cipherId === "english-gematria") return ordinal * 6;
   if (cipherId === "english-ordinal") return ordinal;
   if (cipherId === "english-reverse-ordinal") return 27 - ordinal;
   if (cipherId === "english-reduction") return ((ordinal - 1) % 9) + 1;

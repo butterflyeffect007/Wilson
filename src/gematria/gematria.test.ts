@@ -16,6 +16,10 @@ function equal(actual: unknown, expected: unknown, label: string): void {
 }
 
 export function runGematriaContractTests(): void {
+  equal(calculateCipher("WILSON", "english-ordinal").total, 92, "Simple WILSON");
+  equal(calculateCipher("WILSON", "english-gematria").total, 552, "English WILSON × 6");
+  equal(calculateCipher("AZ", "english-gematria").total, 162, "English A=6 Z=156");
+  equal(calculateCipher("123 !", "english-gematria").total, null, "English empty alphabet");
   equal(calculateCipher("HELLO", "english-ordinal").total, 52, "HELLO ordinal");
   equal(calculateCipher("HELLO", "english-reverse-ordinal").total, 83, "HELLO reverse ordinal");
   equal(calculateCipher("HELLO", "english-reduction").total, 25, "HELLO full reduction");
