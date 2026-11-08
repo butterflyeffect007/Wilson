@@ -1,15 +1,17 @@
 /* Jenny's exact supplied cloud composition. Artwork has no baked-in text or values;
    all labels, totals, phrase rows and controls below are live, accessible elements. */
 .obs-root { position:fixed; inset:0; z-index:80; color:#f6eff0; background:#686283; font-family:"Lexend",sans-serif; font-weight:300; }
-.obs-root::before { content:""; position:absolute; inset:0; background:linear-gradient(#55577c88,#ba91a333),var(--obs-clouds) center / cover; filter:blur(24px); }
+.obs-root { overflow:hidden; }
+.obs-root::before { content:""; position:absolute; inset:-48px; background:linear-gradient(#55577c55,#ba91a322),var(--obs-scene) center 92% / cover; filter:blur(22px); }
 .obs-root *, .obs-root *::before, .obs-root *::after { box-sizing:border-box; }
 .obs-root button,.obs-root input,.obs-root textarea,.obs-root select { font-family:inherit; font-weight:300; }
 .obs-root button { cursor:pointer; }
 .obs-root button:disabled { cursor:wait; opacity:.55; }
 .obs-root :is(button,input,textarea,select,summary):focus-visible { outline:2px solid #d2f7ff; outline-offset:3px; }
 .obs-scroll { position:relative; height:100%; overflow-y:auto; overscroll-behavior:contain; }
-.obs-column { container-type:inline-size; position:relative; width:100%; max-width:576px; min-height:100%; margin:auto; padding-bottom:9.2cqw; background:var(--obs-scene) center top / 100% auto no-repeat,var(--obs-clouds) center / 100% auto repeat-y; }
-.obs-column::before { content:""; position:absolute; inset:0; z-index:-1; background:#827493; }
+.obs-column { container-type:inline-size; position:relative; width:100%; max-width:576px; min-height:100%; margin:auto; padding-bottom:9.2cqw; isolation:isolate; }
+/* Scene art sits at the top at its exact proportions; on phones taller than the art it fades into a soft blur of its own clouds (no stretched strip). */
+.obs-column::before { content:""; position:absolute; left:0; top:0; width:100%; aspect-ratio:576 / 1024; z-index:-1; background:var(--obs-scene) center top / 100% auto no-repeat; -webkit-mask-image:linear-gradient(#000 93%,transparent); mask-image:linear-gradient(#000 93%,transparent); }
 .obs-header { padding:0 !important; position:absolute; top:8.68cqw; left:0; width:100%; display:flex; justify-content:center; align-items:center; }
 .obs-header h1 { margin:0; font-size:2.65cqw; line-height:3.5cqw; font-weight:300; letter-spacing:.17em; white-space:nowrap; }
 .obs-close { position:absolute; right:3cqw; top:-.6cqw; border:0; background:transparent; color:#fff8; font-size:4cqw; padding:0 1cqw; opacity:.38; }

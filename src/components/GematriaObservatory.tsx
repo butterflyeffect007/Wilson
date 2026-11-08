@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import scene from "../assets/observatory/cloud-reference-scene.webp";
-import clouds from "../assets/observatory/cloud-reference-edge.webp";
 import "./GematriaObservatory.css";
 import { calculateCipher, CIPHERS, findPhraseMatches, type CipherId, type PhraseEntry } from "../gematria/gematria";
 
@@ -119,7 +118,7 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
-  return <div ref={rootRef} tabIndex={-1} className="obs-root" style={{ "--obs-scene": `url(${scene})`, "--obs-clouds": `url(${clouds})` } as React.CSSProperties} role="dialog" aria-modal="true" aria-label="Wilson Gematria Observatory" onKeyDown={trapKeys}>
+  return <div ref={rootRef} tabIndex={-1} className="obs-root" style={{ "--obs-scene": `url(${scene})` } as React.CSSProperties} role="dialog" aria-modal="true" aria-label="Wilson Gematria Observatory" onKeyDown={trapKeys}>
     <div className="obs-scroll"><div className="obs-column">
       <header className="obs-header"><h1>GEMATRIA OBSERVATORY</h1><button type="button" className="obs-close" aria-label="Close Observatory" onClick={onClose}>×</button></header>
       <div className="obs-hero" aria-live="polite"><p className={`obs-total${totalText.length > 3 ? " obs-total--xs" : totalText.length === 3 ? " obs-total--sm" : ""}`} aria-label={`${result.label}: ${totalText}`}>{totalText}</p></div>
