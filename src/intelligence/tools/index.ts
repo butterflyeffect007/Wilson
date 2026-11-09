@@ -35,7 +35,7 @@ export const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   fx: "Currency exchange rates, ECB reference (params: q = base ISO code e.g. USD, to = comma ISO codes e.g. EUR,JPY)",
   books: "Open Library book/author search (params: q)",
   news: "Recent tech headlines (Hacker News) + space news; optional topic (params: q). Not general world news.",
-  web: "General web lookup (DuckDuckGo instant answers, no key; Brave when configured) — people, YouTubers/creators, channels, companies, things, and open-web/current questions; ONLY for open-web/current questions no other tool covers (params: q = concise search query)",
+  web: "Live web search via Brave Search on the Wilson server — people, YouTubers/creators, channels, companies, directories, news, and open-web/current questions; ONLY for open-web/current questions no other tool covers (params: q = concise search query)",
   quantum: "Saved result of a real IBM quantum computer run (Bell state) with date + backend — NOT a live run",
   scholar: "Peer-reviewed paper search (Semantic Scholar / OpenAlex / Crossref) with citations (params: q)",
   wikidata: "Structured facts about a person, place, organization or thing from Wikidata (params: q = name)",
@@ -158,7 +158,7 @@ function placeOf(m: string): Record<string, string> {
   return p ? { place: p[1].trim() } : {};
 }
 
-// ---- keyless web lookup (direct DuckDuckGo) ----
+// ---- live web search (Brave on wilson-proxy; never call search APIs from the browser) ----
 const WEB_ASK = /\b(youtub(?:e|er|ers)|yt channel|tiktok(?:er)?|twitch|streamer|influencer|content creator|creator|podcast(?:er)?|vlogger|instagram|channel)\b|\b(look (?:it |that |this |them |him |her )?up|search (?:the web|online|for)|google (?:it|that)|find out (?:about|who|what)|look into)\b/i;
 function webQuery(m: string): string {
   const q = m.replace(/^\s*(?:hey |hi |ok )?wilson[,:]?\s*/i, "")
@@ -190,7 +190,7 @@ export function detectTools(message: string): ToolCall[] {
     const doc = out.some((c) => c.name === "nasadoc");
     for (let i = out.length - 1; i >= 0; i--) if (["arxiv", "scholar", "wikipedia"].includes(out[i].name) || (doc && out[i].name === "ntrs")) out.splice(i, 1);
   }
-  // YouTube / creator / "look it up" questions: keyless web lookup (DuckDuckGo in the browser, Brave via worker if set).
+  // YouTube / creator / "look it up" questions: live Brave web search via the worker.
   if (!out.some((c) => c.name === "web") && WEB_ASK.test(message)) out.unshift({ name: "web", params: { q: webQuery(message) } });
   if (!out.length && /^(who|what) (is|was|are|were)\b|\b(look up|tell me about|wikipedia)\b/i.test(message))
     out.push({ name: "wikipedia", params: { q: topic(message, /\b(who|what|is|was|are|were|look up|tell me about|wikipedia)\b/gi) } });
@@ -252,8 +252,8 @@ export async function runTool(baseUrl: string, call: ToolCall, location?: { lat:
 
 /** Formats tool output as system context for the final answer, with citation instructions. */
 export function toolContext(results: ToolResult[]): string {
-  // Keep every successful web result (DuckDuckGo direct works with no key); drop only a failed web call caused by the worker's missing Brave key.
-  results = results.filter((r) => r.ok || !(r.name === "web" && /not configured/.test(r.error ?? "")));
+  // Keep successful web results; drop only a failed web call caused by a missing Brave key (search unavailable — never fabricate).
+  results = results.filter((r) => r.ok || !(r.name === "web" && /not configured|unavailable/i.test(r.error ?? "")));
   if (!results.length) return "";
   const special = results.map(readContext).filter(Boolean) as string[];
   const blocks = results.find((r) => r.name === "blocks");
