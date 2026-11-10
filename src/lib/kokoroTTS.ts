@@ -1,12 +1,22 @@
 /**
- * Wilson's voice, in this order (per piece of a reply):
- * 1) On-device Kokoro (puckVoice.ts): free local synthesis with no daily usage quota once its model is downloaded.
- *    It is preferred whenever the model is saved; it never starts the ~92 MB download without the user's action.
- * 2) Edge Andrew (en-US-AndrewMultilingualNeural, Microsoft neural voice) through the Wilson worker
- *    /tts/edge: free with NO daily cap — preferred unlimited server voice.
- * 3) Gemini Puck through the Wilson worker /tts/gemini-puck (free tier, daily limit; only if Edge fails).
- * 4) Deepgram Aura-2 (arcas) through the Wilson worker /tts (free tier, daily limit).
- * 5) If every available engine fails, Wilson stays text-only with a clear status note (never a browser voice).
+ * Wilson's voice — ONE locked voice per session (Settings → "Wilson's voice"; default Edge Andrew).
+ *
+ *  - The locked voice speaks every piece of every reply. There is NO per-piece fallback to another voice:
+ *    switching engines mid-reply is what made Wilson sound like several different people.
+ *  - Every piece is spoken, in order. A piece that fails is retried on the SAME voice with a short backoff
+ *    (the first piece is also "hedged": two identical requests, first one back wins). If it still can't be
+ *    voiced, the rest of that reply stays text-only and a small "voice is down" note appears — no skipping
+ *    ahead to later paragraphs.
+ *  - Low lag: the first sentence is sent the moment it streams in; later pieces are prefetched in parallel
+ *    while the current one plays. The ~92 MB on-device Kokoro model is never touched unless the locked voice
+ *    is "On-device Puck".
+ *
+ * Voices (all male):
+ *   edge-andrew  Edge Andrew (en-US-AndrewMultilingualNeural) via the Wilson worker /tts/edge — free, no daily cap
+ *   gemini       Gemini Fenrir via worker /tts/gemini-puck — free tier, daily limit
+ *   aura-orion   Deepgram Aura-2 Orion via worker /tts — free tier, daily limit
+ *   puck-device  On-device Kokoro (am_michael) — free/unlimited after a one-time ~92 MB download
+ *
  * Playback: ONE reused HTMLAudioElement (playsinline), unlocked by playing a silent clip inside the first tap.
  * HTMLAudioElement is not muted by the iPhone ringer switch the way Web Audio is, and avoids
  * AudioContext "suspended"/"interrupted" states in home-screen PWAs. Web Audio is only used for
@@ -14,53 +24,68 @@
  */
 import { attachAudio, detachAudio, setSpeakingFlag, unlockAudioContext } from "./audioBus";
 import { primeScreenAwake } from "./screenAwake";
-import { ensurePuck, getPuckFail, getPuckState, puckBlockedReason, puckCancel, puckOnDisk, puckOnDiskKnown, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
+import { ensurePuck, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
+import { createOrderedSpeaker, FatalVoiceError, firstSuccess, splitAtPauses, takeChunks, withRetry } from "./voiceQueue";
 
-/** Start on-device Puck in an idle moment, but only if its model is already saved here (never the 92 MB download). */
-function schedulePuck() {
-  if (getPuckState() !== "off") return;
-  void puckOnDisk().then((yes) => {
-    if (!yes || getPuckState() !== "off") return;
-    const ric = (globalThis as any).requestIdleCallback as ((cb: () => void, o?: { timeout: number }) => void) | undefined;
-    if (ric) ric(() => ensurePuck(), { timeout: 3000 }); else setTimeout(() => ensurePuck(), 1500);
-  });
+/* ---- the locked voice (one per session; changed only from Settings) ---- */
+export type VoiceId = "edge-andrew" | "gemini" | "aura-orion" | "puck-device";
+export const VOICE_OPTIONS: { id: VoiceId; label: string; note: string }[] = [
+  { id: "edge-andrew", label: "Andrew", note: "Soft, warm male voice · free, no daily limit (default)" },
+  { id: "gemini", label: "Fenrir", note: "Google Gemini male voice · free daily limit" },
+  { id: "aura-orion", label: "Orion", note: "Deepgram male voice · free daily limit" },
+  { id: "puck-device", label: "Puck (on this phone)", note: "Runs on your phone · one-time ~92 MB download, can be slow on older phones" },
+];
+const LOCK_KEY = "wilson-voice-lock";
+const isVoiceId = (v: unknown): v is VoiceId => VOICE_OPTIONS.some((o) => o.id === v);
+let lockedVoice: VoiceId = (() => { try { const v = localStorage.getItem(LOCK_KEY); return isVoiceId(v) ? v : "edge-andrew"; } catch { return "edge-andrew"; } })();
+const lockListeners = new Set<(v: VoiceId) => void>();
+export function getLockedVoice(): VoiceId { return lockedVoice; }
+export function voiceLabel(v: VoiceId = lockedVoice): string { return VOICE_OPTIONS.find((o) => o.id === v)?.label ?? v; }
+export function subscribeLockedVoice(l: (v: VoiceId) => void) { lockListeners.add(l); return () => { lockListeners.delete(l); }; }
+/**
+ * Settings → pick Wilson's voice. Takes effect from the next reply (a reply already being spoken keeps its voice).
+ * Call from a tap: picking on-device Puck starts its one-time download right away.
+ */
+export function setLockedVoice(v: VoiceId): void {
+  if (!isVoiceId(v)) return;
+  lockedVoice = v;
+  try { localStorage.setItem(LOCK_KEY, v); } catch { /* private mode */ }
+  dbg(`voice locked to ${voiceLabel(v)}`);
+  if (status.state !== "idle") setStatus({ state: "ready", reason: undefined });
+  if (v === "puck-device" && puckSupported()) ensurePuck(); // may flip the note to "preparing" (download progress)
+  lockListeners.forEach((l) => l(v));
 }
-/** On-device Puck can help right now (loaded, or saved on this device and starting). */
-function puckUsable(): boolean {
-  const st = getPuckState();
-  return st === "ready" || (st === "loading" && puckOnDiskKnown() === true);
-}
+export function puckPickBlockedReason(): string { return puckSupported() ? "" : (puckBlockedReason() || "this device can't run the on-device voice"); }
 
-/* ---- which voice is speaking (shown in Settings → Voice test) ---- */
-export type VoiceName = "Gemini Puck" | "Puck (on this phone)" | "Edge Andrew" | "arcas" | "";
+/* ---- which voice is speaking (shown in Settings → Voice) ---- */
+export type VoiceName = string;
 export type VoicePlaying = { now: VoiceName; last: VoiceName; lastAt: number };
 let playingVoice: VoicePlaying = (() => { try { const r = localStorage.getItem("wilson-voice-last"); if (r) return { now: "", ...JSON.parse(r) } as VoicePlaying; } catch { /* ignore */ } return { now: "", last: "", lastAt: 0 }; })();
 const playingListeners = new Set<(v: VoicePlaying) => void>();
 function setPlayingVoice(now: VoiceName) {
+  if (now === playingVoice.now) return;
   playingVoice = now ? { now, last: now, lastAt: Date.now() } : { ...playingVoice, now: "" };
   if (now) try { localStorage.setItem("wilson-voice-last", JSON.stringify({ last: now, lastAt: playingVoice.lastAt })); } catch { /* ignore */ }
   playingListeners.forEach((l) => l(playingVoice));
 }
 export function getVoicePlaying() { return playingVoice; }
 export function subscribeVoicePlaying(l: (v: VoicePlaying) => void) { playingListeners.add(l); return () => { playingListeners.delete(l); }; }
-const voiceOf = new WeakMap<Blob, VoiceName>();
-const tag = (b: Blob | null, v: VoiceName) => { if (b) voiceOf.set(b, v); return b; };
 
 const SPEED = 1.1;
 const PROXY = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | undefined)?.trim() || "https://wilson-proxy.butterflyeffect007.workers.dev");
 const SERVER_TTS_URL = PROXY + "/tts";
 const GEMINI_TTS_URL = PROXY + "/tts/gemini-puck";
 const EDGE_TTS_URL = PROXY + "/tts/edge";
-/** Closest uncapped match to Puck: young, quick, natural, conversational male (Microsoft's Copilot-style voice). */
+/** The comforting soft male voice Jenny likes (Microsoft's Copilot-style voice). */
 const EDGE_VOICE = "en-US-AndrewMultilingualNeural";
 const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/84TAAAAAAAAAAAAASW5mbwAAAA8AAAAFAAACoABtbW1tbW1tbW1tbW1tbW1tbW1tkpKSkpKSkpKSkpKSkpKSkpKSkpK2tra2tra2tra2tra2tra2tra2ttvb29vb29vb29vb29vb29vb29vb//////////////////////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJARQAAAAAAAAAqC9P8vrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80TEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEUwAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEpgAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=";
-let serverDown = false;
-
 let generation = 0;
 let unlocked = false;
 let el: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
 let finishCurrentClip: (() => void) | null = null;
+/** In-flight voice requests of the current reply (aborted on stop so they don't hog connections). */
+const inflightCtrls = new Set<AbortController>();
 
 /* ---- tiny on-device debug log (shown in Settings → Voice test) ---- */
 export type VoiceDebug = { lastEvent: string; lastError: string };
@@ -87,7 +112,7 @@ function audioEl(): HTMLAudioElement {
 }
 
 export type SpeakResult = "success" | "skipped" | "error";
-/** "unavailable": a reply couldn't be voiced (Puck not on this phone + Aura resting/offline); shown as a small note. */
+/** "unavailable": the locked voice is down for this reply (text stays); "preparing": on-device Puck downloading. */
 export type VoiceStatus = { state: "idle" | "ready" | "resting" | "preparing" | "unavailable"; progress: number; reason?: string };
 let status: VoiceStatus = { state: "idle", progress: 0 };
 const statusListeners = new Set<(s: VoiceStatus) => void>();
@@ -125,6 +150,7 @@ export function subscribeVoiceActive(l: (a: boolean) => void) { activeListeners.
 export function stopSpeaking(): void {
   generation++;
   puckCancel(generation);
+  inflightCtrls.forEach((c) => { try { c.abort(); } catch { /* ignore */ } }); inflightCtrls.clear();
   if (el && currentUrl) { try { el.pause(); } catch { /* ignore */ } }
   finishCurrentClip?.(); finishCurrentClip = null;
   if (currentUrl) { URL.revokeObjectURL(currentUrl); currentUrl = null; }
@@ -136,10 +162,10 @@ export function stopSpeaking(): void {
   const e = endCurrent; endCurrent = null; e?.();
 }
 
-/** Play one MP3 blob on the shared element; resolves when it ends (or errors / is stopped). */
-function playBlob(blob: Blob, my: number): Promise<void> {
-  return new Promise<void>((resolve) => {
-    if (my !== generation) return resolve();
+/** Play one audio blob on the shared element; resolves true when it ends, false if playback itself failed. */
+function playBlob(blob: Blob, my: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    if (my !== generation) return resolve(true);
     const a = audioEl();
     if (currentUrl) URL.revokeObjectURL(currentUrl);
     currentUrl = URL.createObjectURL(blob);
@@ -152,44 +178,31 @@ function playBlob(blob: Blob, my: number): Promise<void> {
       a.removeEventListener("pause", onPause); a.removeEventListener("loadedmetadata", armStall);
       if (stall) clearTimeout(stall);
     };
-    const done = () => {
+    const settle = (ok: boolean) => {
       if (settled) return; settled = true;
       cleanup();
       if (finishCurrentClip === done) finishCurrentClip = null;
-      resolve();
+      resolve(ok);
     };
-    const onErr = () => {
-      const detail = a.error ? `MediaError code ${a.error.code} ${a.error.message ?? ""}` : "unknown media error";
-      dbg("audio element error", detail);
-      setStatus({ state: "unavailable", reason: `Audio playback failed: ${detail}` });
-      done();
-    };
-    // iOS may interrupt playback temporarily. Give the same clip several bounded resume attempts
-    // instead of abandoning it after two pauses, which can make Wilson skip words mid-answer.
+    const done = () => settle(true);
+    const fail = (why: string) => { dbg("audio playback failed", why); settle(false); };
+    const onErr = () => fail(a.error ? `MediaError code ${a.error.code} ${a.error.message ?? ""}` : "unknown media error");
+    // iOS may interrupt playback temporarily. Give the same clip several bounded resume attempts.
     const resumeAfterPause = () => {
       if (settled || my !== generation || a.ended || !a.paused) return;
-      if (resumeAttempts >= 5) {
-        dbg("audio resume retries exhausted");
-        setStatus({ state: "unavailable", reason: "Audio playback kept getting interrupted; resume retries exhausted." });
-        done(); return;
-      }
+      if (resumeAttempts >= 5) { fail("kept getting interrupted (resume retries exhausted)"); return; }
       const delay = Math.min(2000, 250 * (2 ** resumeAttempts++));
       setTimeout(() => {
         if (settled || my !== generation || a.ended || !a.paused) return;
-        a.play().catch((e) => {
-          dbg("resume play() rejected", e);
-          resumeAfterPause();
-        });
+        a.play().catch((e) => { dbg("resume play() rejected", e); resumeAfterPause(); });
       }, delay);
     };
-    const onPause = () => {
-      if (settled || my !== generation || a.ended) return;
-      resumeAfterPause();
-    };
+    const onPause = () => { if (settled || my !== generation || a.ended) return; resumeAfterPause(); };
     const armStall = () => {
       if (stall) clearTimeout(stall);
       const secs = isFinite(a.duration) && a.duration > 0 ? a.duration : 60;
-      stall = setTimeout(() => { dbg("clip never ended, moving on"); done(); }, secs * 1000 + 5000);
+      // Duration known and well past: it played (some WebViews never fire "ended").
+      stall = setTimeout(() => { dbg("clip never fired 'ended', moving on"); done(); }, secs * 1000 + 5000);
     };
     finishCurrentClip = done;
     a.addEventListener("ended", done); a.addEventListener("error", onErr);
@@ -203,13 +216,8 @@ function playBlob(blob: Blob, my: number): Promise<void> {
       const p = a.play();
       if (p && typeof p.then === "function") p.then(() => dbg(`playing ${(blob.size / 1024).toFixed(0)} KB`), (e) => {
         dbg("play() rejected", e);
-        if (playAttempts < 4 && !settled && my === generation) {
-          setTimeout(tryPlay, Math.min(1600, 300 * (2 ** (playAttempts - 1))));
-        } else if (!settled) {
-          dbg("play retries exhausted");
-          setStatus({ state: "unavailable", reason: `Browser rejected audio playback: ${errText(e)}` });
-          done();
-        }
+        if (playAttempts < 4 && !settled && my === generation) setTimeout(tryPlay, Math.min(1600, 300 * (2 ** (playAttempts - 1))));
+        else if (!settled) fail(`browser rejected audio playback: ${errText(e)}`);
       });
     };
     tryPlay();
@@ -234,45 +242,23 @@ export function toSpeakable(text: string): string {
   return s.trim();
 }
 
-/* ---------------- streaming voice (continuous chunking) ---------------- */
-const MAX_PARALLEL = 3;
-const MERGE_MAX = 180;          // tighter for conversational cadence (was 250)
-const FIRST_CHUNK_MAX = 50;     // fire the first words fast (a short first sentence; Gemini sounds odd cut mid-sentence)
-const SOFT_CHUNK_MAX = 160;     // soft break for long run-on text without punctuation
-/** Pieces grow as the reply goes on (fewer requests): 2nd piece ~160 chars, then up to ~420 (a paragraph). */
-const pieceTarget = (idx: number) => (idx <= 1 ? 160 : 420);
-const PIECE_MAX = 450;
-const CLIP_TIMEOUT_MS = 20000;
-/** How long a reply waits for Puck to finish downloading (~92 MB) when the server voice can't help. */
-const PUCK_WAIT_MS = 400; // never let a cold local-worker start delay the cloud voice fallback
 let pending = false;
 const pendingListeners = new Set<(p: boolean) => void>();
 function setPending(p: boolean) { if (p !== pending) { pending = p; pendingListeners.forEach((l) => l(p)); } }
 /** True while voice audio has been requested but nothing is playing yet ("getting ready to speak"). */
 export function subscribeVoicePending(l: (p: boolean) => void) { pendingListeners.add(l); return () => { pendingListeners.delete(l); }; }
 
-/** Typing / opening: start getting Puck ready in the background (Workers AI itself needs no warm-up). */
-export function warmVoice(): void { schedulePuck(); }
+/** Typing / opening: only on-device Puck needs warming, and only when it's the locked voice. */
+export function warmVoice(): void { if (lockedVoice === "puck-device" && getPuckState() === "off" && puckSupported()) ensurePuck(); }
 
-// Once Puck is ready, the Aura daily limit no longer silences Wilson.
+// On-device Puck download progress → the small "getting Wilson's voice ready" note (only when Puck is the locked voice).
 subscribePuck(() => {
+  if (lockedVoice !== "puck-device") return;
   const p = getPuckState();
-  if (p === "ready" && (status.state === "resting" || status.state === "preparing" || status.state === "unavailable")) setStatus({ state: "ready", reason: undefined });
-  else if (p === "failed" && status.state === "preparing") setStatus(noVoiceStatus());
+  if (p === "loading") setStatus({ state: "preparing", progress: getPuckProgress() });
+  else if (p === "ready" && status.state === "preparing") setStatus({ state: "ready", reason: undefined, progress: 100 });
+  else if (p === "failed" && status.state === "preparing") setStatus({ state: "unavailable", reason: `Puck couldn't start on this phone${puckBlockedReason() ? `: ${puckBlockedReason()}` : ""}. Pick another voice in Settings` });
 });
-
-/** What to show when a reply can't be voiced right now. */
-function noVoiceStatus(): Partial<VoiceStatus> {
-  const f = getPuckFail();
-  // Plain reason when we know one; otherwise the real error text (never "couldn't start: couldn't start").
-  const detail = f ? (/couldn't start$/.test(f.plain) ? `error: ${f.error.slice(0, 90)}` : f.plain.replace(/\s*\([^)]*\)\s*$/, "")) : "";
-  const g = geminiRestingUntil();
-  const gWhy = g ? `Gemini Puck is resting until ${new Date(g).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Gemini Puck didn't answer";
-  const pWhy = getPuckState() === "failed" ? `on-device Puck couldn't start${detail ? `: ${detail}` : ""}` : puckBlockedReason();
-  const eWhy = edgeUsable() ? "Edge Andrew didn't answer" : "Edge Andrew is unreachable right now";
-  const why = [gWhy, pWhy, eWhy, isVoiceResting() ? "arcas is resting (daily free limit)" : "arcas didn't answer"].filter(Boolean).join("; ");
-  return { state: g && isVoiceResting() ? "resting" : "unavailable", reason: why };
-}
 
 /* ---- client-side clip cache (IndexedDB) so replays don't spend the daily voice allowance ---- */
 const IDB_NAME = "wilson-voice", IDB_STORE = "clips";
@@ -281,7 +267,7 @@ let idbP: Promise<IDBDatabase | null> | null = null;
 export function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((res) => { const t = setTimeout(() => res(fallback), ms); p.then((v) => { clearTimeout(t); res(v); }, () => { clearTimeout(t); res(fallback); }); });
 }
-const IDB_WAIT_MS = 1500;
+const IDB_OPEN_MS = 1500, IDB_GET_MS = 350; // a cache lookup must never be the reason Wilson is slow to start
 function idb(): Promise<IDBDatabase | null> {
   if (!idbP) idbP = within(new Promise<IDBDatabase | null>((res) => {
     try {
@@ -291,409 +277,197 @@ function idb(): Promise<IDBDatabase | null> {
       r.onerror = () => res(null);
       r.onblocked = () => res(null);
     } catch { res(null); }
-  }), IDB_WAIT_MS, null).then((db) => { if (!db) dbg("voice clip cache unavailable (skipped)"); return db; });
+  }), IDB_OPEN_MS, null).then((db) => { if (!db) dbg("voice clip cache unavailable (skipped)"); return db; });
   return idbP;
 }
+// Open the cache early (cheap) so the first lookup doesn't pay the open cost.
+try { if (typeof indexedDB !== "undefined") setTimeout(() => void idb(), 0); } catch { /* ignore */ }
 async function clipKey(text: string) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("apollo|" + text));
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-async function cacheGet(key: string): Promise<Blob | null> {
-  const db = await idb(); if (!db) return null;
+async function cacheGet(key: string, type: string): Promise<Blob | null> {
+  const db = await within(idb(), IDB_GET_MS, null); if (!db) return null;
   return within(new Promise<Blob | null>((res) => {
     try {
       const q = db.transaction(IDB_STORE).objectStore(IDB_STORE).get(key);
-      q.onsuccess = () => res(q.result ? new Blob([q.result as ArrayBuffer], { type: "audio/mpeg" }) : null);
+      q.onsuccess = () => res(q.result ? new Blob([q.result as ArrayBuffer], { type }) : null);
       q.onerror = () => res(null);
     } catch { res(null); }
-  }), IDB_WAIT_MS, null);
+  }), IDB_GET_MS, null);
 }
 async function cachePut(key: string, blob: Blob) {
   const db = await idb(); if (!db) return;
   try { const buf = await blob.arrayBuffer(); db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put(buf, key); } catch { /* quota */ }
 }
 
-/** Daily free voice limit hit (worker 429): stay quiet until the reset. */
+/* ---- daily-limit bookkeeping for the capped voices ---- */
 const REST_KEY = "wilson-aura-resting-until";
 let restingUntil = (() => { try { return Number(localStorage.getItem(REST_KEY)) || 0; } catch { return 0; } })();
 function nextResetUtcMidnight() { const d = new Date(); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); }
 function markResting() { restingUntil = nextResetUtcMidnight(); try { localStorage.setItem(REST_KEY, String(restingUntil)); } catch { /* ignore */ } }
 export function isVoiceResting() { return Date.now() < restingUntil; }
-class VoiceLimitError extends Error { constructor() { super("daily voice limit reached"); this.name = "VoiceLimit"; } }
-
-async function fetchOnce(text: string, speed: number, timeoutMs: number): Promise<Blob> {
-  const key = await clipKey(text).catch(() => "");
-  if (key) { const hit = await cacheGet(key); if (hit) { dbg("clip from device cache"); return hit; } }
-  if (isVoiceResting()) throw new VoiceLimitError();
-  const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), Math.max(5000, timeoutMs));
-  try {
-    const res = await fetch(SERVER_TTS_URL, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, speed, voice: "aura-2-orion-en", voiceGender: "male" }), signal: ctrl.signal,
-    });
-    if (res.status === 503) { serverDown = true; throw new Error("voice server not configured (503)"); }
-    if (res.status === 429) { markResting(); throw new VoiceLimitError(); }
-    if (!res.ok) throw new Error("tts http " + res.status);
-    const blob = await res.blob();
-    if (blob.size < 100) throw new Error("tts empty audio");
-    const out = blob.type ? blob : new Blob([blob], { type: "audio/mpeg" });
-    if (key) void cachePut(key, out);
-    return out;
-  } finally { clearTimeout(to); }
-}
-
-/* ---- Gemini Puck (main voice) ---- */
 const G_REST_KEY = "wilson-gpuck-resting-until";
 let gRestUntil = (() => { try { return Number(localStorage.getItem(G_REST_KEY)) || 0; } catch { return 0; } })();
-let gFails = 0; // consecutive non-limit failures (offline etc.): skip Gemini for a minute after 3
 let gToday = 0;
 export function geminiRestingUntil() { return gRestUntil > Date.now() ? gRestUntil : 0; }
 export function geminiUsedToday() { return gToday; }
-function geminiUsable() { return Date.now() >= gRestUntil; }
-function geminiRest(until: number, daily: boolean) {
-  gRestUntil = until;
-  if (daily) try { localStorage.setItem(G_REST_KEY, String(until)); } catch { /* ignore */ }
-  statusListeners.forEach((l) => l(status));
-}
-async function fetchGemini(text: string, my: number): Promise<Blob | null> {
-  const key = await clipKey("gpuck|" + text).catch(() => "");
-  if (key) { const hit = await cacheGet(key); if (hit) { dbg("Gemini Puck clip from device cache"); return new Blob([hit], { type: "audio/wav" }); } }
-  if (!geminiUsable()) throw new Error("Gemini Puck resting");
-  const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), 15000);
-  const t0 = Date.now();
-  try {
-    const res = await fetch(GEMINI_TTS_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice: "Fenrir", voiceGender: "male" }), signal: ctrl.signal });
-    if (res.status === 429) {
-      let j: { daily?: boolean; until?: number } = {}; try { j = await res.json(); } catch { /* ignore */ }
-      const ra = Number(res.headers.get("Retry-After")) || 60;
-      geminiRest(j.daily && j.until ? j.until : Date.now() + Math.min(ra, 120) * 1000, !!j.daily);
-      throw new Error(j.daily ? "Gemini Puck daily limit reached" : "Gemini Puck busy");
-    }
-    if (!res.ok) throw new Error("gemini tts http " + res.status);
-    const blob = await res.blob();
-    if (blob.size < 1000) throw new Error("gemini tts empty audio");
-    const n = Number(res.headers.get("X-Voice-Today")); if (n) gToday = n;
-    gFails = 0;
-    dbg(`Gemini Puck ${(blob.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-    const out = blob.type ? blob : new Blob([blob], { type: "audio/wav" });
-    if (key) void cachePut(key, out);
-    return my === generation ? out : null;
-  } catch (e) {
-    if (!/resting|limit|busy/.test(String((e as Error)?.message))) { if (++gFails >= 3) { gFails = 0; geminiRest(Date.now() + 60000, false); } }
-    throw e;
-  } finally { clearTimeout(to); }
-}
 
-/* ---- Edge Andrew (free, no daily cap; worker /tts/edge) ---- */
-let edgeFails = 0, edgeSkipUntil = 0; // after 3 straight failures (endpoint down/offline) skip it for a minute
-function edgeUsable() { return Date.now() >= edgeSkipUntil; }
-const EDGE_TIMEOUT_MS = 15000; // Microsoft streams near real time: a short piece is 1-5 s, a long one up to ~12 s
-async function fetchEdge(text: string, my: number): Promise<Blob | null> {
-  const key = await clipKey("edge|" + EDGE_VOICE + "|" + text).catch(() => "");
-  if (key) { const hit = await cacheGet(key); if (hit) { dbg("Edge Andrew clip from device cache"); return hit; } }
-  let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 2 && my === generation; attempt++) {
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), EDGE_TIMEOUT_MS);
-    const t0 = Date.now();
-    try {
-      const res = await fetch(EDGE_TTS_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice: EDGE_VOICE }), signal: ctrl.signal });
-      if (res.status === 404) { edgeSkipUntil = Date.now() + 10 * 60000; throw new Error("Edge voice not on this worker yet (404)"); }
+/* ---- one request to the locked voice (no fallbacks; retries live in synthPiece) ---- */
+type Engine = { id: VoiceId; type: string; timeoutMs: number; once: (text: string, signal: AbortSignal) => Promise<Blob> };
+async function post(url: string, body: unknown, signal: AbortSignal) {
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+}
+const ENGINES: Record<Exclude<VoiceId, "puck-device">, Engine> = {
+  "edge-andrew": {
+    id: "edge-andrew", type: "audio/mpeg", timeoutMs: 14000,
+    async once(text, signal) {
+      const res = await post(EDGE_TTS_URL, { text, voice: EDGE_VOICE }, signal);
+      if (res.status === 404) throw new FatalVoiceError("Andrew isn't on the voice server (404)", "missing");
       if (!res.ok) throw new Error("edge tts http " + res.status);
       const blob = await res.blob();
       if (blob.size < 500) throw new Error("edge tts empty audio");
-      edgeFails = 0;
-      dbg(`Edge Andrew ${(blob.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s (${res.headers.get("X-Voice-Cache") || "?"})`);
-      const out = new Blob([blob], { type: "audio/mpeg" });
-      if (key) void cachePut(key, out);
-      return my === generation ? out : null;
-    } catch (e) {
-      lastErr = e;
-      dbg("Edge Andrew request failed" + (attempt === 0 ? ", retrying" : ""), e);
-      if (/404/.test(String((e as Error)?.message))) break;
-    } finally { clearTimeout(to); }
-  }
-  if (++edgeFails >= 3) { edgeFails = 0; edgeSkipUntil = Date.now() + 60000; }
-  throw lastErr ?? new Error("Edge Andrew failed");
-}
-
-/** Fetch one clip (MP3 blob). One quick retry on a transient error. */
-async function fetchClip(text: string, speed: number, my: number): Promise<Blob | null> {
-  let lastErr: unknown = null;
-  for (let attempt = 0; attempt < 2 && my === generation && !serverDown; attempt++) {
-    try {
-      const t0 = Date.now();
-      const blob = await fetchOnce(text, speed, CLIP_TIMEOUT_MS);
-      dbg(`tts 200 ${blob.type || "?"} ${(blob.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-      return my === generation ? blob : null;
-    } catch (e) {
-      lastErr = e;
-      dbg("tts request failed", e);
-      if ((e as Error).name === "AbortError" || (e as Error).name === "VoiceLimit") break;
-    }
-  }
-  throw lastErr ?? new Error("voice failed");
-}
-
-/**
- * Continuous chunker.
- * - Emits as soon as we have enough tokens (or a natural break).
- * - No longer requires a terminal . ! ? before the first (and subsequent) clips can start.
- * - Still prefers sentence boundaries when they appear, but never blocks on them.
- */
-function takeChunks(text: string, from: number, final: boolean, isFirst: boolean): { parts: string[]; next: number } {
-  const parts: string[] = [];
-  let start = from;
-  let i = from;
-  const softMax = isFirst ? FIRST_CHUNK_MAX : SOFT_CHUNK_MAX;
-
-  while (i < text.length) {
-    const c = text[i];
-
-    // Hard break on newline
-    if (c === "\n") {
-      const t = text.slice(start, i + 1).trim();
-      if (t) parts.push(t);
-      start = i + 1;
-      i = start;
-      continue;
-    }
-
-    // Prefer real sentence ends when present
-    if (c === "." || c === "!" || c === "?") {
-      let j = i + 1;
-      while (j < text.length && /[.!?"')\]*]/.test(text[j])) j++;
-      if (j < text.length && /\s/.test(text[j])) {
-        const t = text.slice(start, j).trim();
-        if (t) parts.push(t);
-        start = j;
-        i = j;
-        continue;
+      return new Blob([blob], { type: "audio/mpeg" });
+    },
+  },
+  gemini: {
+    id: "gemini", type: "audio/wav", timeoutMs: 15000,
+    async once(text, signal) {
+      if (geminiRestingUntil()) throw new FatalVoiceError(`Fenrir is resting until ${new Date(gRestUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} (daily free limit)`, "limit");
+      const res = await post(GEMINI_TTS_URL, { text, voice: "Fenrir", voiceGender: "male" }, signal);
+      if (res.status === 429) {
+        let j: { daily?: boolean; until?: number } = {}; try { j = await res.json(); } catch { /* ignore */ }
+        if (j.daily && j.until) { gRestUntil = j.until; try { localStorage.setItem(G_REST_KEY, String(j.until)); } catch { /* ignore */ } throw new FatalVoiceError("Fenrir's daily free limit is used up", "limit"); }
+        throw new Error("Fenrir busy (429)"); // short rate limit: retry the same voice after a backoff
       }
-    }
+      if (!res.ok) throw new Error("gemini tts http " + res.status);
+      const blob = await res.blob();
+      if (blob.size < 1000) throw new Error("gemini tts empty audio");
+      const n = Number(res.headers.get("X-Voice-Today")); if (n) gToday = n;
+      return blob.type ? blob : new Blob([blob], { type: "audio/wav" });
+    },
+  },
+  "aura-orion": {
+    id: "aura-orion", type: "audio/mpeg", timeoutMs: 15000,
+    async once(text, signal) {
+      if (isVoiceResting()) throw new FatalVoiceError("Orion's daily free limit is used up", "limit");
+      const res = await post(SERVER_TTS_URL, { text, speed: SPEED, voice: "aura-2-orion-en", voiceGender: "male" }, signal);
+      if (res.status === 503) throw new FatalVoiceError("Orion isn't configured on the voice server (503)", "missing");
+      if (res.status === 429) { markResting(); throw new FatalVoiceError("Orion's daily free limit is used up", "limit"); }
+      if (!res.ok) throw new Error("tts http " + res.status);
+      const blob = await res.blob();
+      if (blob.size < 100) throw new Error("tts empty audio");
+      return blob.type ? blob : new Blob([blob], { type: "audio/mpeg" });
+    },
+  },
+};
 
-    // Soft break: enough characters and a natural pause point (space, comma, etc.)
-    const len = i - start + 1;
-    if (len >= softMax && /[\s,;:—–]/.test(c)) {
-      const t = text.slice(start, i + 1).trim();
-      if (t) parts.push(t);
-      start = i + 1;
-    }
-
-    i++;
-  }
-
-  // On final, flush whatever remains
-  if (final && start < text.length) {
-    const t = text.slice(start).trim();
-    if (t) parts.push(t);
-    start = text.length;
-  }
-
-  // Safety: never let a single piece grow past MERGE_MAX even without a break
-  if (!final && start < text.length && (text.length - start) > MERGE_MAX) {
-    const cut = start + MERGE_MAX;
-    const t = text.slice(start, cut).trim();
-    if (t) parts.push(t);
-    start = cut;
-  }
-
-  return { parts, next: start };
+/** One request with its own timeout; aborted if the reply is stopped. */
+async function requestOnce(e: Engine, text: string, my: number): Promise<Blob> {
+  if (my !== generation) throw new Error("stopped");
+  const ctrl = new AbortController(); inflightCtrls.add(ctrl);
+  const to = setTimeout(() => ctrl.abort(), e.timeoutMs);
+  const t0 = Date.now();
+  try {
+    const b = await e.once(text, ctrl.signal);
+    dbg(`${voiceLabel(e.id)} ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    return b;
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") throw new Error(my !== generation ? "stopped" : `${voiceLabel(e.id)} timed out after ${e.timeoutMs / 1000}s`);
+    throw err;
+  } finally { clearTimeout(to); inflightCtrls.delete(ctrl); }
 }
 
-/** Split a long sentence at commas/semicolons/dashes into pieces of ~PUCK_MAX chars (first piece shorter). */
-const PUCK_MAX = 110, PUCK_FIRST = 42; // shorter first piece so the first words start sooner
-function splitForPuck(text: string, first: boolean): string[] {
-  const out: string[] = [];
-  let rest = text, max = first ? PUCK_FIRST : PUCK_MAX;
-  while (rest.length > max) {
-    const win = rest.slice(0, max);
-    const m = [...win.matchAll(/[,;:—–](\s|$)|\s-\s/g)].filter((x) => (x.index ?? 0) >= 20).pop();
-    if (!m) break;
-    const cut = (m.index ?? 0) + m[0].length;
-    out.push(rest.slice(0, cut).trim()); rest = rest.slice(cut).trim(); max = PUCK_MAX;
+/** Retry policy: same voice, short backoff, bounded overall so a dead voice is reported instead of hanging. */
+const RETRY = { attempts: 4, backoffMs: [350, 1000, 2200], deadlineMs: 40000 };
+
+/** Voice one piece with the locked voice. Throws only after the same voice failed every retry. */
+async function synthPiece(voice: VoiceId, text: string, index: number, my: number, speed: number, gaveUp: () => boolean): Promise<Blob> {
+  const stopped = () => my !== generation || gaveUp();
+  if (voice === "puck-device") {
+    return withRetry(async () => {
+      if (getPuckState() === "off") ensurePuck();
+      const ok = getPuckState() === "ready" || await waitForPuck(index === 0 ? 120000 : 60000);
+      if (stopped()) throw new Error("stopped");
+      if (!ok) throw new FatalVoiceError(`Puck couldn't start on this phone${puckBlockedReason() ? `: ${puckBlockedReason()}` : ""}`, "missing");
+      const b = await puckSynth(text, speed, my, "am_michael");
+      if (!b) throw new Error("Puck couldn't voice this piece");
+      return b;
+    }, { attempts: 3, backoffMs: [300, 1000], stopped, onRetry: (a, e) => dbg(`Puck retry ${a}`, e) });
   }
-  if (rest) out.push(rest);
-  return out;
+  const e = ENGINES[voice];
+  const key = await clipKey(`${voice}|${voice === "edge-andrew" ? EDGE_VOICE : ""}|${text}`).catch(() => "");
+  if (key) { const hit = await cacheGet(key, e.type); if (hit) { dbg(`${voiceLabel(voice)} clip from device cache`); return hit; } }
+  const b = await withRetry((attempt) => {
+    // Edge is uncapped: hedge the first piece and every retry with two identical requests (first back wins),
+    // which cuts both the long first-byte waits and the intermittent "closed without audio" failures.
+    if (voice === "edge-andrew" && (index === 0 || attempt > 0)) return firstSuccess([requestOnce(e, text, my), requestOnce(e, text, my)]);
+    return requestOnce(e, text, my);
+  }, { ...RETRY, stopped, onRetry: (a, err) => dbg(`${voiceLabel(voice)} retry ${a} for piece ${index + 1}`, err) });
+  if (key) void cachePut(key, b);
+  return b;
 }
+
+/* ---------------- streaming voice ---------------- */
+/** Pieces grow as the reply goes on (fewer requests): first = one sentence, 2nd ~140 chars, then ~260. */
+const pieceTarget = (idx: number) => (idx === 0 ? 1 : idx === 1 ? 140 : 260);
+const PIECE_MAX = 300;
+const CONCURRENCY = 3; // pieces being voiced at once while one plays
 
 export type SpeechStream = { push: (textSoFar: string) => void; finish: (finalText: string) => void };
-
-/**
- * Start speaking a reply while it is still streaming. Call push() with the full displayed text so far,
- * then finish() with the final text. Prefer downloaded on-device Kokoro; use limited cloud voices only as fallbacks.
- */
 export type StreamHooks = { onStart?: () => void; onEnd?: () => void };
 let endCurrent: (() => void) | null = null;
 
+/**
+ * Start speaking a reply while it is still streaming. Call push() with the full displayed text so far,
+ * then finish() with the final text. Every piece uses the voice locked when the reply started.
+ */
 export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}): SpeechStream {
   stopSpeaking();
   const my = generation;
+  const voice = lockedVoice;          // locked for this whole reply
+  const label = voiceLabel(voice);
   let ended = false;
-  const end = () => { if (!ended) { ended = true; if (endCurrent === end) { endCurrent = null; setActive(false); } hooks.onEnd?.(); } };
+  const end = () => { if (!ended) { ended = true; if (endCurrent === end) { endCurrent = null; setActive(false); } setPending(false); if (playingVoice.now) setPlayingVoice(""); hooks.onEnd?.(); } };
   endCurrent = end;
-  let offset = 0, buffer = "", sentFirst = false, done = false, played = false;
-  let inflight = 0;
-  const queue: Promise<Promise<Blob | null>[]>[] = [];
-  const spoken: string[] = [];
-  let playing = false, playIdx = 0;
-  let fullText = "";
-  const waiters: (() => void)[] = [];
-  const slot = () => inflight < MAX_PARALLEL ? Promise.resolve() : new Promise<void>((r) => waiters.push(r));
-  /*
-   * Which voice speaks each piece:
-   *  1. On-device Kokoro Puck (downloaded locally; no daily cloud quota).
-   *  2. Edge Andrew (uncapped cloud voice — preferred unlimited server voice).
-   *  3. Gemini Puck (limited cloud fallback, only if Edge fails and not resting).
-   *  4. arcas / Aura-2 (secondary limited cloud fallback).
-   *  5. Nothing works: skip the piece and show a small note (later pieces still get their chance).
-   */
-  dbg(`voice order: downloaded Kokoro first → Edge Andrew (uncapped) → ${geminiUsable() ? "Gemini Puck" : "Gemini resting"} → Aura-2`);
-  /** On-device Puck ready (waiting briefly if it's loading from storage)? */
-  const puckReady = async (): Promise<boolean> => {
-    if (getPuckState() === "ready") return true;
-    if (getPuckState() === "failed" || !(await puckOnDisk()) || !puckSupported()) return false;
-    const ok = await waitForPuck(PUCK_WAIT_MS);
-    return ok && my === generation;
-  };
-  /** One short piece with Puck; one retry (covers a worker restart after a crash). */
-  const puckPiece = async (t: string): Promise<Blob | null> => {
-    for (let i = 0; i < 2 && my === generation; i++) {
-      if (!(await puckReady())) return null;
-      const t0 = Date.now();
-      const voice = "am_michael";
-      const b = await puckSynth(t, speed, my, voice);
-      if (my !== generation) return null;
-      if (b) { dbg(`puck ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`); return tag(b, "Puck (on this phone)"); }
-      dbg("puck clip failed" + (i === 0 ? ", retrying" : ""));
-    }
-    return null;
-  };
-  /** Split into short pieces and queue them all on the worker at once (it runs them in order, back to back). */
-  const viaPuck = async (t: string, first: boolean): Promise<Promise<Blob | null>[] | null> => {
-    if (!(await puckReady())) return null;
-    return splitForPuck(t, first).map((p) => { const pr = puckPiece(p); pr.catch(() => {}); return pr; });
-  };
-  const clip = async (t: string, first: boolean): Promise<Promise<Blob | null>[]> => {
-    if (my !== generation) return [];
+  let offset = 0, buffer = "", sentFirst = false, done = false, fullText = "";
+  let dispatched = 0, gaveUp = false;
+  dbg(`voice locked for this reply: ${label}`);
 
-    // PRIMARY: use the downloaded Kokoro model on this device. Never trigger its large download
-    // automatically; puckReady() only starts it when the model is already saved locally.
-    try {
-      const local = await viaPuck(t, first);
-      if (local && my === generation) {
-        dbg("using downloaded on-device Kokoro (unlimited local voice)");
-        return local;
-      }
-    } catch (e) {
-      dbg("on-device Kokoro unavailable; trying cloud fallback", e);
-      if (my !== generation) return [];
-    }
-
-    // FALLBACK 1: Edge Andrew (uncapped, preferred). Always queue every sub-piece.
-    // Don't abandon the whole message if the first sub-piece fails.
-    if (edgeUsable()) {
-      const pieces = splitForPuck(t, first);
-      if (pieces.length) {
-        let running = 0; const wait: (() => void)[] = [];
-        const run = async (p: string): Promise<Blob | null> => {
-          if (running >= 2) await new Promise<void>((r) => wait.push(r));
-          running++;
-          try { return tag(await fetchEdge(p, my), "Edge Andrew"); } finally { running--; wait.shift()?.(); }
-        };
-        // If Edge Andrew can't voice a piece, that same piece falls back to Gemini Puck, then arcas,
-        // instead of being silently skipped (which left the reply mute with the status stuck on "idle").
-        const backup = async (p: string): Promise<Blob | null> => {
-          if (my !== generation) return null;
-          if (geminiUsable()) { try { const b = await fetchGemini(p, my); if (b) return tag(b, "Gemini Puck"); } catch (e) { dbg("Gemini Puck piece fallback failed", e); } }
-          if (my !== generation) return null;
-          if (!isVoiceResting() && !serverDown) { try { const b = await fetchClip(p, speed, my); if (b) return tag(b, "arcas"); } catch (e) { dbg("arcas piece fallback failed", e); } }
-          return null;
-        };
-        const all = pieces.map((p) => run(p).catch((e) => { dbg("Edge Andrew piece failed; trying backup voice", e); return backup(p); }));
-        // Return immediately so playback can start as soon as any piece is ready.
-        return all;
-      }
-    }
-
-    // FALLBACK 2: Gemini Puck (limited, only if Edge unavailable) (limited cloud voice).
-    if (geminiUsable()) {
-      try {
-        await slot(); inflight++;
-        try {
-          const b = await fetchGemini(t, my);
-          if (b || my !== generation) return [Promise.resolve(tag(b, "Gemini Puck"))];
-        } finally { inflight--; waiters.shift()?.(); }
-      } catch (e) {
-        dbg("Gemini Puck fallback failed", e);
-        if (my !== generation) return [];
-      }
-    }
-    if (!isVoiceResting() && !serverDown) {
-      try {
-        await slot(); inflight++;
-        try {
-          const backup = await fetchClip(t, speed, my);
-          if (backup || my !== generation) return [Promise.resolve(tag(backup, "arcas"))];
-        } finally { inflight--; waiters.shift()?.(); }
-      } catch (e) {
-        if (my !== generation) return [];
-        dbg("arcas fallback unavailable", e);
-      }
-    }
-    throw new Error("no voice available");
-  };
-
-  const playLoop = async () => {
-    if (playing) return; playing = true;
-    while (playIdx < queue.length && my === generation) {
-      if (!played) setPending(true);
-      let parts: Promise<Blob | null>[] = [];
-      try { parts = await queue[playIdx]; } catch { if (status.state !== "preparing") setStatus(noVoiceStatus()); }
-      for (let pi = 0; pi < parts.length && my === generation; pi++) {
-        let buf: Blob | null = null;
-        try { buf = await parts[pi]; } catch { /* ignore */ }
-        if (!buf) { dbg("skipped empty/failed clip"); continue; }
-        if (my !== generation) continue;
-        // Start playback as soon as the first synthesized clip is ready.
-        // Waiting for a second clip here added up to 6 seconds before Wilson spoke,
-        // and the !played guard meant this wait only ever affected initial playback.
-        setPending(false);
-        if (!played) hooks.onStart?.();
-        played = true;
-        if (status.state === "idle" || status.state === "unavailable" || status.state === "resting") setStatus({ state: "ready", reason: undefined });
-        setPlayingVoice(voiceOf.get(buf) || "");
-        maybeFlush(); // queue the next piece now if nothing else is waiting
-        await playBlob(buf, my);
-      }
-      if (my !== generation) break;
-      playIdx++;
-      maybeFlush();
-    }
-    playing = false;
-    if (playingVoice.now) setPlayingVoice("");
-    if (my !== generation) return;
-    if (done && playIdx >= queue.length) {
-      if (!played && spoken.length && status.state !== "preparing") { dbg("no voice clip could be made for this reply"); setStatus(noVoiceStatus()); }
-      setPending(false); end();
-    }
-  };
+  const speaker = createOrderedSpeaker<Blob>({
+    concurrency: CONCURRENCY,
+    lookahead: 5,
+    stopped: () => my !== generation,
+    synth: (t, i) => synthPiece(voice, t, i, my, speed, () => gaveUp),
+    play: (b) => playBlob(b, my),
+    onFirstPlay: () => {
+      setPending(false);
+      hooks.onStart?.();
+      if (status.state !== "preparing" || voice !== "puck-device") setStatus({ state: "ready", reason: undefined });
+    },
+    onPlay: () => { setPlayingVoice(label); maybeFlush(); },
+    onDown: (i, err) => {
+      gaveUp = true; // stop retrying the pieces after this one; they won't be played
+      const msg = String((err as Error)?.message || err);
+      const resting = err instanceof FatalVoiceError && err.kind === "limit";
+      dbg(`${label} is down at piece ${i + 1} of ${speaker.queued}; rest of this reply stays text`, err);
+      setStatus({ state: resting ? "resting" : "unavailable", reason: `${label}: ${msg}${i > 0 ? ". He stopped partway; the rest is in the text" : ""}` });
+    },
+    onEnd: () => end(),
+  });
 
   const dispatch = (text: string) => {
     const t = toSpeakable(text);
     if (!t) return;
-    spoken.push(t);
-    const pr = clip(t, queue.length === 0); pr.catch(() => {}); queue.push(pr);
-    void playLoop();
+    // On-device Puck is faster on short pieces; cloud voices get whole sentences (fewer requests, natural prosody).
+    const pieces = voice === "puck-device" ? splitAtPauses(t, dispatched === 0) : [t];
+    for (const p of pieces) { speaker.push(p); dispatched++; }
   };
-
-  /* Save requests: gather sentences into bigger pieces (see pieceTarget), but never let the speaker run dry —
-     when the piece now playing is the last one queued, send what we have (at least a full sentence). */
-  const starving = () => played && playIdx >= queue.length - 1;
+  /* Gather sentences into bigger pieces, but never let the speaker run dry: when nothing is queued behind
+     the piece now playing, send what we have (at least ~40 chars). */
+  const starving = () => speaker.played > 0 && speaker.backlog() <= 1;
   const flush = (force: boolean) => {
-    if (buffer && (force || buffer.length >= pieceTarget(queue.length) || (starving() && buffer.length >= 40))) { dispatch(buffer); buffer = ""; }
+    if (buffer && (force || buffer.length >= pieceTarget(dispatched) || (starving() && buffer.length >= 40))) { dispatch(buffer); buffer = ""; }
   };
   function maybeFlush() { if (!done && buffer) flush(false); }
 
@@ -702,44 +476,36 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     const { parts, next } = takeChunks(text, offset, final, !sentFirst);
     offset = next;
     for (const p of parts) {
-      if (!sentFirst) {
-        sentFirst = true;
-        dispatch(p);           // first usable tokens → speak immediately
-        continue;
-      }
-      if (buffer && buffer.length + 1 + p.length > Math.max(pieceTarget(queue.length), Math.min(PIECE_MAX, MERGE_MAX))) {
-        dispatch(buffer);
-        buffer = p;
-      } else {
-        buffer = buffer ? buffer + " " + p : p;
-      }
+      if (!sentFirst) { sentFirst = true; dispatch(p); continue; } // first sentence → speak immediately
+      if (buffer && buffer.length + 1 + p.length > Math.min(PIECE_MAX, Math.max(pieceTarget(dispatched), 140))) { dispatch(buffer); buffer = p; }
+      else buffer = buffer ? buffer + " " + p : p;
     }
     flush(final);
   };
 
-  // Let the local-first clip router probe the on-device cache before declaring voice unavailable.
   setPending(true);
   setActive(true);
+  if (voice === "puck-device" && getPuckState() !== "ready") setStatus({ state: "preparing", progress: getPuckProgress() });
   return {
     push: (t) => { fullText = t; feed(t, false); },
     finish: (t) => {
       if (my !== generation || done) return;
-      // final text may differ from streamed text (tags stripped); keep offset if prefix still matches
-      if (!t.startsWith(fullText.slice(0, offset))) offset = Math.min(offset, t.length);
+      // Final text may differ from streamed text (tags stripped). If what we've already consumed isn't a prefix
+      // of the final text, resume from the longest common prefix so nothing is skipped.
+      if (!t.startsWith(fullText.slice(0, offset))) { let k = 0; while (k < offset && k < t.length && t[k] === fullText[k]) k++; offset = k; }
       fullText = t; done = true; feed(t, true);
-      if (!queue.length) { setPending(false); end(); }
-      else void playLoop();
+      speaker.finish();
     },
   };
 }
 
-/** Speak one finished message with Wilson's voice (sentence-chunked). Works regardless of the auto-voice setting. */
 /** Settings → "Voice test": call from a tap. */
 export function voiceTest(): void {
-  dbg(`voice test tapped (Puck: ${getPuckState()})`);
+  dbg(`voice test tapped (${voiceLabel()})`);
   speakMessage("Hi Jenny, it's Wilson. If you can hear me, my voice is working!");
 }
 
+/** Speak one finished message with Wilson's voice (sentence-chunked). Works regardless of the auto-voice setting. */
 export function speakMessage(text: string, speed: number = SPEED, hooks: StreamHooks = {}): void {
   primePlayback();
   startSpeechStream(speed, hooks).finish(text);

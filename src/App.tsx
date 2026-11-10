@@ -52,8 +52,9 @@ import {
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
 import PuckStatus from "./components/PuckStatus";
+import VoicePicker from "./components/VoicePicker";
 import { getPuckState, getPuckFail, getPuckStage, getPuckDevice } from "./lib/puckVoice";
-import { startSpeechStream, speakMessage, voiceTest, subscribeVoiceDebug, getVoiceDebug, type VoiceDebug, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus, isVoiceActive, subscribeVoiceActive } from "./lib/kokoroTTS";
+import { startSpeechStream, speakMessage, voiceTest, subscribeVoiceDebug, getVoiceDebug, type VoiceDebug, warmVoice, stopSpeaking, primePlayback, subscribeVoiceStatus, getVoiceStatus, type VoiceStatus, isVoiceActive, subscribeVoiceActive, getLockedVoice, voiceLabel } from "./lib/kokoroTTS";
 import { useSpeechToText } from "./hooks/useSpeechToText";
 import { startScreenAwake } from "./lib/screenAwake";
 import { startCapture, stopCapture, embedSpeaker } from "./lib/voiceCapture";
@@ -540,6 +541,7 @@ export default function App() {
             "interface=Wilson web/PWA",
             "audioPlaybackAPI=" + (typeof Audio !== "undefined" ? "available" : "unavailable"),
             "speechRecognitionAPI=" + (speechRecognition ? "present" : "not detected in this browser"),
+            "lockedVoice=" + voiceLabel(getLockedVoice()) + " (one voice for every reply; no switching)",
             "onDeviceVoiceRuntime=" + puckState,
             "onDeviceVoiceStage=" + (getPuckStage() || "none"),
             "replyVoiceStatus=" + voice.state + ", progress=" + voice.progress + (voice.reason ? ", reason=" + voice.reason : ""),
@@ -1302,6 +1304,7 @@ export default function App() {
                   />
                   Auto-speak replies (otherwise tap Play on a reply; saves the daily voice allowance)
                 </label>
+                <VoicePicker />
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={() => voiceTest()} className="rounded-full bg-violet-100 px-3 py-1 text-[12px] text-violet-800 touch-manipulation">Voice test</button>
                   <span className="text-[10px] text-violet-500/80 break-all">{voiceDebug.lastEvent || "not tested yet"}</span>
@@ -1534,13 +1537,13 @@ export default function App() {
             )}
             {showInstallHint && <InstallCard onClose={dismissInstallHint} />}
             {voiceStatus.state === "resting" && (
-              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting until 7 PM Central (daily free limit).</p>
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting (daily free limit){voiceStatus.reason ? `: ${voiceStatus.reason}` : ""}. Pick Andrew in Settings for a voice with no daily limit.</p>
             )}
             {voiceStatus.state === "preparing" && (
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Getting Wilson's voice ready…{voiceStatus.progress > 0 && voiceStatus.progress < 100 ? ` ${voiceStatus.progress}%` : ""} (one-time download, Wi-Fi is best)</p>
             )}
             {voiceStatus.state === "unavailable" && (
-              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice couldn't play just now{voiceStatus.reason ? ` (${voiceStatus.reason})` : ""}, so this reply is text only.</p>
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is down right now{voiceStatus.reason ? ` (${voiceStatus.reason})` : ""}. The full reply is in the text; tap Play on it to try again.</p>
             )}
             {voiceActive && (
               <div className="flex justify-center mb-1.5">
