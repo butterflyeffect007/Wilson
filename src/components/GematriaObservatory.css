@@ -20,8 +20,12 @@
 .obs-total { position:absolute; top:43.05cqw; left:49.3%; transform:translateX(-50%); margin:0; line-height:1; font-size:16cqw; font-weight:300; letter-spacing:-.045em; padding-right:.045em; white-space:nowrap; color:transparent; background:url("../assets/observatory/gold-grain.webp") center / 64px 64px repeat; background-clip:text; -webkit-background-clip:text; -webkit-text-stroke:.25px #ffe8aa; filter:drop-shadow(0 0 3px #ffe09e) drop-shadow(0 0 10px #ffca7388); }
 .obs-total--sm { font-size:13cqw; top:45cqw; }
 .obs-total--xs { font-size:9cqw; top:47cqw; }
-.obs-input-wrap { margin:0 auto; width:77.78%; height:12.5cqw; }
-.obs-input { width:100%; height:100%; padding:0 5cqw; margin:0; background:transparent; border:0; border-radius:999px; color:#f9f6ee; text-align:center; font-size:4.3cqw; letter-spacing:.10em; text-transform:uppercase; caret-color:#e8faff; outline:0; }
+.obs-input-wrap { margin:0 auto; width:77.78%; height:12.5cqw; display:flex; align-items:center; }
+.obs-input { display:block; width:100%; height:auto; max-height:100%; padding:0 5cqw; resize:none; overflow-y:auto; scrollbar-width:none; white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.25; margin:0; background:transparent; border:0; border-radius:3cqw; color:#f9f6ee; text-align:center; font-size:4.3cqw; letter-spacing:.10em; text-transform:uppercase; caret-color:#e8faff; outline:0; }
+.obs-input--md { font-size:3.4cqw; letter-spacing:.06em; }
+.obs-input--lg { font-size:2.9cqw; letter-spacing:.04em; }
+.obs-input--xl { font-size:2.3cqw; letter-spacing:.03em; }
+.obs-input::-webkit-scrollbar { display:none; }
 .obs-input::placeholder { color:#f5eff3c0; font-size:3cqw; letter-spacing:0; text-transform:none; }
 .obs-input:focus-visible { outline:none !important; }
 .obs-input:focus-visible:not(:placeholder-shown) { box-shadow:inset 0 0 0 1px #e9fbff22; }
@@ -35,7 +39,7 @@
 .obs-card { position:relative; width:86.1%; height:40.28cqw; margin:2.52cqw auto 0; padding:2.78cqw 6cqw; border-radius:3cqw; }
 .obs-rows { list-style:none; padding:0; margin:0; max-height:100%; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#ece5f64d transparent; }
 .obs-row { display:flex; align-items:center; justify-content:space-between; gap:2cqw; width:100%; min-height:8.85cqw; padding:0; background:transparent; border:0; color:#f2ecea; text-align:left; font-size:3.1cqw; line-height:1.3; }
-.obs-row-phrase { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.08em; text-transform:uppercase; }
+.obs-row-phrase { min-width:0; white-space:normal; overflow-wrap:anywhere; padding:1cqw 0; letter-spacing:.08em; text-transform:uppercase; }
 .obs-row-value { flex-shrink:0; font-variant-numeric:tabular-nums; }
 .obs-row:hover { color:white; text-shadow:0 0 8px #fffffff0; }
 .obs-empty { margin:0; padding:8cqw 0; text-align:center; font-size:2.8cqw; line-height:1.7; }
@@ -62,3 +66,5 @@ textarea.obs-field { min-height:14cqw; resize:vertical; }
 .obs-water-entry time { font-size:2.1cqw; }
 @media (min-width:577px) { .obs-column { min-height:1024px; box-shadow:0 0 100px #4a435e55; } }
 @media (prefers-reduced-motion:reduce) { .obs-root * { scroll-behavior:auto; } }
+.obs-root textarea.obs-input { color:#f9f6ee !important; }
+.obs-root textarea.obs-input::placeholder { color:#f5eff3c0 !important; }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import scene from "../assets/observatory/cloud-reference-scene.webp";
 import "./GematriaObservatory.css";
 import { calculateCipher, CIPHERS, findPhraseMatches, type CipherId, type PhraseEntry } from "../gematria/gematria";
@@ -51,7 +51,8 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
   const [note, setNote] = useState("");
   const [waterNotice, setWaterNotice] = useState("");
   const request = useRef<AbortController | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => { const el = inputRef.current; if (!el) return; el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }, [phraseDraft]);
   const opener = useRef<HTMLElement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const result = useMemo(() => calculateCipher(phrase, cipherId), [phrase, cipherId]);
@@ -122,7 +123,7 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
     <div className="obs-scroll"><div className="obs-column">
       <header className="obs-header"><h1>GEMATRIA OBSERVATORY</h1><button type="button" className="obs-close" aria-label="Close Observatory" onClick={onClose}>×</button></header>
       <div className="obs-hero" aria-live="polite"><p className={`obs-total${totalText.length > 3 ? " obs-total--xs" : totalText.length === 3 ? " obs-total--sm" : ""}`} aria-label={`${result.label}: ${totalText}`}>{totalText}</p></div>
-      <form className="obs-input-wrap" onSubmit={e => { e.preventDefault(); setPhraseDraft(phrase); }}><input ref={inputRef} className="obs-input" value={phraseDraft} onChange={e => changePhrase(e.target.value)} placeholder="Type a word or phrase" aria-label="Phrase or name to calculate" autoComplete="off" spellCheck={false}/></form>
+      <form className="obs-input-wrap" onSubmit={e => { e.preventDefault(); setPhraseDraft(phrase); }}><textarea ref={inputRef} rows={1} className={`obs-input${phraseDraft.length > 50 ? " obs-input--xl" : phraseDraft.length > 24 ? " obs-input--lg" : phraseDraft.length > 16 ? " obs-input--md" : ""}`} value={phraseDraft} onChange={e => changePhrase(e.target.value.replace(/[\r\n]+/g, " "))} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder="Type a word or phrase" aria-label="Phrase or name to calculate" autoComplete="off" spellCheck={false}/></form>
       <div className="obs-ciphers" role="radiogroup" aria-label="Cipher" onKeyDown={e => { if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return; e.preventDefault(); const current = PRIMARY.findIndex(c => c.id === cipherId || (c.id === "hebrew-ordinal" && cipherId === "hebrew-final-large")); const index = (Math.max(0,current) + (["ArrowLeft", "ArrowUp"].includes(e.key) ? 2 : 1)) % 3; chooseCipher(PRIMARY[index].id); e.currentTarget.querySelectorAll<HTMLButtonElement>("button")[index]?.focus(); }}>{PRIMARY.map((cipher, i) => <span key={cipher.id}>{i > 0 && <span className="obs-cipher-sep" aria-hidden="true">|</span>}<button type="button" className="obs-cipher" role="radio" tabIndex={cipherId === cipher.id || (cipher.id === "hebrew-ordinal" && cipherId === "hebrew-final-large") ? 0 : -1} aria-checked={cipherId === cipher.id || (cipher.id === "hebrew-ordinal" && cipherId === "hebrew-final-large")} onClick={() => chooseCipher(cipher.id)}>{cipher.label}</button></span>)}</div>
       <div className="obs-tabs" role="tablist" aria-label="Observatory panels" onKeyDown={e => { if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return; e.preventDefault(); const next = e.key === "Home" ? "matches" : e.key === "End" ? "library" : tab === "matches" ? "library" : "matches"; setTab(next); requestAnimationFrame(() => document.getElementById(`obs-tab-${next}`)?.focus()); }}>{([['matches', 'Matches'], ['library', 'Library of Light']] as const).map(([id, label]) => <button type="button" key={id} id={`obs-tab-${id}`} role="tab" tabIndex={tab === id ? 0 : -1} aria-controls={`obs-panel-${id}`} aria-selected={tab === id} className={`obs-tab${tab === id ? ' is-active' : ''}`} onClick={() => setTab(id)}>{label}</button>)}</div>
       <section className={`obs-card${tab === 'library' ? ' obs-card--library' : ''}`} id={`obs-panel-${tab}`} role="tabpanel" aria-labelledby={`obs-tab-${tab}`}>
