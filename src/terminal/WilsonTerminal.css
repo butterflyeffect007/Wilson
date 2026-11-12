@@ -211,6 +211,11 @@
   box-shadow:0 0 16px rgba(209,59,178,.5), inset 0 1px 0 rgba(255,255,255,.3);border:0;cursor:pointer;flex:none}
 .wterm .sendb:disabled{opacity:.45}
 .wterm .msgs{max-height:140px;overflow:auto;scrollbar-width:thin}
+.wterm .chat-bar{display:flex;justify-content:flex-end;position:relative;z-index:1;margin:0 0 4px}
+.wterm .chat-clear{appearance:none;border:0;background:none;padding:0 2px;cursor:pointer;
+  font:500 10px/1 Lexend,sans-serif;color:var(--soft);letter-spacing:.01em}
+.wterm .chat-clear.ask{color:var(--ember)}
+.wterm .chat-clear:disabled{opacity:.45;cursor:default}
 
 /* Global index.css sets user-select/touch-callout none on all `aside` chrome.
    Restore selection on the bubbles so Jenny can long-press and copy chat,

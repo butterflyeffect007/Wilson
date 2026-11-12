@@ -5,13 +5,13 @@ import { DEFAULT_FILENAME, DEFAULT_SCRIPT } from "./defaultScript";
 import { deleteSnippet, loadDraft, loadSnippets, saveDraft, upsertSnippet, type TerminalSnippet } from "./snippets";
 import { PyodideClient, type Figure } from "./pyodideClient";
 import { makeTerminalAdapter, runAgentLoop, MAX_PASSES } from "./agentLoop";
+import { loadChat, saveChat, clearChatStore, historyForModel, type ChatMsg } from "./chatStore";
 import { typeCode } from "./pythonFence";
 import { closeTerminalHash } from "./access";
 import "./WilsonTerminal.css";
 
 type Tab = "terminal" | "files";
 type Line = { kind: "prompt" | "out" | "err" | "figure" | "caret"; text?: string; src?: string };
-type ChatMsg = { id: string; role: "user" | "wilson"; text: string };
 
 function linesOf(code: string): number {
   return Math.max(1, code.split("\n").length);
@@ -57,7 +57,8 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
   const [progress, setProgress] = useState("");
   const [runState, setRunState] = useState<"idle" | "running" | "ok" | "error">("idle");
   const [runMeta, setRunMeta] = useState("");
-  const [chat, setChat] = useState<ChatMsg[]>([]);
+  const [chat, setChat] = useState<ChatMsg[]>(() => loadChat());
+  const [clearAsk, setClearAsk] = useState(false);
   const [draftMsg, setDraftMsg] = useState("");
   const [looping, setLooping] = useState(false);
   const [copyMsg, setCopyMsg] = useState("");
@@ -72,6 +73,11 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
   const close = () => { closeTerminalHash(); onClose?.(); };
 
   useEffect(() => { saveDraft(code, filename); }, [code, filename]);
+  useEffect(() => { saveChat(chat); }, [chat]);
+  useEffect(() => {
+    const box = document.getElementById("wterm-msgs");
+    if (box) box.scrollTop = box.scrollHeight;
+  }, [chat]);
 
   useEffect(() => {
     const c = new PyodideClient();
@@ -186,6 +192,17 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     setTimeout(() => setSaveMsg(""), 1600);
   };
 
+  const onClearChat = () => {
+    if (!clearAsk) {
+      setClearAsk(true);
+      setTimeout(() => setClearAsk(false), 4000);
+      return;
+    }
+    setClearAsk(false);
+    setChat([]);
+    clearChatStore();
+  };
+
   const sendChat = async () => {
     const text = draftMsg.trim();
     if (!text || looping) return;
@@ -193,22 +210,26 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     const abort = new AbortController();
     loopAbort.current = abort;
     setLooping(true);
+    const prior = historyForModel(chat);
     const adapter = makeTerminalAdapter();
     try {
       await runAgentLoop(adapter, text, {
         signal: abort.signal,
         onChat: (role, msg, replaceLast) => {
           setChat((prev) => {
+            let next: typeof prev;
             if (replaceLast && prev.length && prev[prev.length - 1].role === "wilson") {
-              return [...prev.slice(0, -1), { ...prev[prev.length - 1], text: msg }];
+              next = [...prev.slice(0, -1), { ...prev[prev.length - 1], text: msg }];
+            } else {
+              next = [...prev, { id: "m-" + Math.random().toString(36).slice(2, 8), role, text: msg }];
             }
-            return [...prev, { id: "m-" + Math.random().toString(36).slice(2, 8), role, text: msg }];
+            return next.length > 300 ? next.slice(-300) : next;
           });
         },
         onCode: (src) => setCode(src),
         typeCode: (src, signal) => typeCode(src, setCode, signal),
         run: (src) => runCode(src, undefined),
-      });
+      }, prior);
     } finally {
       setLooping(false);
       loopAbort.current = null;
@@ -363,7 +384,14 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
         </div>
 
         <aside className="dock" id="chat">
-          <div className="msgs">
+          {chat.length > 0 && (
+            <div className="chat-bar">
+              <button type="button" className={`chat-clear${clearAsk ? " ask" : ""}`} data-testid="clear-chat" disabled={looping} onClick={onClearChat}>
+                {clearAsk ? "Tap again to clear" : "Clear chat"}
+              </button>
+            </div>
+          )}
+          <div className="msgs" id="wterm-msgs" data-testid="terminal-msgs">
             {chat.map((m) => (
               <div className={`msg${m.role === "user" ? " me" : ""}`} key={m.id}>
                 {m.role === "wilson"

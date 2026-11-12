@@ -66,8 +66,9 @@ export async function runAgentLoop(
   adapter: OpenRouterAdapter,
   jennyText: string,
   hooks: LoopHooks,
+  prior: ChatTurn[] = [],
 ): Promise<void> {
-  const convo: ChatTurn[] = [];
+  const convo: ChatTurn[] = [...prior];
   hooks.onChat("user", jennyText);
   let userInput = jennyText;
   for (let pass = 1; pass <= MAX_PASSES; pass++) {
