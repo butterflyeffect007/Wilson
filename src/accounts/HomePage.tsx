@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AcctUser } from "./api";
-import { Top, PrivacyNotice, go } from "./ui";
+import { Top, PrivacyNotice, go, CASH_APP_URL } from "./ui";
 import logo from "../assets/w22-logo.webp";
 
 /** Wilson's landing page (#home): first stop for new visitors, and where every tap on the Wilson title goes. */
@@ -29,6 +29,7 @@ export function HomePage({ user, onStart }: { user: AcctUser | null; onStart: ()
       <button type="button" className="lcard" onClick={() => go("#beta")}><span className="ic" aria-hidden="true">✨</span><span><span className="t">Become a beta tester</span><span className="s">Try new features early and tell us what works.</span></span><span className="ch" aria-hidden="true">›</span></button>
       <button type="button" className="lcard" onClick={() => go("#room")}><span className="ic" aria-hidden="true">💬</span><span><span className="t">Community room</span><span className="s">Talk with other Wilson users. Say @Wilson to bring him in.</span></span><span className="ch" aria-hidden="true">›</span></button>
       <button type="button" className="lcard" onClick={() => go("#message")}><span className="ic" aria-hidden="true">✉️</span><span><span className="t">Message the Architect</span><span className="s">Send an idea, a question, or a bug report to Wilson's creator.</span></span><span className="ch" aria-hidden="true">›</span></button>
+      <a className="lcard" href={CASH_APP_URL} target="_blank" rel="noopener"><span className="ic" aria-hidden="true">☕</span><span><span className="t">Buy Wilson a coffee</span><span className="s">Support Jenny, Wilson's creator, directly on Cash App · $thearchitectone</span></span><span className="ch" aria-hidden="true">›</span></a>
       <div className="only"><div className="h">The Only One</div><p>“+ The Only One” is you. Same Wilson, shaped by your conversations, your goals, and your way of thinking. A different story for everyone.</p></div>
       <div className="priv"><span aria-hidden="true" style={{ fontSize: 15 }}>🔒</span><div><b>Your data stays yours.</b> Sign-in is optional; if you sign in, your chats sync to your account. No ads. Never sold. Delete your account and chats anytime. <button type="button" className="link" onClick={() => (priv ? setPriv(false) : showPrivacy())} aria-expanded={priv}>Privacy &amp; data {priv ? "↑" : "→"}</button></div></div>
       {priv && <div id="wa-privacy"><PrivacyNotice /></div>}

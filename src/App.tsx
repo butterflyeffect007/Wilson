@@ -36,6 +36,7 @@ import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shoul
 import { shareChat } from "./lib/shareChat";
 import { APP_VERSION } from "./lib/beta";
 import { AccountsLayer, useAccountRoute, closeLayer } from "./accounts/AccountsLayer";
+import { CASH_APP_URL } from "./accounts/ui";
 import { api, type Flags, type Banner, type AcctUser } from "./accounts/api";
 import { getToken, getUser, subscribeAccount, updateUser, clearSession } from "./accounts/store";
 import { applyRemote, pullRemote, pushChanges, noteDeleted } from "./accounts/sync";
@@ -947,6 +948,7 @@ export default function App() {
                   <button type="button" onClick={() => { setSidebarOpen(false); if (isAdmin) setShowAdmin(true); else location.hash = acctUser ? "#account" : "#signin"; }} className="flex-1 flex items-center justify-center gap-2 rounded-xl py-2.5 bg-white/50 text-violet-800 text-[14px] min-w-0"><span className="truncate">{isAdmin ? "✦ Architect access" : acctUser ? `👤 ${acctUser.username}` : "Sign in"}</span></button>
                 </div>
                 <button type="button" onClick={() => { setSidebarOpen(false); doShare(); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800 text-[14px]"><Gift className="w-4 h-4" />Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}</button>
+                <a href={CASH_APP_URL} target="_blank" rel="noopener" onClick={() => setSidebarOpen(false)} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 bg-gradient-to-r from-fuchsia-500/15 via-violet-500/15 to-amber-400/20 text-violet-800 text-[14px]">☕ Buy Wilson a coffee</a>
                 {!isInstalled() && <button type="button" onClick={() => { setSidebarOpen(false); setInstallOpen(true); }} className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2 bg-white/50 text-violet-800 text-[13px]">Add to Home Screen</button>}
               </div>
               <div className="flex-1 overflow-y-auto px-2 pb-4 space-y-1">
@@ -1091,6 +1093,7 @@ export default function App() {
                   <button type="button" className="text-violet-700 hover:underline" onClick={() => { setShowSettings(false); location.hash = "#room"; }}>💬 Community room</button>
                   <button type="button" className="text-violet-700 hover:underline" onClick={() => { setShowSettings(false); location.hash = "#message"; }}>✉️ Message the Architect</button>
                   {!acctUser?.architect && <button type="button" className="text-violet-700 hover:underline" onClick={() => { setShowSettings(false); location.hash = "#beta"; }}>✨ Beta testing</button>}
+                  <a href={CASH_APP_URL} target="_blank" rel="noopener" className="text-violet-700 hover:underline" onClick={() => setShowSettings(false)}>☕ Buy Wilson a coffee</a>
                 </div>
               </div>
               {isAdmin && (

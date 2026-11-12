@@ -5,6 +5,9 @@ export const ICON = `${import.meta.env.BASE_URL}icon-192.png`;
 export const BFLY = bfly;
 export const go = (hash: string) => { location.hash = hash; };
 
+/** Jenny's Cash App. Opens in a new tab; Wilson never collects payment details. */
+export const CASH_APP_URL = "https://cash.app/$thearchitectone";
+
 export function Top({ right, onClose }: { right?: ReactNode; onClose?: () => void }) {
   return (
     <div className="top">
