@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Copy } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import { copyText } from "../lib/clipboard";
 import { isLongInlineCommand, parseFenceAt } from "../lib/codeFence";
 
@@ -29,8 +29,9 @@ function CodeBlock({ lang, code, compact = false }: { lang?: string; code: strin
   const label = lang || (compact ? "command" : "");
   return (
     <div className={`md-block${compact ? " md-block-compact" : ""}`} data-testid="md-block">
-      <div className="md-block-bar">
-        {label ? <div className="md-block-label">{label}</div> : <span className="md-block-label md-block-label-empty" aria-hidden="true" />}
+      {label ? <div className="md-block-label">{label}</div> : null}
+      <pre><code>{hl(code)}</code></pre>
+      <div className="md-block-foot">
         <button
           type="button"
           className={`md-copy${copied ? " is-copied" : ""}`}
@@ -38,11 +39,12 @@ function CodeBlock({ lang, code, compact = false }: { lang?: string; code: strin
           aria-label={copied ? "Copied" : "Copy code"}
           data-testid="md-copy"
         >
-          {copied ? null : <Copy className="md-copy-icon" aria-hidden="true" />}
-          <span>{copied ? "Copied ✓" : "Copy"}</span>
+          {copied
+            ? <Check className="md-copy-icon" aria-hidden="true" />
+            : <Copy className="md-copy-icon" aria-hidden="true" />}
+          <span>{copied ? "Copied" : "Copy code"}</span>
         </button>
       </div>
-      <pre><code>{hl(code)}</code></pre>
     </div>
   );
 }
