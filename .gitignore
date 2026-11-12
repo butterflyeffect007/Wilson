@@ -21,3 +21,4 @@ Thumbs.db
 # fetched by deploy workflow
 src/assets/wilson-fluid.png
 tsconfig.tsbuildinfo
+tests/terminal/e2e-result.json
