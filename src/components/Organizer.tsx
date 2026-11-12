@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useOverlayHistory } from "../hooks/useOverlayHistory";
 import { X, Trash2, Check, Plus, Bell } from "lucide-react";
 import { loadNotes, addNote, updateNote, deleteNote, loadReminders, addReminder, setReminderDone, deleteReminder, fmtDue, askNotifyOnce, type Note, type Reminder } from "../lib/organizer";
 
@@ -15,6 +16,7 @@ export default function Organizer({ tab, onTab, onClose }: { tab: OrgTab; onTab:
     const f = () => { setNotes(loadNotes()); setRems(loadReminders()); };
     window.addEventListener("wilson-organizer", f); return () => window.removeEventListener("wilson-organizer", f);
   }, []);
+  useOverlayHistory(onClose, "organizer");
   const open = rems.filter((r) => !r.done).sort((a, b) => (a.due ?? "9").localeCompare(b.due ?? "9"));
   const done = rems.filter((r) => r.done).slice(-10).reverse();
   const add = () => {
@@ -26,11 +28,14 @@ export default function Organizer({ tab, onTab, onClose }: { tab: OrgTab; onTab:
     <button type="button" onClick={() => onTab(t)} className={`flex-1 py-2 text-[14px] rounded-xl ${tab === t ? "bg-white/70 text-violet-900 shadow-sm" : "text-violet-600/70"}`}>{label}</button>
   );
   return (
-    <div className="fixed inset-0 z-[55] flex flex-col bg-violet-950/10" role="dialog" aria-label={tab === "notes" ? "Notes" : "Reminders"}>
-      <div className="mt-auto w-full max-w-lg mx-auto glass-strong rounded-t-3xl flex flex-col max-h-[88dvh] pb-[max(1rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-center justify-between px-4 pt-4">
+    <div className="fixed inset-0 z-[55] flex flex-col bg-violet-950/10" role="dialog" aria-modal="true" aria-label={tab === "notes" ? "Notes" : "Reminders"} onClick={onClose}>
+      <div className="mt-auto w-full max-w-lg mx-auto glass-strong rounded-t-3xl flex flex-col max-h-[88dvh] pb-[max(1rem,env(safe-area-inset-bottom))]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4">
+          <button type="button" onClick={onClose} aria-label="Back to Wilson" data-testid="org-back" className="inline-flex items-center justify-center gap-1 min-h-11 min-w-11 px-3 rounded-full text-[14px] font-medium tracking-wide text-violet-950/90 touch-manipulation">
+            <span aria-hidden="true">‹</span><span>Wilson</span>
+          </button>
           <h2 className="text-[17px] tracking-[0.04em] text-violet-950/90">{tab === "notes" ? "Notes" : "Reminders"}</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 text-violet-400"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onClose} aria-label="Close" className="min-w-11 min-h-11 flex items-center justify-center text-violet-400 touch-manipulation"><X className="w-5 h-5" /></button>
         </div>
         <div className="flex gap-1 mx-4 mt-3 p-1 rounded-2xl bg-violet-100/40">{tabBtn("notes", "Notes")}{tabBtn("reminders", "Reminders")}</div>
         <div className="px-4 pt-3 space-y-2">

@@ -14,8 +14,47 @@
 .obs-column::before { content:""; position:absolute; left:0; top:0; width:100%; aspect-ratio:576 / 1024; z-index:-1; background:var(--obs-scene) center top / 100% auto no-repeat; -webkit-mask-image:linear-gradient(#000 93%,transparent); mask-image:linear-gradient(#000 93%,transparent); }
 .obs-header { padding:0 !important; position:absolute; top:8.68cqw; left:0; width:100%; display:flex; justify-content:center; align-items:center; }
 .obs-header h1 { margin:0; font-size:2.65cqw; line-height:3.5cqw; font-weight:300; letter-spacing:.17em; white-space:nowrap; }
-.obs-close { position:absolute; right:3cqw; top:-.6cqw; border:0; background:transparent; color:#fff8; font-size:4cqw; padding:0 1cqw; opacity:.38; }
-.obs-close:hover,.obs-close:focus-visible { opacity:1; }
+/* Always-visible, safe-area, thumb-friendly return to Wilson. Fixed so it
+   does not scroll away with the cloud scene. Crisp spectrum hairline, no halo. */
+.obs-back {
+  position: fixed;
+  top: max(0.5rem, env(safe-area-inset-top));
+  left: max(0.5rem, env(safe-area-inset-left));
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .3rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px 0 10px;
+  border: 0;
+  border-radius: 9999px;
+  font-family: Lexend, system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: .06em;
+  color: #F6EEFF;
+  background: linear-gradient(180deg, rgba(52, 20, 86, .88), rgba(16, 7, 28, .92));
+  box-shadow: 0 1px 0 rgba(252, 188, 126, .28) inset;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  isolation: isolate;
+}
+.obs-back::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  background: linear-gradient(90deg, #D13BB2, #6E21B0 40%, #FCBC7E);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.obs-back-chevron { font-size: 1.25em; line-height: 1; transform: translateY(-1px); }
+.obs-back:active { transform: translateY(0.5px); }
 .obs-hero { position:relative; height:94.62cqw; pointer-events:none; }
 .obs-total { position:absolute; top:43.05cqw; left:49.3%; transform:translateX(-50%); margin:0; line-height:1; font-size:16cqw; font-weight:300; letter-spacing:-.045em; padding-right:.045em; white-space:nowrap; color:transparent; background:url("../assets/observatory/gold-grain.webp") center / 64px 64px repeat; background-clip:text; -webkit-background-clip:text; -webkit-text-stroke:.25px #ffe8aa; filter:drop-shadow(0 0 3px #ffe09e) drop-shadow(0 0 10px #ffca7388); }
 .obs-total--sm { font-size:13cqw; top:45cqw; }

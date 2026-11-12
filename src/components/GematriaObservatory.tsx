@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useOverlayHistory } from "../hooks/useOverlayHistory";
 import scene from "../assets/observatory/cloud-reference-scene.webp";
 import "./GematriaObservatory.css";
 import { calculateCipher, CIPHERS, findPhraseMatches, type CipherId, type PhraseEntry } from "../gematria/gematria";
@@ -55,6 +56,7 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
   useLayoutEffect(() => { const el = inputRef.current; if (!el) return; el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }, [phraseDraft]);
   const opener = useRef<HTMLElement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  useOverlayHistory(onClose, "observatory");
   const result = useMemo(() => calculateCipher(phrase, cipherId), [phrase, cipherId]);
   const matches = useMemo(() => phrase ? findPhraseMatches(phrase, library, cipherId, { excludeExactText: true }) : [], [phrase, library, cipherId]);
   const filtered = useMemo(() => library.filter(p => p.phrase.toLowerCase().includes(search.toLowerCase())), [library, search]);
@@ -120,8 +122,9 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
   return <div ref={rootRef} tabIndex={-1} className="obs-root" style={{ "--obs-scene": `url(${scene})` } as React.CSSProperties} role="dialog" aria-modal="true" aria-label="Wilson Gematria Observatory" onKeyDown={trapKeys}>
+    <button type="button" className="obs-back" onClick={onClose} aria-label="Back to Wilson" data-testid="obs-back"><span className="obs-back-chevron" aria-hidden="true">‹</span><span>Wilson</span></button>
     <div className="obs-scroll"><div className="obs-column">
-      <header className="obs-header"><h1>GEMATRIA OBSERVATORY</h1><button type="button" className="obs-close" aria-label="Close Observatory" onClick={onClose}>×</button></header>
+      <header className="obs-header"><h1>GEMATRIA OBSERVATORY</h1></header>
       <div className="obs-hero" aria-live="polite"><p className={`obs-total${totalText.length > 3 ? " obs-total--xs" : totalText.length === 3 ? " obs-total--sm" : ""}`} aria-label={`${result.label}: ${totalText}`}>{totalText}</p></div>
       <form className="obs-input-wrap" onSubmit={e => { e.preventDefault(); setPhraseDraft(phrase); }}><textarea ref={inputRef} rows={1} className={`obs-input${phraseDraft.length > 50 ? " obs-input--xl" : phraseDraft.length > 24 ? " obs-input--lg" : phraseDraft.length > 16 ? " obs-input--md" : ""}`} value={phraseDraft} onChange={e => changePhrase(e.target.value.replace(/[\r\n]+/g, " "))} onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder="Type a word or phrase" aria-label="Phrase or name to calculate" autoComplete="off" spellCheck={false}/></form>
       <div className="obs-ciphers" role="radiogroup" aria-label="Cipher" onKeyDown={e => { if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return; e.preventDefault(); const current = PRIMARY.findIndex(c => c.id === cipherId || (c.id === "hebrew-ordinal" && cipherId === "hebrew-final-large")); const index = (Math.max(0,current) + (["ArrowLeft", "ArrowUp"].includes(e.key) ? 2 : 1)) % 3; chooseCipher(PRIMARY[index].id); e.currentTarget.querySelectorAll<HTMLButtonElement>("button")[index]?.focus(); }}>{PRIMARY.map((cipher, i) => <span key={cipher.id}>{i > 0 && <span className="obs-cipher-sep" aria-hidden="true">|</span>}<button type="button" className="obs-cipher" role="radio" tabIndex={cipherId === cipher.id || (cipher.id === "hebrew-ordinal" && cipherId === "hebrew-final-large") ? 0 : -1} aria-checked={cipherId === cipher.id || (cipher.id === "hebrew-ordinal" && cipherId === "hebrew-final-large")} onClick={() => chooseCipher(cipher.id)}>{cipher.label}</button></span>)}</div>
