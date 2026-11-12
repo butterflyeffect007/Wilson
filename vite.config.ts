@@ -51,5 +51,18 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    fs: {
+      // Worktree node_modules is often a symlink into the primary checkout;
+      // allow its real path so @fontsource files can be served in dev/e2e.
+      allow: (() => {
+        const nm = path.resolve(__dirname, "node_modules");
+        try {
+          const real = fs.realpathSync(nm);
+          return real === nm ? [nm] : [nm, real];
+        } catch {
+          return [nm];
+        }
+      })(),
+    },
   },
 });

@@ -17,8 +17,22 @@ import io, base64
 import matplotlib.pyplot as plt
 _out = []
 for _n in list(plt.get_fignums()):
+    _fig = plt.figure(_n)
+    _fig.patch.set_facecolor("#07040D")
+    for _ax in _fig.axes:
+        _ax.tick_params(colors="#F6EEFF", labelcolor="#F6EEFF")
+        _ax.xaxis.label.set_color("#F6EEFF")
+        _ax.yaxis.label.set_color("#F6EEFF")
+        if _ax.get_title():
+            _ax.title.set_color("#F6EEFF")
+        for _sp in _ax.spines.values():
+            _sp.set_color("#CDB4FF")
+        _cb = getattr(_ax, "colorbar", None) or getattr(_ax, "_colorbar", None)
+        if _cb is not None:
+            _cb.ax.yaxis.label.set_color("#F6EEFF")
+            _cb.ax.tick_params(colors="#F6EEFF", labelcolor="#F6EEFF")
     _buf = io.BytesIO()
-    plt.figure(_n).savefig(_buf, format="png", dpi=140, bbox_inches="tight", facecolor="#07040D", edgecolor="none")
+    _fig.savefig(_buf, format="png", dpi=140, bbox_inches="tight", facecolor="#07040D", edgecolor="none")
     _out.append(base64.b64encode(_buf.getvalue()).decode("ascii"))
 plt.close("all")
 _out
@@ -55,6 +69,22 @@ warnings.filterwarnings("ignore", message=r".*FigureCanvasAgg is non-interactive
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+_LIGHT = "#F6EEFF"
+matplotlib.rcParams.update({
+    "figure.facecolor": "#07040D",
+    "axes.facecolor": "#0C0718",
+    "axes.edgecolor": "#CDB4FF",
+    "axes.labelcolor": _LIGHT,
+    "axes.titlecolor": _LIGHT,
+    "xtick.color": _LIGHT,
+    "ytick.color": _LIGHT,
+    "text.color": _LIGHT,
+    "savefig.facecolor": "#07040D",
+    "savefig.edgecolor": "none",
+    "legend.edgecolor": "#CDB4FF",
+    "legend.labelcolor": _LIGHT,
+    "legend.facecolor": "#0C0718",
+})
 # Warm the font cache during load so the first visible run stays clean.
 plt.figure(); plt.close("all")
 `);

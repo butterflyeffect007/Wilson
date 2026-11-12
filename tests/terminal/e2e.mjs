@@ -43,6 +43,8 @@ try {
   });
   const page = browser.pages()[0] || await browser.newPage();
   await page.setViewportSize({ width: 390, height: 844 });
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
   page.on("pageerror", (err) => { result.error += String(err) + "\n"; });
   await page.goto(`${BASE}/?e2e_architect=1#terminal`, { waitUntil: "domcontentloaded", timeout: 30_000 });
   await page.waitForSelector(".wterm", { timeout: 15_000 });
@@ -53,6 +55,7 @@ try {
 
   await page.waitForTimeout(400);
   await page.screenshot({ path: "/workspace/shot/terminal-real.png", type: "png", animations: "disabled" });
+  await page.screenshot({ path: "/workspace/shot/terminal-v2.png", type: "png", animations: "disabled" });
 
   await page.locator('[data-testid="run-btn"]').click();
   await page.waitForSelector('[data-run="ok"], [data-run="error"]', { timeout: 120_000 });

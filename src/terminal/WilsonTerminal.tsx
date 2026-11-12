@@ -219,10 +219,8 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
             <div className="titles"><h1>Wilson's Terminal</h1><div className="sub">Architect only</div></div>
           </div>
           <section className="stack" style={{ margin: "24px 16px" }}>
-            <div className="pane-back" />
             <div className="win locked">
-              <div className="sheen" />
-              <p style={{ position: "relative", zIndex: 1 }}>This room is only for the Architect. Sign in on Jenny's account to write and run code with Wilson.</p>
+              <p>This room is only for the Architect. Sign in on Jenny's account to write and run code with Wilson.</p>
             </div>
           </section>
         </div>
@@ -234,7 +232,6 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     <div className="wterm" role="dialog" aria-modal="true" aria-label="Wilson's Terminal" data-pyodide={pyAttr} data-run={runState}>
       <div className="bg">
         <div className="orb o1" /><div className="orb o2" /><div className="orb o3" />
-        <i className="bf b0" /><i className="bf b1" /><i className="bf b2" /><i className="bf b3" /><i className="bf b4" />
       </div>
       <div className="phone">
         <div className="top">
@@ -256,9 +253,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
           {tab === "terminal" && (
             <>
               <section className="stack" id="editor-card">
-                <div className="pane-back" />
                 <div className="win">
-                  <div className="sheen" />
                   <div className="chrome">
                     <span className="dots" aria-hidden="true"><i className="a" /><i className="b" /><i className="c" /></span>
                     <span className="fn">{filename}</span>
@@ -296,9 +291,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
               </div>
 
               <section className="stack" id="output-card">
-                <div className="pane-back" />
                 <div className="win">
-                  <div className="sheen" />
                   <div className="chrome">
                     <span className="dots" aria-hidden="true"><i className="a" /><i className="b" /><i className="c" /></span>
                     <span className="fn">wilson@neural-void</span>
@@ -320,9 +313,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
 
           {tab === "files" && (
             <section className="stack">
-              <div className="pane-back" />
               <div className="win">
-                <div className="sheen" />
                 <div className="chrome">
                   <span className="fn">snippets on this phone</span>
                   <span className="sp" />
