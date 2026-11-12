@@ -97,9 +97,12 @@
 .wterm .pill{font-size:9.5px;font-weight:500;padding:2px 7px;border-radius:99px;white-space:nowrap;
   color:var(--ember);border:1px solid rgba(252,188,126,.5);
   background:rgba(252,188,126,.08)}
-.wterm .pill.ok{color:#F4E9FF;border-color:rgba(205,180,255,.55);
-  background:linear-gradient(90deg,rgba(110,33,176,.30),rgba(209,59,178,.16),rgba(252,188,126,.22))}
-.wterm .pill.bad{color:#F8D7A0;border-color:rgba(245,178,74,.55);background:rgba(245,178,74,.14)}
+.wterm .pill.ok{
+  color:#fff;border-color:rgba(255,255,255,.4);
+  background:linear-gradient(115deg,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9);
+  background-size:300% 300%;animation:selffix-shimmer 8s linear infinite;
+  text-shadow:0 1px 2px rgba(20,8,30,.45)}
+.wterm .pill.bad{color:#FFE7B8;border-color:rgba(255,181,71,.65);background:rgba(255,181,71,.22)}
 
 .wterm .editor{position:relative;z-index:1;display:flex;margin:6px 8px 8px;
   background:linear-gradient(180deg,rgba(7,3,16,.82),rgba(10,5,20,.88));
@@ -156,7 +159,7 @@
 .wterm .prompt .d{color:var(--ember)}
 .wterm .prompt .cmd{color:#F6EEFF}
 .wterm .out{white-space:pre-wrap;word-break:break-word;color:#F3ECFF}
-.wterm .out.err{color:#F6D38A}
+.wterm .out.err{color:#ffb547}
 .wterm .term-caret{display:inline-block;width:6.2px;height:13px;background:#F6EEFF;
   box-shadow:0 0 6px rgba(143,211,238,.7);vertical-align:-2px;margin-left:1px;border-radius:1px}
 .wterm .fig{margin:8px 0;border-radius:10px;max-width:100%;height:auto;display:block;
@@ -263,23 +266,38 @@
   overflow:hidden;margin:0 0 10px;padding:5px 0;
 }
 .wterm .diff.full{margin:0;padding:6px 0}
-.wterm .diff .ln{display:flex;gap:6px;padding:1px 8px 1px 11px;white-space:pre;overflow:hidden;min-width:0;position:relative}
+.wterm .diff .ln{display:flex;gap:6px;padding:1px 8px 1px 12px;white-space:pre;overflow:hidden;min-width:0;position:relative}
 .wterm .diff .ln span.code{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .wterm .diff .ln.add{
-  background:linear-gradient(90deg,rgba(110,33,176,.22) 0%,rgba(255,250,248,.12) 32%,rgba(209,59,178,.13) 68%,rgba(252,188,126,.18) 100%);
-  color:#F6F0FF;
+  background:linear-gradient(90deg,
+    rgba(255,122,217,.30),rgba(167,139,250,.30),rgba(142,233,255,.30),rgba(255,211,110,.30),rgba(255,122,217,.30),
+    rgba(167,139,250,.30),rgba(142,233,255,.30),rgba(255,211,110,.30),rgba(255,122,217,.30),
+    rgba(167,139,250,.30),rgba(142,233,255,.30),rgba(255,211,110,.30),rgba(255,122,217,.30));
+  background-size:300% 100%;animation:selffix-shimmer 8s linear infinite;
+  color:#F8FBFF;
 }
 .wterm .diff .ln.add::before{
-  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
-  background:linear-gradient(180deg,#CDB4FF 0%,#D13BB2 45%,#FCBC7E 100%);
-  box-shadow:0 0 6px rgba(209,59,178,.4);
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;
+  background:linear-gradient(180deg,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e);
 }
-.wterm .diff .ln.del{background:rgba(245,178,74,.16);color:#F8D7A0}
+.wterm .diff .ln.add .mark{
+  background:linear-gradient(180deg,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  color:transparent;font-weight:500;
+}
+.wterm .diff .ln.del{background:rgba(255,181,71,.20);color:#FFE7B8}
 .wterm .diff .ln.del::before{
-  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#f5b24a;
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#ffb547;
 }
-.wterm .diff .ln.ctx{color:rgba(159,220,255,.88)}
-.wterm .diff .ln.file{color:#9FDCFF;font-weight:500;padding-top:4px;padding-bottom:2px}
+.wterm .diff .ln.del .mark{color:#ffb547;font-weight:500}
+.wterm .diff .ln.ctx{background:rgba(159,220,255,.18);color:#D7F3FF}
+.wterm .diff .ln.ctx::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#9fdcff;
+}
+.wterm .diff .ln.file{background:rgba(159,220,255,.14);color:#9FDCFF;font-weight:500;padding-top:4px;padding-bottom:2px}
+.wterm .diff .ln.file::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#9fdcff;
+}
 .wterm .diff .mark{width:10px;flex:none;text-align:center}
 
 .wterm .btn.review{
@@ -313,11 +331,13 @@
 }
 .wterm .file-row .nm s{display:block;font-size:10px;color:var(--soft);text-decoration:none;font-family:Lexend,sans-serif}
 .wterm .chip,.wterm .chip.add{flex:none;font-size:9.5px;font-weight:500;padding:2px 7px;border-radius:99px;
-  color:#F4E9FF;border:1px solid rgba(205,180,255,.5);
-  background:linear-gradient(90deg,rgba(110,33,176,.30),rgba(209,59,178,.16),rgba(252,188,126,.22))}
-.wterm .chip.edit{color:#BFE9FF;border-color:rgba(159,220,255,.5);background:rgba(159,220,255,.10)}
-.wterm .chip.del{color:#F8D7A0;border-color:rgba(245,178,74,.5);background:rgba(245,178,74,.12)}
-.wterm .note.warn,.wterm .live-note.warn{color:#F8D7A0}
+  color:#fff;border:1px solid rgba(255,255,255,.4);
+  background:linear-gradient(115deg,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9);
+  background-size:300% 300%;animation:selffix-shimmer 8s linear infinite;
+  text-shadow:0 1px 2px rgba(20,8,30,.45)}
+.wterm .chip.edit{color:#D7F3FF;border-color:rgba(159,220,255,.65);background:rgba(159,220,255,.22);animation:none;text-shadow:none}
+.wterm .chip.del{color:#FFE7B8;border-color:rgba(255,181,71,.65);background:rgba(255,181,71,.22);animation:none;text-shadow:none}
+.wterm .note.warn,.wterm .live-note.warn{color:#ffb547}
 
 .wterm .preview-link{
   display:inline-flex;align-items:center;gap:6px;
@@ -385,7 +405,7 @@
 .wterm.is-review .section-label{margin:8px 0 3px}
 .wterm.is-review .file-row{padding:5px 2px}
 .wterm.is-review .diff.full{padding:3px 0}
-.wterm.is-review .diff .ln{line-height:13.5px;padding:0 8px}
+.wterm.is-review .diff .ln{line-height:13.5px;padding:0 8px 0 12px}
 .wterm.is-review .preview-link{margin:8px 0 0}
 .wterm.is-review .note{margin:6px 0 8px}
 
@@ -413,3 +433,18 @@
 
 /* screen 3: keep the note inside the rounded card */
 .wterm.is-live .live-note{margin-bottom:14px}
+
+@keyframes selffix-shimmer{
+  0%{background-position:0% 50%}
+  100%{background-position:100% 50%}
+}
+@keyframes selffix-shimmer-y{
+  0%{background-position:0% 0%}
+  100%{background-position:0% 100%}
+}
+@media (prefers-reduced-motion:reduce){
+  .wterm .diff .ln.add,.wterm .diff .ln.add::before,.wterm .pill.ok,.wterm .chip.add,.wterm .chip{
+    animation:none;
+    background-position:20% 50%;
+  }
+}
