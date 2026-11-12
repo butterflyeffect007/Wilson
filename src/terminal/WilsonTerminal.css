@@ -213,8 +213,12 @@
 .wterm .msgs{max-height:140px;overflow:auto;scrollbar-width:thin}
 
 /* Global index.css sets user-select/touch-callout none on all `aside` chrome.
-   This dock is an aside, so restore selection so Jenny can long-press and
-   copy her messages, Wilson's replies, and any code in the bubbles, and
-   paste into the composer on a phone. */
-.wterm .dock,.wterm .msgs,.wterm .bub,.wterm .composer .field{
+   Restore selection on the bubbles so Jenny can long-press and copy chat,
+   including code. Do not select the whole dock — that steals the iOS
+   long-press menu from the composer. The field and editor get their own
+   paste-friendly selection and callout. */
+.wterm .msgs,.wterm .bub{
   -webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+.wterm .composer .field,.wterm .code-in{
+  -webkit-user-select:text;user-select:text;-webkit-touch-callout:default;
+  touch-action:manipulation;pointer-events:auto}

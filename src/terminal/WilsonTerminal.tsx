@@ -26,6 +26,26 @@ function Prompt({ cmd }: { cmd?: string }) {
   );
 }
 
+
+/** Insert clipboard text at the caret of a controlled field. iOS PWAs sometimes
+ *  swallow native paste into inputs nested in an `aside`; handling it here keeps
+ *  the value in sync without changing the look. */
+function pasteInto(
+  value: string,
+  el: HTMLInputElement | HTMLTextAreaElement,
+  inserted: string,
+  setValue: (next: string) => void,
+) {
+  const start = el.selectionStart ?? value.length;
+  const end = el.selectionEnd ?? value.length;
+  const next = value.slice(0, start) + inserted + value.slice(end);
+  setValue(next);
+  requestAnimationFrame(() => {
+    const pos = start + inserted.length;
+    try { el.setSelectionRange(pos, pos); } catch { /* ignore */ }
+  });
+}
+
 export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean; onClose?: () => void }) {
   const draft = useRef(loadDraft());
   const [tab, setTab] = useState<Tab>("terminal");
@@ -273,6 +293,12 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
                         aria-label="Python editor"
                         value={code}
                         onChange={(e) => setCode(e.target.value)}
+                        onPaste={(e) => {
+                          const text = e.clipboardData?.getData("text/plain") ?? e.clipboardData?.getData("text");
+                          if (text == null) return;
+                          e.preventDefault();
+                          pasteInto(code, e.currentTarget, text, setCode);
+                        }}
                         onScroll={syncScroll}
                       />
                     </div>
@@ -355,6 +381,12 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
               className="field"
               value={draftMsg}
               onChange={(e) => setDraftMsg(e.target.value)}
+              onPaste={(e) => {
+                const text = e.clipboardData?.getData("text/plain") ?? e.clipboardData?.getData("text");
+                if (text == null || looping) return;
+                e.preventDefault();
+                pasteInto(draftMsg, e.currentTarget, text, setDraftMsg);
+              }}
               placeholder={looping ? "Wilson is working…" : "Ask Wilson to write or fix code"}
               aria-label="Message Wilson"
               disabled={looping}
