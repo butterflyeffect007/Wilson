@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 _out = []
 for _n in list(plt.get_fignums()):
     _fig = plt.figure(_n)
+    _wilson_latinize_figure(_fig)
     _fig.patch.set_facecolor("#07040D")
     for _ax in _fig.axes:
         _ax.tick_params(colors="#F6EEFF", labelcolor="#F6EEFF")
@@ -66,9 +67,13 @@ async function boot() {
   await pyodide.runPythonAsync(`
 import warnings
 warnings.filterwarnings("ignore", message=r".*FigureCanvasAgg is non-interactive.*")
+# DejaVu (the font Pyodide matplotlib ships) is Latin-only. Ignore tofu warnings
+# so a Matrix-rain script does not flood the terminal on a phone.
+warnings.filterwarnings("ignore", message=r"Glyph .* missing from current font")
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.text import Text as _WilsonText
 _LIGHT = "#F6EEFF"
 matplotlib.rcParams.update({
     "figure.facecolor": "#07040D",
@@ -85,6 +90,36 @@ matplotlib.rcParams.update({
     "legend.labelcolor": _LIGHT,
     "legend.facecolor": "#0C0718",
 })
+# Map CJK / kana / fullwidth glyphs to ASCII so figures stay readable
+# without downloading a CJK font on a phone. One character in, one out,
+# so a Matrix-rain grid keeps its columns.
+_WILSON_RAIN = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%&*+=<>/|"
+def _wilson_plot_text(s):
+    if not isinstance(s, str) or not s:
+        return s
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if 0xFF01 <= o <= 0xFF5E:
+            out.append(chr(o - 0xFEE0))
+        elif o == 0x3000:
+            out.append(" ")
+        elif (0x3040 <= o <= 0x30FF) or (0x31F0 <= o <= 0x31FF) or (0xFF65 <= o <= 0xFF9F) or (0x3400 <= o <= 0x4DBF) or (0x4E00 <= o <= 0x9FFF) or (0xF900 <= o <= 0xFAFF):
+            out.append(_WILSON_RAIN[o % len(_WILSON_RAIN)])
+        else:
+            out.append(ch)
+    return "".join(out)
+def _wilson_latinize_figure(fig):
+    def walk(artist):
+        if isinstance(artist, _WilsonText):
+            t = artist.get_text()
+            if t:
+                n = _wilson_plot_text(t)
+                if n != t:
+                    artist.set_text(n)
+        for child in artist.get_children():
+            walk(child)
+    walk(fig)
 # Warm the font cache during load so the first visible run stays clean.
 plt.figure(); plt.close("all")
 `);

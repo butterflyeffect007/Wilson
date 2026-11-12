@@ -211,3 +211,10 @@
   box-shadow:0 0 16px rgba(209,59,178,.5), inset 0 1px 0 rgba(255,255,255,.3);border:0;cursor:pointer;flex:none}
 .wterm .sendb:disabled{opacity:.45}
 .wterm .msgs{max-height:140px;overflow:auto;scrollbar-width:thin}
+
+/* Global index.css sets user-select/touch-callout none on all `aside` chrome.
+   This dock is an aside, so restore selection so Jenny can long-press and
+   copy her messages, Wilson's replies, and any code in the bubbles, and
+   paste into the composer on a phone. */
+.wterm .dock,.wterm .msgs,.wterm .bub,.wterm .composer .field{
+  -webkit-user-select:text;user-select:text;-webkit-touch-callout:default}

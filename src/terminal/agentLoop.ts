@@ -16,6 +16,7 @@ When she asks you to write or change code:
 - Do not use any other language fence. The block is auto-inserted into the editor and auto-run.
 - After you see run output or an error, you may send a fixed full script (again one fenced python block) or, if it worked, summarize what you see without a code block.
 - Use matplotlib the usual way (plt.show() is fine); figures render inline as images.
+- Pyodide's matplotlib font is Latin-only. For text in figures (including Matrix rain), use ASCII characters, not katakana or other CJK glyphs.
 - To install a pure-Python package: import micropip; await micropip.install("name")
 - Keep scripts reasonably small. You get at most ${MAX_PASSES} automatic re-runs.`;
 
