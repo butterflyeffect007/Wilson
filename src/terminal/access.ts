@@ -32,3 +32,17 @@ export function closeTerminalHash(): void {
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   } catch { /* ignore */ }
 }
+
+export type E2ESelfFixScreen = "propose" | "review" | "live";
+
+/** Localhost e2e only: render a self-fix screen with fixture data. */
+export function isE2ESelfFix(): E2ESelfFixScreen | null {
+  try {
+    const host = location.hostname;
+    if (host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]") return null;
+    const m = /(?:^|[?&])e2e_selffix=(propose|review|live)(?:&|$)/.exec(location.search);
+    return (m?.[1] as E2ESelfFixScreen | undefined) || null;
+  } catch {
+    return null;
+  }
+}
