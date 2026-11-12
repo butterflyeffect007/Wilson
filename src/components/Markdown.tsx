@@ -1,4 +1,7 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Copy } from "lucide-react";
+import { copyText } from "../lib/clipboard";
+import { isLongInlineCommand, parseFenceAt } from "../lib/codeFence";
 
 /** Instrument-grade markdown: headings, lists, quotes, tables, fenced code — no deps, no HTML injection. */
 let HL = ""; // active search term (set by <Markdown highlight>)
@@ -10,12 +13,50 @@ function hl(t: string): React.ReactNode {
   return parts.map((x, i) => (i % 2 ? <mark key={i} className="wl-hit">{x}</mark> : x));
 }
 
+function CodeBlock({ lang, code, compact = false }: { lang?: string; code: string; compact?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const onCopy = async () => {
+    const ok = await copyText(code);
+    if (!ok) return;
+    setCopied(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(false), 1500);
+  };
+
+  const label = lang || (compact ? "command" : "");
+  return (
+    <div className={`md-block${compact ? " md-block-compact" : ""}`} data-testid="md-block">
+      <div className="md-block-bar">
+        {label ? <div className="md-block-label">{label}</div> : <span className="md-block-label md-block-label-empty" aria-hidden="true" />}
+        <button
+          type="button"
+          className={`md-copy${copied ? " is-copied" : ""}`}
+          onClick={onCopy}
+          aria-label={copied ? "Copied" : "Copy code"}
+          data-testid="md-copy"
+        >
+          {copied ? null : <Copy className="md-copy-icon" aria-hidden="true" />}
+          <span>{copied ? "Copied ✓" : "Copy"}</span>
+        </button>
+      </div>
+      <pre><code>{hl(code)}</code></pre>
+    </div>
+  );
+}
+
 export function renderInline(text: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g);
   return parts.map((p, i) => {
     if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{hl(p.slice(2, -2))}</strong>;
     if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <em key={i}>{hl(p.slice(1, -1))}</em>;
-    if (p.length > 2 && p.startsWith("`") && p.endsWith("`")) return <code key={i} className="md-code-inline">{hl(p.slice(1, -1))}</code>;
+    if (p.length > 2 && p.startsWith("`") && p.endsWith("`")) {
+      const code = p.slice(1, -1);
+      if (isLongInlineCommand(code)) return <CodeBlock key={i} code={code} compact />;
+      return <code key={i} className="md-code-inline">{hl(code)}</code>;
+    }
     const link = p.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
     if (link) return <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" className="md-link">{link[1]}</a>;
     return <React.Fragment key={i}>{hl(p)}</React.Fragment>;
@@ -33,17 +74,10 @@ export function Markdown({ text, highlight = "" }: { text: string; highlight?: s
   let i = 0, k = 0;
   while (i < lines.length) {
     const line = lines[i];
-    const fence = line.match(/^\s*```\s*([\w+-]*)/);
+    const fence = parseFenceAt(lines, i);
     if (fence) {
-      const body: string[] = []; i++;
-      while (i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i++]);
-      i++;
-      out.push(
-        <div key={k++} className="md-block">
-          {fence[1] && <div className="md-block-label">{fence[1]}</div>}
-          <pre><code>{hl(body.join("\n"))}</code></pre>
-        </div>,
-      );
+      out.push(<CodeBlock key={k++} lang={fence.lang} code={fence.code} />);
+      i = fence.end;
       continue;
     }
     if (isTableRow(line) && i + 1 < lines.length && isSep(lines[i + 1])) {

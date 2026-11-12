@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Markdown } from "./components/Markdown";
+import { copyText } from "./lib/clipboard";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import InstallCard, { isInstalled } from "./components/InstallCard";
 import { AdminPanel } from "./components/AdminPanel";
@@ -710,11 +711,10 @@ export default function App() {
   const stopGenerating = useCallback(() => abortRef.current?.abort(), []);
 
   const copyMessage = useCallback(async (m: StoredMessage) => {
-    try {
-      await navigator.clipboard.writeText(m.content);
-      setCopiedId(m.id);
-      setTimeout(() => setCopiedId((c) => (c === m.id ? null : c)), 1500);
-    } catch { /* clipboard blocked */ }
+    const ok = await copyText(m.content);
+    if (!ok) return;
+    setCopiedId(m.id);
+    setTimeout(() => setCopiedId((c) => (c === m.id ? null : c)), 1500);
   }, []);
 
   /* ---------- voice input ---------- */
