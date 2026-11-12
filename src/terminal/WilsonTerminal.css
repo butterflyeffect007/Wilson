@@ -100,7 +100,7 @@
 .wterm .pill.ok{
   position:relative;overflow:hidden;
   color:#fff;border-color:rgba(255,255,255,.45);
-  background:linear-gradient(115deg,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9);
+  background:linear-gradient(115deg,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8);
   background-size:300% 300%;animation:selffix-shimmer 7s linear infinite;
   text-shadow:0 1px 2px rgba(20,8,30,.45);
   box-shadow:0 0 10px rgba(167,139,250,.4),0 0 16px rgba(255,122,217,.22)}
@@ -271,46 +271,42 @@
 .wterm .diff .ln{display:flex;gap:6px;padding:1px 8px 1px 12px;white-space:pre;overflow:hidden;min-width:0;position:relative}
 .wterm .diff .ln span.code{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .wterm .diff .ln.add{
-  color:#F8FBFF;
+  color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.72);
   background:linear-gradient(90deg,
-    rgba(255,122,217,.26),rgba(167,139,250,.26),rgba(142,233,255,.26),rgba(255,211,110,.26),rgba(255,122,217,.26),
-    rgba(167,139,250,.26),rgba(142,233,255,.26),rgba(255,211,110,.26),rgba(255,122,217,.26));
+    rgba(255,79,216,.48),rgba(155,92,255,.48),rgba(62,230,255,.48),rgba(255,211,110,.48),rgba(255,79,216,.48),
+    rgba(155,92,255,.48),rgba(62,230,255,.48),rgba(255,211,110,.48),rgba(255,79,216,.48));
   background-size:300% 100%;
   animation:selffix-shimmer 7s linear infinite;
-  box-shadow:inset 6px 0 14px rgba(167,139,250,.22),inset -10px 0 16px rgba(142,233,255,.14);
-  text-shadow:0 0 8px rgba(200,180,255,.28),0 0 14px rgba(142,233,255,.16);
 }
 .wterm .diff .ln.add .mark,.wterm .diff .ln.add .code{position:relative;z-index:2}
 .wterm .diff .ln.add::before{
   content:"";position:absolute;left:0;top:0;bottom:0;width:4px;z-index:3;
-  background:linear-gradient(180deg,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9);
+  background:linear-gradient(180deg,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8);
   background-size:100% 200%;
   animation:selffix-shimmer-y 4.5s linear infinite;
-  box-shadow:0 0 6px rgba(255,122,217,.7),0 0 11px rgba(142,233,255,.45);
+  box-shadow:0 0 8px rgba(255,79,216,.75),0 0 10px rgba(62,230,255,.55);
 }
-/* Moving pearl/foil highlight — the actual shimmer */
+/* Bright pearl sweep — narrow so it does not gray out the opal wash */
 .wterm .diff .ln.add::after{
   content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
   background:linear-gradient(105deg,
     transparent 0%,
-    transparent 36%,
-    rgba(255,182,232,.18) 44%,
-    rgba(255,255,255,.28) 47.5%,
-    rgba(255,255,255,.82) 50%,
-    rgba(142,233,255,.38) 52.5%,
-    rgba(255,211,110,.16) 56%,
-    transparent 64%,
+    transparent 44%,
+    rgba(255,79,216,.22) 47%,
+    rgba(255,255,255,.55) 49.5%,
+    rgba(255,255,255,.92) 50.5%,
+    rgba(62,230,255,.35) 52.5%,
+    transparent 56%,
     transparent 100%);
-  background-size:260% 100%;
+  background-size:240% 100%;
   background-repeat:no-repeat;
   animation:selffix-foil 2.5s ease-in-out infinite;
-  mix-blend-mode:screen;
 }
 .wterm .diff .ln.add .mark{
-  background:linear-gradient(180deg,#ffd6f3,#c4b5fd,#b8f0ff,#ffe7a8);
+  background:linear-gradient(180deg,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e);
   -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
-  color:transparent;font-weight:500;
-  filter:drop-shadow(0 0 4px rgba(200,180,255,.7));
+  color:transparent;font-weight:600;
 }
 .wterm .diff .ln.del{background:rgba(255,181,71,.22);color:#FFE7B8;box-shadow:inset 0 0 12px rgba(255,181,71,.18)}
 .wterm .diff .ln.del::before{
@@ -361,7 +357,7 @@
 .wterm .file-row .nm s{display:block;font-size:10px;color:var(--soft);text-decoration:none;font-family:Lexend,sans-serif}
 .wterm .chip,.wterm .chip.add{flex:none;font-size:9.5px;font-weight:500;padding:2px 7px;border-radius:99px;
   color:#fff;border:1px solid rgba(255,255,255,.45);
-  background:linear-gradient(115deg,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9,#a78bfa,#8ee9ff,#ffd36e,#ff7ad9);
+  background:linear-gradient(115deg,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8);
   background-size:300% 300%;animation:selffix-shimmer 7s linear infinite;
   text-shadow:0 1px 2px rgba(20,8,30,.45);
   box-shadow:0 0 8px rgba(167,139,250,.4)}
