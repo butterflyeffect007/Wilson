@@ -451,7 +451,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
                     <span className="dots" aria-hidden="true"><i className="a" /><i className="b" /><i className="c" /></span>
                     <span className="fn">wilson@neural-void</span>
                     <span className="sp" />
-                    <span className={`pill${runState === "ok" ? " ok" : ""}`}>{pill}</span>
+                    <span className={`pill${runState === "ok" ? " ok" : (runState === "error" || py === "error") ? " bad" : ""}`}>{pill}</span>
                   </div>
                   <div className="term" ref={termRef} data-testid="terminal-output">
                     {lines.map((ln, i) => {

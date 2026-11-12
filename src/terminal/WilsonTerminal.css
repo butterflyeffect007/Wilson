@@ -12,7 +12,7 @@
   --glass:rgba(30,12,46,.42);--border:rgba(160,110,230,.30);
   --spectrum:linear-gradient(120deg,#38B2DA 0%,#6E21B0 26%,#D13BB2 50%,#DB5669 68%,#EB7B59 84%,#FCBC7E 100%);
   --send:linear-gradient(135deg,#6E21B0 0%,#A92FB8 55%,#E0628A 100%);
-  --ok:#5EEAD4;--warn:#FCBC7E;--bad:#F47B8F;
+  --ok:#E8D6FF;--warn:#FCBC7E;--bad:#F5B24A;
   --kw:#F2A6E2;--str:#FCBC7E;--num:#8FD3EE;--fn2:#8FD3EE;--cm:rgba(199,176,255,.55);
   position:fixed;inset:0;z-index:80;color:var(--text);
   font-family:Lexend,system-ui,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.45;
@@ -97,7 +97,9 @@
 .wterm .pill{font-size:9.5px;font-weight:500;padding:2px 7px;border-radius:99px;white-space:nowrap;
   color:var(--ember);border:1px solid rgba(252,188,126,.5);
   background:rgba(252,188,126,.08)}
-.wterm .pill.ok{color:var(--ok);border-color:rgba(94,234,212,.5);background:rgba(94,234,212,.08)}
+.wterm .pill.ok{color:#F4E9FF;border-color:rgba(205,180,255,.55);
+  background:linear-gradient(90deg,rgba(110,33,176,.30),rgba(209,59,178,.16),rgba(252,188,126,.22))}
+.wterm .pill.bad{color:#F8D7A0;border-color:rgba(245,178,74,.55);background:rgba(245,178,74,.14)}
 
 .wterm .editor{position:relative;z-index:1;display:flex;margin:6px 8px 8px;
   background:linear-gradient(180deg,rgba(7,3,16,.82),rgba(10,5,20,.88));
@@ -154,7 +156,7 @@
 .wterm .prompt .d{color:var(--ember)}
 .wterm .prompt .cmd{color:#F6EEFF}
 .wterm .out{white-space:pre-wrap;word-break:break-word;color:#F3ECFF}
-.wterm .out.err{color:#F9C4CE}
+.wterm .out.err{color:#F6D38A}
 .wterm .term-caret{display:inline-block;width:6.2px;height:13px;background:#F6EEFF;
   box-shadow:0 0 6px rgba(143,211,238,.7);vertical-align:-2px;margin-left:1px;border-radius:1px}
 .wterm .fig{margin:8px 0;border-radius:10px;max-width:100%;height:auto;display:block;
@@ -261,12 +263,23 @@
   overflow:hidden;margin:0 0 10px;padding:5px 0;
 }
 .wterm .diff.full{margin:0;padding:6px 0}
-.wterm .diff .ln{display:flex;gap:6px;padding:1px 8px;white-space:pre;overflow:hidden;min-width:0}
+.wterm .diff .ln{display:flex;gap:6px;padding:1px 8px 1px 11px;white-space:pre;overflow:hidden;min-width:0;position:relative}
 .wterm .diff .ln span.code{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.wterm .diff .ln.del{background:rgba(220,50,70,.22);color:#FECACA}
-.wterm .diff .ln.add{background:rgba(16,160,90,.22);color:#B8F5C8}
-.wterm .diff .ln.ctx{color:rgba(232,214,255,.62)}
-.wterm .diff .ln.file{color:#8FD3EE;font-weight:500;padding-top:4px;padding-bottom:2px}
+.wterm .diff .ln.add{
+  background:linear-gradient(90deg,rgba(110,33,176,.22) 0%,rgba(255,250,248,.12) 32%,rgba(209,59,178,.13) 68%,rgba(252,188,126,.18) 100%);
+  color:#F6F0FF;
+}
+.wterm .diff .ln.add::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:linear-gradient(180deg,#CDB4FF 0%,#D13BB2 45%,#FCBC7E 100%);
+  box-shadow:0 0 6px rgba(209,59,178,.4);
+}
+.wterm .diff .ln.del{background:rgba(245,178,74,.16);color:#F8D7A0}
+.wterm .diff .ln.del::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#f5b24a;
+}
+.wterm .diff .ln.ctx{color:rgba(159,220,255,.88)}
+.wterm .diff .ln.file{color:#9FDCFF;font-weight:500;padding-top:4px;padding-bottom:2px}
 .wterm .diff .mark{width:10px;flex:none;text-align:center}
 
 .wterm .btn.review{
@@ -299,9 +312,12 @@
   font-size:11px;color:#E7D2FF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .wterm .file-row .nm s{display:block;font-size:10px;color:var(--soft);text-decoration:none;font-family:Lexend,sans-serif}
-.wterm .chip{flex:none;font-size:9.5px;font-weight:500;padding:2px 7px;border-radius:99px;
-  color:#B8F5C8;border:1px solid rgba(16,160,90,.45);background:rgba(16,160,90,.10)}
-.wterm .chip.edit{color:#FCBC7E;border-color:rgba(252,188,126,.45);background:rgba(252,188,126,.08)}
+.wterm .chip,.wterm .chip.add{flex:none;font-size:9.5px;font-weight:500;padding:2px 7px;border-radius:99px;
+  color:#F4E9FF;border:1px solid rgba(205,180,255,.5);
+  background:linear-gradient(90deg,rgba(110,33,176,.30),rgba(209,59,178,.16),rgba(252,188,126,.22))}
+.wterm .chip.edit{color:#BFE9FF;border-color:rgba(159,220,255,.5);background:rgba(159,220,255,.10)}
+.wterm .chip.del{color:#F8D7A0;border-color:rgba(245,178,74,.5);background:rgba(245,178,74,.12)}
+.wterm .note.warn,.wterm .live-note.warn{color:#F8D7A0}
 
 .wterm .preview-link{
   display:inline-flex;align-items:center;gap:6px;

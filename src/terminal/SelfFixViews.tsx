@@ -36,7 +36,7 @@ export function ProposalCard({ proposal, busy, error, onReview }: {
       <button type="button" className="btn review" disabled={busy} onClick={onReview}>
         {busy ? "Sending…" : "Send for review"}
       </button>
-      {error && <p className="note">{error}</p>}
+      {error && <p className="note warn">{error}</p>}
     </div>
   );
 }
@@ -61,7 +61,7 @@ export function ReviewScreen({ proposal, busy, error, onPreview, onApprove, onDe
           return (
             <div className="file-row" key={f.path}>
               <div className="nm"><b>{n.name}</b><s>{n.dir}</s></div>
-              <span className={`chip ${f.status === "edited" ? "edit" : ""}`}>{f.status}</span>
+              <span className={`chip ${f.status === "edited" ? "edit" : f.status === "deleted" ? "del" : "add"}`}>{f.status}</span>
             </div>
           );
         })}
@@ -74,7 +74,7 @@ export function ReviewScreen({ proposal, busy, error, onPreview, onApprove, onDe
         Preview it first <span className="arrow">→</span>
       </a>
       <p className="note">Nothing changes until you approve.</p>
-      {error && <p className="note">{error}</p>}
+      {error && <p className="note warn">{error}</p>}
       <div className="cta-row">
         <button type="button" className="btn approve" disabled={busy} onClick={onApprove}>{busy ? "Shipping…" : "Approve & go live"}</button>
         <button type="button" className="btn decline" disabled={busy} onClick={onDecline}>Decline</button>
@@ -103,7 +103,7 @@ export function LiveScreen({ proposal, busy, error, onUndo }: {
       </div>
       <button type="button" className="btn undo" disabled={busy} onClick={onUndo}>{busy ? "Undoing…" : "Undo this update"}</button>
       <p className="live-note">Undo puts the previous version back live. Nothing else changes.</p>
-      {error && <p className="live-note">{error}</p>}
+      {error && <p className="live-note warn">{error}</p>}
     </>
   );
 }
