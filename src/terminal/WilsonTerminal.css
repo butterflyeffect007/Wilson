@@ -325,12 +325,63 @@
 }
 .wterm .diff .mark{width:10px;flex:none;text-align:center}
 
-.wterm .btn.review{
-  width:100%;min-height:38px;border-radius:14px;color:#fff;font-size:13.5px;
-  background:linear-gradient(135deg,#6E21B0 0%,#B4309F 50%,#EB7B59 100%);
-  box-shadow:0 1px 0 rgba(255,255,255,.28) inset, 0 0 18px rgba(209,59,178,.45), 0 0 10px rgba(243,159,95,.32), 0 10px 22px -10px rgba(110,33,176,.8);
-  letter-spacing:.01em;
+
+/* Crystal holographic primary buttons — clear glass, opal iridescence, sparkles, star glint */
+.wterm .btn.review,.wterm .btn.approve{
+  isolation:isolate;overflow:hidden;z-index:1;
+  color:#3a1458;font-weight:500;letter-spacing:.01em;
+  text-shadow:0 1px 0 rgba(255,255,255,.55);
+  border:1px solid transparent;
+  background:
+    linear-gradient(165deg,rgba(255,255,255,.55) 0%,rgba(255,200,232,.58) 28%,rgba(170,240,255,.55) 55%,rgba(255,236,180,.52) 82%,rgba(255,255,255,.5) 100%) padding-box,
+    linear-gradient(135deg,#fff,#ff9ad8,#7eecff,#ffe08a,#fff) border-box;
+  backdrop-filter:blur(14px) saturate(1.6);-webkit-backdrop-filter:blur(14px) saturate(1.6);
+  box-shadow:
+    inset 0 2px 0 rgba(255,255,255,.95),
+    inset 0 -1px 0 rgba(200,170,255,.35),
+    inset 0 0 12px rgba(255,255,255,.28),
+    0 0 0 1px rgba(255,210,235,.4),
+    0 0 18px rgba(255,140,210,.55),
+    0 0 26px rgba(90,230,245,.35),
+    0 8px 18px -8px rgba(60,16,50,.45);
 }
+.wterm .btn.review{width:100%;min-height:38px;border-radius:14px;font-size:13.5px}
+.wterm .btn.approve{flex:1.55;min-height:44px;border-radius:14px;font-size:14px}
+.wterm .btn.review::before,.wterm .btn.approve::before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:0;
+  background-image:
+    radial-gradient(1.4px 1.4px at 8% 30%,#fff 42%,transparent 55%),
+    radial-gradient(2px 2px at 18% 72%,#fff 40%,transparent 55%),
+    radial-gradient(1.3px 1.3px at 28% 20%,#c8f6ff 42%,transparent 55%),
+    radial-gradient(1.6px 1.6px at 40% 80%,#fff 42%,transparent 55%),
+    radial-gradient(1.4px 1.4px at 52% 24%,#ffe9b0 42%,transparent 55%),
+    radial-gradient(2.1px 2.1px at 64% 62%,#fff 40%,transparent 55%),
+    radial-gradient(1.3px 1.3px at 76% 18%,#ffd0ef 42%,transparent 55%),
+    radial-gradient(1.5px 1.5px at 86% 70%,#c8f6ff 42%,transparent 55%),
+    radial-gradient(1.2px 1.2px at 14% 52%,#fff 42%,transparent 55%),
+    radial-gradient(1.5px 1.5px at 94% 40%,#ffe9b0 42%,transparent 55%),
+    linear-gradient(125deg,rgba(255,130,205,.55),rgba(180,155,255,.50),rgba(70,230,245,.52),rgba(255,220,130,.52),rgba(255,150,215,.48));
+  background-size:100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,220% 220%;
+  animation:crystal-opal 7s linear infinite,crystal-twinkle 2.8s ease-in-out infinite;
+}
+.wterm .btn.review::after,.wterm .btn.approve::after{
+  content:"";position:absolute;top:-40%;bottom:-40%;width:42%;left:-55%;pointer-events:none;z-index:1;
+  background:
+    radial-gradient(circle at 50% 50%,#fff 0 2.2px,rgba(255,255,255,.85) 3.5px,transparent 11px),
+    linear-gradient(90deg,transparent 36%,#fff 50%,transparent 64%),
+    linear-gradient(180deg,transparent 22%,#fff 50%,transparent 78%),
+    linear-gradient(45deg,transparent 46%,rgba(255,255,255,.9) 50%,transparent 54%),
+    linear-gradient(135deg,transparent 46%,rgba(255,255,255,.9) 50%,transparent 54%),
+    linear-gradient(115deg,transparent 20%,rgba(255,255,255,.18) 42%,rgba(255,255,255,.7) 50%,rgba(180,240,255,.25) 58%,transparent 78%);
+  background-repeat:no-repeat;
+  background-position:50% 50%,50% 50%,50% 50%,50% 50%,50% 50%,center;
+  background-size:34px 34px,36px 2px,2px 48px,28px 28px,28px 28px,100% 100%;
+  mix-blend-mode:screen;
+  filter:drop-shadow(0 0 6px rgba(255,255,255,.85));
+  animation:crystal-glint 2.8s ease-in-out infinite;
+}
+.wterm .btn.review > *,.wterm .btn.approve > *{position:relative;z-index:2}
+
 
 .wterm .review-card{position:relative;z-index:1;padding:14px 14px 16px}
 .wterm .review-card h2{
@@ -375,12 +426,7 @@
   font-size:11px;color:var(--soft);text-align:center;margin:10px 0 12px;line-height:1.4;
 }
 .wterm .cta-row{display:flex;gap:8px;position:relative;z-index:2}
-.wterm .btn.approve{
-  flex:1.55;min-height:44px;border-radius:14px;color:#fff;font-size:14px;
-  background:linear-gradient(135deg,#6E21B0 0%,#D13BB2 42%,#EB7B59 72%,#FCBC7E 100%);
-  box-shadow:0 1px 0 rgba(255,255,255,.3) inset, 0 0 18px rgba(209,59,178,.5), 0 0 12px rgba(252,188,126,.35), 0 10px 22px -10px rgba(110,33,176,.8);
-  letter-spacing:.01em;
-}
+
 .wterm .btn.decline{
   flex:.9;min-height:44px;border-radius:14px;font-size:13.5px;color:#F9C4CE;
   background:linear-gradient(180deg,rgba(80,20,40,.55),rgba(40,10,24,.5));
@@ -473,12 +519,30 @@
   52%{background-position:-45% 0}
   64%,100%{background-position:-45% 0}
 }
+@keyframes crystal-opal{
+  0%{background-position:0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0,0% 50%}
+  100%{background-position:0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0,0 0,100% 50%}
+}
+@keyframes crystal-twinkle{
+  0%,100%{opacity:.7}
+  50%{opacity:1}
+}
+@keyframes crystal-glint{
+  0%,10%{transform:translateX(0) rotate(18deg);opacity:0}
+  18%{opacity:1}
+  55%{transform:translateX(320%) rotate(18deg);opacity:1}
+  65%,100%{transform:translateX(320%) rotate(18deg);opacity:0}
+}
 @media (prefers-reduced-motion:reduce){
   .wterm .diff .ln.add,.wterm .diff .ln.add::before,.wterm .diff .ln.add::after,
-  .wterm .pill.ok,.wterm .chip.add,.wterm .chip{
+  .wterm .pill.ok,.wterm .chip.add,.wterm .chip,
+  .wterm .btn.review::before,.wterm .btn.approve::before,
+  .wterm .btn.review::after,.wterm .btn.approve::after{
     animation:none !important;
   }
   .wterm .diff .ln.add,.wterm .pill.ok,.wterm .chip.add{background-position:20% 50%}
   .wterm .diff .ln.add::after{background-position:42% 0;opacity:.65}
+  .wterm .btn.review::after,.wterm .btn.approve::after{transform:translateX(120%) rotate(18deg);opacity:.7}
 }
+
 
