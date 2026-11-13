@@ -1,0 +1,77 @@
+name: Preview PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Separate from the live "pages" concurrency group in deploy-pages.yml.
+concurrency:
+  group: preview-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Fetch authentic Wilson Orb fluid asset
+        run: |
+          mkdir -p src/assets
+          curl -fsSL -o src/assets/wilson-fluid.png \
+            "https://raw.githubusercontent.com/jennifercox726-ux/wilsonaibro/main/src/assets/wilson-fluid.png"
+
+      - name: Install
+        run: npm install
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_BASE: /Wilson/preview/pr-${{ github.event.pull_request.number }}/
+
+      # Publish into a subfolder of gh-pages. keep_files must stay true.
+      # Do not set force_orphan — that would wipe the live site.
+      - name: Publish preview (does not replace the live site)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          destination_dir: preview/pr-${{ github.event.pull_request.number }}
+          keep_files: true
+
+      - name: Comment preview URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const n = context.payload.pull_request.number;
+            const url = `https://butterflyeffect007.github.io/Wilson/preview/pr-${n}/`;
+            const body = `Preview: ${url}\n\nThis is a preview only. The live site is unchanged.`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: n,
+            });
+            const existing = comments.find((c) => c.user.type === "Bot" && c.body.includes("/preview/pr-"));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: n,
+                body,
+              });
+            }

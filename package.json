@@ -16,6 +16,7 @@
     "@fontsource/lexend": "^5.3.0",
     "@fontsource/opendyslexic": "^5.3.0",
     "@huggingface/transformers": "^3.8.1",
+    "@mlc-ai/web-llm": "^0.2.88",
     "clsx": "^2.1.1",
     "dotenv": "^16.4.7",
     "framer-motion": "^11.0.0",
