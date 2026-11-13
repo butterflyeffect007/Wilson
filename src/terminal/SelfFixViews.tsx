@@ -34,7 +34,7 @@ export function ProposalCard({ proposal, busy, error, onReview }: {
       <p className="sum">{proposal.summary}</p>
       <DiffView lines={proposeCardDiff(proposal)} />
       <button type="button" className="btn review" disabled={busy} onClick={onReview}>
-        <span>{busy ? "Sending…" : "Send for review"}</span>
+        {busy ? "Sending…" : "Send for review"}
       </button>
       {error && <p className="note warn">{error}</p>}
     </div>
@@ -76,7 +76,7 @@ export function ReviewScreen({ proposal, busy, error, onPreview, onApprove, onDe
       <p className="note">Nothing changes until you approve.</p>
       {error && <p className="note warn">{error}</p>}
       <div className="cta-row">
-        <button type="button" className="btn approve" disabled={busy} onClick={onApprove}><span>{busy ? "Shipping…" : "Approve & go live"}</span></button>
+        <button type="button" className="btn approve" disabled={busy} onClick={onApprove}>{busy ? "Shipping…" : "Approve & go live"}</button>
         <button type="button" className="btn decline" disabled={busy} onClick={onDecline}>Decline</button>
       </div>
     </div>
