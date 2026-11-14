@@ -7,7 +7,14 @@ import { PyodideClient, type Figure } from "./pyodideClient";
 import { makeTerminalAdapter, runAgentLoop, MAX_PASSES } from "./agentLoop";
 import { loadChat, saveChat, clearChatStore, historyForModel, type ChatMsg } from "./chatStore";
 import { typeCode } from "./pythonFence";
-import { closeTerminalHash } from "./access";
+import { closeTerminalHash, isE2EArchitect, isE2ESelfFix } from "./access";
+import { cachedIsAdmin } from "../lib/admin";
+import { ProposalCard, ReviewScreen, LiveScreen, selfFixBadge } from "./SelfFixViews";
+import {
+  FIXTURE, canUseSelfFix, loadSelfFix, saveSelfFix,
+  submitForReview, approveSelfFix, declineSelfFix, undoSelfFix,
+  type SelfFixProposal, type SelfFixView,
+} from "./selfFix";
 import "./WilsonTerminal.css";
 
 type Tab = "terminal" | "files";
@@ -57,12 +64,28 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
   const [progress, setProgress] = useState("");
   const [runState, setRunState] = useState<"idle" | "running" | "ok" | "error">("idle");
   const [runMeta, setRunMeta] = useState("");
-  const [chat, setChat] = useState<ChatMsg[]>(() => loadChat());
+  const [chat, setChat] = useState<ChatMsg[]>(() => {
+    if (isE2ESelfFix() === "propose") {
+      return [
+        { id: "e2e-selffix-j", role: "user", text: "fix the back button on the observatory" },
+        { id: "e2e-selffix-w", role: "wilson", text: "The close control is a tiny faint × — easy to miss and hard to tap. I wrote a proper Back button." },
+      ];
+    }
+    return loadChat();
+  });
   const [clearAsk, setClearAsk] = useState(false);
   const [draftMsg, setDraftMsg] = useState("");
   const [looping, setLooping] = useState(false);
   const [copyMsg, setCopyMsg] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
+  const e2eFix = isE2ESelfFix();
+  const [proposal, setProposal] = useState<SelfFixProposal | null>(() => {
+    if (e2eFix) return { ...FIXTURE, status: e2eFix === "live" ? "live" : e2eFix === "review" ? "review" : "draft" };
+    return loadSelfFix();
+  });
+  const [fixView, setFixView] = useState<SelfFixView | null>(e2eFix);
+  const [fixBusy, setFixBusy] = useState(false);
+  const [fixErr, setFixErr] = useState("");
   const clientRef = useRef<PyodideClient | null>(null);
   const loopAbort = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -236,12 +259,70 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     }
   };
 
+  const showFix = canUseSelfFix() && !!proposal;
+  const onSendForReview = async () => {
+    if (!proposal || !canUseSelfFix()) return;
+    setFixBusy(true); setFixErr("");
+    try {
+      if (isE2EArchitect() && !cachedIsAdmin()) {
+        const next = { ...proposal, status: "review" as const };
+        setProposal(next); saveSelfFix(next); setFixView("review");
+      } else {
+        const next = await submitForReview(proposal);
+        setProposal(next); saveSelfFix(next); setFixView("review");
+      }
+    } catch (err) {
+      setFixErr(err instanceof Error ? err.message : "Couldn't send for review.");
+    } finally { setFixBusy(false); }
+  };
+  const onApproveFix = async () => {
+    if (!proposal) return;
+    setFixBusy(true); setFixErr("");
+    try {
+      if (isE2EArchitect() && !cachedIsAdmin()) {
+        const next = { ...proposal, status: "live" as const, liveAt: proposal.liveAt || new Date().toISOString() };
+        setProposal(next); saveSelfFix(next); setFixView("live");
+      } else {
+        const next = await approveSelfFix(proposal);
+        setProposal(next); saveSelfFix(next); setFixView("live");
+      }
+    } catch (err) {
+      setFixErr(err instanceof Error ? err.message : "Couldn't approve this update.");
+    } finally { setFixBusy(false); }
+  };
+  const onDeclineFix = async () => {
+    if (!proposal) return;
+    setFixBusy(true); setFixErr("");
+    try {
+      if (!(isE2EArchitect() && !cachedIsAdmin())) await declineSelfFix(proposal);
+      setProposal(null); saveSelfFix(null); setFixView(null);
+    } catch (err) {
+      setFixErr(err instanceof Error ? err.message : "Couldn't decline this update.");
+    } finally { setFixBusy(false); }
+  };
+  const onUndoFix = async () => {
+    if (!proposal) return;
+    setFixBusy(true); setFixErr("");
+    try {
+      if (isE2EArchitect() && !cachedIsAdmin()) {
+        setProposal(null); saveSelfFix(null); setFixView(null);
+      } else {
+        const next = await undoSelfFix(proposal);
+        setProposal(next); saveSelfFix(next); setFixView(null);
+      }
+    } catch (err) {
+      setFixErr(err instanceof Error ? err.message : "Couldn't undo this update.");
+    } finally { setFixBusy(false); }
+  };
+
   const highlighted = useMemo(() => highlightPython(code.endsWith("\n") ? code : code + "\n"), [code]);
   const gutter = useMemo(() => Array.from({ length: linesOf(code) }, (_, i) => i + 1), [code]);
   const pyAttr = py === "ready" ? "ready" : py === "error" ? "error" : py === "loading" ? "loading" : "idle";
-  const pill = py === "loading" ? progress || "loading Python…"
+  const chrome = selfFixBadge(fixView);
+  const pill = chrome?.pill
+    || (py === "loading" ? progress || "loading Python…"
     : py === "error" ? (progress || "Python failed")
-    : runMeta || (py === "ready" ? "ready" : "starting…");
+    : runMeta || (py === "ready" ? "ready" : "starting…"));
 
   const syncScroll = () => {
     if (!taRef.current || !hlRef.current) return;
@@ -270,7 +351,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
   }
 
   return (
-    <div className="wterm" role="dialog" aria-modal="true" aria-label="Wilson's Terminal" data-pyodide={pyAttr} data-run={runState}>
+    <div className={`wterm${fixView === "review" ? " is-review" : fixView === "live" ? " is-live" : fixView === "propose" ? " is-propose" : ""}`} role="dialog" aria-modal="true" aria-label="Wilson's Terminal" data-pyodide={pyAttr} data-run={runState} data-selffix={fixView || ""}>
       <div className="bg">
         <div className="orb o1" /><div className="orb o2" /><div className="orb o3" />
       </div>
@@ -282,7 +363,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
             <h1>Wilson's Terminal</h1>
             <div className="sub">shared screen · he writes &amp; runs it</div>
           </div>
-          <div className="badge">Python · runs<br />on this phone</div>
+          <div className="badge">{chrome?.badge || <>Python · runs<br />on this phone</>}</div>
         </div>
 
         <div className="tabs" role="tablist" aria-label="Terminal views">
@@ -291,7 +372,34 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
         </div>
 
         <div className="scroll" id="wterm-scroll" ref={scrollRef}>
-          {tab === "terminal" && (
+          {fixView === "review" && proposal && (
+            <section className="stack">
+              <div className="win">
+                <div className="chrome">
+                  <span className="dots" aria-hidden="true"><i className="a" /><i className="b" /><i className="c" /></span>
+                  <span className="fn">wilson@neural-void</span>
+                  <span className="sp" />
+                  <span className="pill">{pill}</span>
+                </div>
+                <ReviewScreen proposal={proposal} busy={fixBusy} error={fixErr} onPreview={() => {}} onApprove={() => void onApproveFix()} onDecline={() => void onDeclineFix()} />
+              </div>
+            </section>
+          )}
+          {fixView === "live" && proposal && (
+            <section className="stack">
+              <div className="win">
+                <div className="chrome">
+                  <span className="dots" aria-hidden="true"><i className="a" /><i className="b" /><i className="c" /></span>
+                  <span className="fn">wilson@neural-void</span>
+                  <span className="sp" />
+                  <span className="pill ok">{pill}</span>
+                </div>
+                <LiveScreen proposal={proposal} busy={fixBusy} error={fixErr} onUndo={() => void onUndoFix()} />
+              </div>
+            </section>
+          )}
+          {fixView === "live" && <div className="footnote">Imagination becomes intelligence</div>}
+          {fixView !== "review" && fixView !== "live" && tab === "terminal" && (
             <>
               <section className="stack" id="editor-card">
                 <div className="win">
@@ -343,7 +451,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
                     <span className="dots" aria-hidden="true"><i className="a" /><i className="b" /><i className="c" /></span>
                     <span className="fn">wilson@neural-void</span>
                     <span className="sp" />
-                    <span className={`pill${runState === "ok" ? " ok" : ""}`}>{pill}</span>
+                    <span className={`pill${runState === "ok" ? " ok" : (runState === "error" || py === "error") ? " bad" : ""}`}>{pill}</span>
                   </div>
                   <div className="term" ref={termRef} data-testid="terminal-output">
                     {lines.map((ln, i) => {
@@ -358,7 +466,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
             </>
           )}
 
-          {tab === "files" && (
+          {fixView !== "review" && fixView !== "live" && tab === "files" && (
             <section className="stack">
               <div className="win">
                 <div className="chrome">
@@ -380,10 +488,10 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
             </section>
           )}
 
-          <div className="footnote">Wilson + The Only One · Imagination becomes intelligence™</div>
+          {fixView !== "live" && fixView !== "review" && <div className="footnote">Wilson + The Only One · Imagination becomes intelligence™</div>}
         </div>
 
-        <aside className="dock" id="chat">
+        {fixView !== "review" && fixView !== "live" && <aside className="dock" id="chat">
           {chat.length > 0 && (
             <div className="chat-bar">
               <button type="button" className={`chat-clear${clearAsk ? " ask" : ""}`} data-testid="clear-chat" disabled={looping} onClick={onClearChat}>
@@ -403,6 +511,9 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
                 </div>
               </div>
             ))}
+            {showFix && (fixView === "propose" || fixView === null) && proposal && (
+              <ProposalCard proposal={proposal} busy={fixBusy} error={fixErr} onReview={() => void onSendForReview()} />
+            )}
           </div>
           <form className="composer" onSubmit={(e) => { e.preventDefault(); void sendChat(); }}>
             <input
@@ -421,7 +532,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
             />
             <button type="submit" className="sendb" disabled={looping || !draftMsg.trim()} aria-label="Send">➤</button>
           </form>
-        </aside>
+        </aside>}
       </div>
     </div>
   );

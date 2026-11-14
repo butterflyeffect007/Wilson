@@ -12,7 +12,7 @@
   --glass:rgba(30,12,46,.42);--border:rgba(160,110,230,.30);
   --spectrum:linear-gradient(120deg,#38B2DA 0%,#6E21B0 26%,#D13BB2 50%,#DB5669 68%,#EB7B59 84%,#FCBC7E 100%);
   --send:linear-gradient(135deg,#6E21B0 0%,#A92FB8 55%,#E0628A 100%);
-  --ok:#5EEAD4;--warn:#FCBC7E;--bad:#F47B8F;
+  --ok:#E8D6FF;--warn:#FCBC7E;--bad:#F5B24A;
   --kw:#F2A6E2;--str:#FCBC7E;--num:#8FD3EE;--fn2:#8FD3EE;--cm:rgba(199,176,255,.55);
   position:fixed;inset:0;z-index:80;color:var(--text);
   font-family:Lexend,system-ui,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.45;
@@ -97,7 +97,14 @@
 .wterm .pill{font-size:9.5px;font-weight:500;padding:2px 7px;border-radius:99px;white-space:nowrap;
   color:var(--ember);border:1px solid rgba(252,188,126,.5);
   background:rgba(252,188,126,.08)}
-.wterm .pill.ok{color:var(--ok);border-color:rgba(94,234,212,.5);background:rgba(94,234,212,.08)}
+.wterm .pill.ok{
+  position:relative;overflow:hidden;
+  color:#fff;border-color:rgba(255,255,255,.45);
+  background:linear-gradient(115deg,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8);
+  background-size:300% 300%;animation:selffix-shimmer 7s linear infinite;
+  text-shadow:0 1px 2px rgba(20,8,30,.45);
+  box-shadow:0 0 10px rgba(167,139,250,.4),0 0 16px rgba(255,122,217,.22)}
+.wterm .pill.bad{color:#FFE7B8;border-color:rgba(255,181,71,.65);background:rgba(255,181,71,.22);box-shadow:0 0 8px rgba(255,181,71,.25)}
 
 .wterm .editor{position:relative;z-index:1;display:flex;margin:6px 8px 8px;
   background:linear-gradient(180deg,rgba(7,3,16,.82),rgba(10,5,20,.88));
@@ -154,7 +161,7 @@
 .wterm .prompt .d{color:var(--ember)}
 .wterm .prompt .cmd{color:#F6EEFF}
 .wterm .out{white-space:pre-wrap;word-break:break-word;color:#F3ECFF}
-.wterm .out.err{color:#F9C4CE}
+.wterm .out.err{color:#ffb547}
 .wterm .term-caret{display:inline-block;width:6.2px;height:13px;background:#F6EEFF;
   box-shadow:0 0 6px rgba(143,211,238,.7);vertical-align:-2px;margin-left:1px;border-radius:1px}
 .wterm .fig{margin:8px 0;border-radius:10px;max-width:100%;height:auto;display:block;
@@ -227,3 +234,251 @@
 .wterm .composer .field,.wterm .code-in{
   -webkit-user-select:text;user-select:text;-webkit-touch-callout:default;
   touch-action:manipulation;pointer-events:auto}
+
+/* —— self-fix flow —— */
+.wterm.is-propose .msgs{max-height:none;overflow:visible}
+.wterm.is-propose .dock{padding-top:12px}
+.wterm.is-propose .term{max-height:118px}
+
+.wterm .proposal{
+  margin-top:8px;position:relative;z-index:1;
+  border-radius:16px;padding:11px 12px 12px;
+  background:linear-gradient(180deg,rgba(56,22,84,.62) 0%,rgba(30,12,46,.55) 100%);
+  border:1px solid rgba(160,110,230,.36);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 10px 22px -14px rgba(0,0,0,.65);
+}
+.wterm .proposal .kicker{
+  font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ember);font-weight:500;margin:0 0 5px;
+}
+.wterm .proposal .fname{
+  font-family:"DM Mono",ui-monospace,monospace;
+  font-size:10.5px;color:#8FD3EE;margin:0 0 6px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.wterm .proposal .sum{
+  font-size:12px;line-height:1.4;color:var(--text);margin:0 0 8px;
+}
+
+.wterm .diff{
+  font:400 9.5px/15px "DM Mono",ui-monospace,monospace;
+  background:linear-gradient(180deg,rgba(7,3,16,.88),rgba(10,5,20,.92));
+  border-radius:10px;
+  box-shadow:inset 0 2px 10px rgba(0,0,0,.55);
+  overflow:hidden;margin:0 0 10px;padding:5px 0;
+}
+.wterm .diff.full{margin:0;padding:6px 0}
+.wterm .diff .ln{display:flex;gap:6px;padding:1px 8px 1px 12px;white-space:pre;overflow:hidden;min-width:0;position:relative}
+.wterm .diff .ln span.code{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.wterm .diff .ln.add{
+  color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.72);
+  background:linear-gradient(90deg,
+    rgba(255,79,216,.48),rgba(155,92,255,.48),rgba(62,230,255,.48),rgba(255,211,110,.48),rgba(255,79,216,.48),
+    rgba(155,92,255,.48),rgba(62,230,255,.48),rgba(255,211,110,.48),rgba(255,79,216,.48));
+  background-size:300% 100%;
+  animation:selffix-shimmer 7s linear infinite;
+}
+.wterm .diff .ln.add .mark,.wterm .diff .ln.add .code{position:relative;z-index:2}
+.wterm .diff .ln.add::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;z-index:3;
+  background:linear-gradient(180deg,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8);
+  background-size:100% 200%;
+  animation:selffix-shimmer-y 4.5s linear infinite;
+  box-shadow:0 0 8px rgba(255,79,216,.75),0 0 10px rgba(62,230,255,.55);
+}
+/* Bright pearl sweep — narrow so it does not gray out the opal wash */
+.wterm .diff .ln.add::after{
+  content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:linear-gradient(105deg,
+    transparent 0%,
+    transparent 44%,
+    rgba(255,79,216,.22) 47%,
+    rgba(255,255,255,.55) 49.5%,
+    rgba(255,255,255,.92) 50.5%,
+    rgba(62,230,255,.35) 52.5%,
+    transparent 56%,
+    transparent 100%);
+  background-size:240% 100%;
+  background-repeat:no-repeat;
+  animation:selffix-foil 2.5s ease-in-out infinite;
+}
+.wterm .diff .ln.add .mark{
+  background:linear-gradient(180deg,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  color:transparent;font-weight:600;
+}
+.wterm .diff .ln.del{background:rgba(255,181,71,.22);color:#FFE7B8;box-shadow:inset 0 0 12px rgba(255,181,71,.18)}
+.wterm .diff .ln.del::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#ffb547;
+  box-shadow:0 0 8px rgba(255,181,71,.55);
+}
+.wterm .diff .ln.del .mark{color:#ffb547;font-weight:500}
+.wterm .diff .ln.ctx{background:rgba(159,220,255,.18);color:#D7F3FF}
+.wterm .diff .ln.ctx::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#9fdcff;
+  box-shadow:0 0 7px rgba(159,220,255,.4);
+}
+.wterm .diff .ln.file{background:rgba(159,220,255,.14);color:#9FDCFF;font-weight:500;padding-top:4px;padding-bottom:2px}
+.wterm .diff .ln.file::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#9fdcff;
+}
+.wterm .diff .mark{width:10px;flex:none;text-align:center}
+
+.wterm .btn.review{
+  width:100%;min-height:38px;border-radius:14px;color:#fff;font-size:13.5px;
+  background:linear-gradient(135deg,#6E21B0 0%,#B4309F 50%,#EB7B59 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.28) inset, 0 0 18px rgba(209,59,178,.45), 0 0 10px rgba(243,159,95,.32), 0 10px 22px -10px rgba(110,33,176,.8);
+  letter-spacing:.01em;
+}
+
+.wterm .review-card{position:relative;z-index:1;padding:14px 14px 16px}
+.wterm .review-card h2{
+  font-size:20px;font-weight:500;letter-spacing:-.03em;margin:2px 0 8px;line-height:1.2;
+  background:linear-gradient(90deg,#8FD3EE 0%,#CDB4FF 35%,#F2A6E2 65%,#FCBC7E 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.wterm .review-card .lead{font-size:13px;line-height:1.45;color:var(--text);margin:0 0 12px}
+.wterm .section-label{
+  font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ember);font-weight:500;margin:12px 0 6px;
+}
+.wterm .filelist{margin:0 0 4px}
+.wterm .file-row{
+  display:flex;align-items:center;gap:8px;padding:8px 2px;
+  border-top:1px solid rgba(160,110,230,.18);font-size:12px;
+}
+.wterm .file-row:first-child{border-top:0;padding-top:2px}
+.wterm .file-row .nm{flex:1;min-width:0}
+.wterm .file-row .nm b{
+  display:block;font-weight:500;font-family:"DM Mono",ui-monospace,monospace;
+  font-size:11px;color:#E7D2FF;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.wterm .file-row .nm s{display:block;font-size:10px;color:var(--soft);text-decoration:none;font-family:Lexend,sans-serif}
+.wterm .chip,.wterm .chip.add{flex:none;font-size:9.5px;font-weight:500;padding:2px 7px;border-radius:99px;
+  color:#fff;border:1px solid rgba(255,255,255,.45);
+  background:linear-gradient(115deg,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8,#9b5cff,#3ee6ff,#ffd36e,#ff4fd8);
+  background-size:300% 300%;animation:selffix-shimmer 7s linear infinite;
+  text-shadow:0 1px 2px rgba(20,8,30,.45);
+  box-shadow:0 0 8px rgba(167,139,250,.4)}
+.wterm .chip.edit{color:#D7F3FF;border-color:rgba(159,220,255,.65);background:rgba(159,220,255,.22);animation:none;text-shadow:none}
+.wterm .chip.del{color:#FFE7B8;border-color:rgba(255,181,71,.65);background:rgba(255,181,71,.22);animation:none;text-shadow:none}
+.wterm .note.warn,.wterm .live-note.warn{color:#ffb547}
+
+.wterm .preview-link{
+  display:inline-flex;align-items:center;gap:6px;
+  color:#FCBC7E;font-size:13px;font-weight:500;
+  text-decoration:none;margin:12px 0 0;position:relative;z-index:2;
+}
+.wterm .preview-link .arrow{color:#8FD3EE}
+.wterm .note{
+  font-size:11px;color:var(--soft);text-align:center;margin:10px 0 12px;line-height:1.4;
+}
+.wterm .cta-row{display:flex;gap:8px;position:relative;z-index:2}
+.wterm .btn.approve{
+  flex:1.55;min-height:44px;border-radius:14px;color:#fff;font-size:14px;
+  background:linear-gradient(135deg,#6E21B0 0%,#D13BB2 42%,#EB7B59 72%,#FCBC7E 100%);
+  box-shadow:0 1px 0 rgba(255,255,255,.3) inset, 0 0 18px rgba(209,59,178,.5), 0 0 12px rgba(252,188,126,.35), 0 10px 22px -10px rgba(110,33,176,.8);
+  letter-spacing:.01em;
+}
+.wterm .btn.decline{
+  flex:.9;min-height:44px;border-radius:14px;font-size:13.5px;color:#F9C4CE;
+  background:linear-gradient(180deg,rgba(80,20,40,.55),rgba(40,10,24,.5));
+  border:1px solid rgba(244,123,143,.5);
+  box-shadow:inset 0 1px 0 rgba(255,220,226,.15), 0 8px 18px -12px rgba(0,0,0,.6);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+}
+
+.wterm .live-hero{text-align:center;padding:8px 8px 4px;position:relative;z-index:1}
+.wterm .live-mark{
+  width:56px;height:56px;border-radius:50%;margin:4px auto 12px;
+  background:linear-gradient(135deg,#6E21B0 0%,#D13BB2 50%,#FCBC7E 100%);
+  box-shadow:0 0 22px rgba(209,59,178,.55), 0 0 14px rgba(252,188,126,.35), inset 0 1px 0 rgba(255,255,255,.4);
+  display:grid;place-items:center;font-size:26px;color:#fff;line-height:1;
+}
+.wterm .live-hero h2{
+  font-size:24px;font-weight:500;letter-spacing:-.03em;margin:0 0 8px;line-height:1.2;
+  background:linear-gradient(90deg,#8FD3EE 0%,#CDB4FF 35%,#F2A6E2 65%,#FCBC7E 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.wterm .live-hero p{font-size:13.5px;line-height:1.45;color:var(--text);margin:0 0 4px}
+
+.wterm .change{
+  margin:14px 8px 4px;padding:12px 14px;border-radius:16px;position:relative;z-index:1;
+  background:linear-gradient(180deg,rgba(7,3,16,.55),rgba(16,6,28,.5));
+  border:1px solid rgba(160,110,230,.28);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.10);
+  text-align:left;
+}
+.wterm .change .when{font-size:10px;color:var(--soft);margin:0 0 4px}
+.wterm .change h3{font-size:14px;font-weight:500;margin:0 0 4px;color:var(--text)}
+.wterm .change p{font-size:12px;line-height:1.4;color:var(--soft);margin:0}
+
+.wterm .btn.undo{
+  display:block;width:calc(100% - 16px);margin:16px 8px 4px;min-height:42px;border-radius:14px;
+  font-size:13.5px;color:#F9C4CE;
+  background:linear-gradient(180deg,rgba(80,20,40,.55),rgba(40,10,24,.5));
+  border:1px solid rgba(244,123,143,.5);
+  box-shadow:inset 0 1px 0 rgba(255,220,226,.15), 0 8px 18px -12px rgba(0,0,0,.6);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+}
+.wterm .live-note{font-size:11px;color:var(--soft);text-align:center;margin:12px 8px 4px;line-height:1.4}
+
+/* tighter review so Approve/Decline fit on one phone screen */
+.wterm.is-review .review-card{padding:10px 14px 12px}
+.wterm.is-review .review-card h2{font-size:18.5px;margin:0 0 6px}
+.wterm.is-review .review-card .lead{margin:0 0 4px;font-size:12.5px;line-height:1.4}
+.wterm.is-review .section-label{margin:8px 0 3px}
+.wterm.is-review .file-row{padding:5px 2px}
+.wterm.is-review .diff.full{padding:3px 0}
+.wterm.is-review .diff .ln{line-height:13.5px;padding:0 8px 0 12px}
+.wterm.is-review .preview-link{margin:8px 0 0}
+.wterm.is-review .note{margin:6px 0 8px}
+
+/* confirmation card fills the screen instead of floating in empty space */
+.wterm.is-live .scroll{display:flex;flex-direction:column}
+.wterm.is-live .stack{flex:1;min-height:0;display:flex;flex-direction:column}
+.wterm.is-live .win{flex:1;display:flex;flex-direction:column}
+.wterm.is-live .live-hero{padding:22px 16px 8px}
+.wterm.is-live .live-mark{margin:8px auto 16px}
+.wterm.is-live .change{margin-top:auto}
+.wterm.is-live .footnote{margin-top:14px;margin-bottom:4px}
+
+/* screen 1: let the terminal card fill the gap above the dock */
+.wterm.is-propose .scroll{display:flex;flex-direction:column}
+.wterm.is-propose .stack{flex:1;min-height:0;display:flex;flex-direction:column}
+.wterm.is-propose .win{flex:1;display:flex;flex-direction:column}
+.wterm.is-propose .term{flex:1;max-height:none}
+
+/* screen 2: a little air at the bottom so Approve isn't clipped */
+.wterm.is-review .scroll{padding-bottom:10px}
+.wterm.is-review .review-card{padding-bottom:10px}
+.wterm.is-review .review-card .lead{margin-bottom:2px}
+.wterm.is-review .btn.approve,.wterm.is-review .btn.decline{min-height:42px}
+.wterm.is-review .note{margin:5px 0 8px}
+
+/* screen 3: keep the note inside the rounded card */
+.wterm.is-live .live-note{margin-bottom:14px}
+
+@keyframes selffix-shimmer{
+  0%{background-position:0% 50%}
+  100%{background-position:100% 50%}
+}
+@keyframes selffix-shimmer-y{
+  0%{background-position:0% 0%}
+  100%{background-position:0% 100%}
+}
+@keyframes selffix-foil{
+  0%,8%{background-position:145% 0}
+  52%{background-position:-45% 0}
+  64%,100%{background-position:-45% 0}
+}
+@media (prefers-reduced-motion:reduce){
+  .wterm .diff .ln.add,.wterm .diff .ln.add::before,.wterm .diff .ln.add::after,
+  .wterm .pill.ok,.wterm .chip.add,.wterm .chip{
+    animation:none !important;
+  }
+  .wterm .diff .ln.add,.wterm .pill.ok,.wterm .chip.add{background-position:20% 50%}
+  .wterm .diff .ln.add::after{background-position:42% 0;opacity:.65}
+}
+
