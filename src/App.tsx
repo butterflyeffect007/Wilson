@@ -27,6 +27,8 @@ import WilsonTerminal from "./terminal/WilsonTerminal";
 import { canOpenTerminal, openTerminalHash, terminalHashOpen } from "./terminal/access";
 import JobsRoom from "./jobs/JobsRoom";
 import { canOpenJobs, openJobsHash, jobsHashOpen } from "./jobs/access";
+import OmniLab from "./omni/OmniLab";
+import { canOpenOmni, openOmniHash, omniHashOpen } from "./omni/access";
 import Backdrop from "./components/Backdrop";
 import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
 import type { ModelRequest } from "./intelligence";
@@ -116,8 +118,9 @@ export default function App() {
   const [showGematria, setShowGematria] = useState(false);
   const [showTerminal, setShowTerminal] = useState(() => terminalHashOpen());
   const [showJobs, setShowJobs] = useState(() => jobsHashOpen());
+  const [showOmni, setShowOmni] = useState(() => omniHashOpen());
   useEffect(() => {
-    const sync = () => { setShowTerminal(terminalHashOpen()); setShowJobs(jobsHashOpen()); };
+    const sync = () => { setShowTerminal(terminalHashOpen()); setShowJobs(jobsHashOpen()); setShowOmni(omniHashOpen()); };
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
   }, []);
@@ -854,6 +857,7 @@ export default function App() {
       {showGematria && <ErrorBoundary label="Gematria Observatory"><GematriaObservatory onClose={() => setShowGematria(false)} /></ErrorBoundary>}
       {showTerminal && <ErrorBoundary label="Wilson's Terminal"><WilsonTerminal allowed={canOpenTerminal(isAdmin)} onClose={() => setShowTerminal(false)} /></ErrorBoundary>}
       {showJobs && <ErrorBoundary label="Jobs"><JobsRoom allowed={canOpenJobs(isAdmin)} onClose={() => setShowJobs(false)} /></ErrorBoundary>}
+      {showOmni && <ErrorBoundary label="Omni Lab"><OmniLab allowed={canOpenOmni(isAdmin)} onClose={() => setShowOmni(false)} /></ErrorBoundary>}
       {orgTab && <ErrorBoundary label="organizer" compact><Organizer tab={orgTab} onTab={setOrgTab} onClose={() => setOrgTab(null)} /></ErrorBoundary>}
       {dueBanner.length > 0 && !orgTab && (
         <div className="fixed z-[45] left-3 right-3 top-[max(4.25rem,calc(env(safe-area-inset-top)+3.5rem))] max-w-lg mx-auto glass-strong rounded-2xl px-4 py-3 flex items-start gap-3 shadow-lg">
@@ -953,6 +957,14 @@ export default function App() {
                     className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 border border-violet-200/70 bg-gradient-to-r from-fuchsia-500/10 via-violet-500/10 to-amber-400/15 text-violet-800 text-[13px] font-medium"
                   >
                     Jobs
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setSidebarOpen(false); openOmniHash(); }}
+                    aria-label="Open Omni Lab"
+                    className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 border border-violet-200/70 bg-gradient-to-r from-fuchsia-500/10 via-violet-500/10 to-amber-400/15 text-violet-800 text-[13px] font-medium"
+                  >
+                    Omni Lab
                   </button>
                   </>
                 )}
@@ -1114,11 +1126,12 @@ export default function App() {
               </div>
               {isAdmin && (
                 <div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
                     <button type="button" onClick={() => { setShowSettings(false); location.hash = "#architect"; }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">🛡 Dashboard</button>
                     <button type="button" onClick={() => { setShowSettings(false); openTerminalHash(); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Wilson's Terminal</button>
                     <button type="button" onClick={() => { setShowSettings(false); openJobsHash(); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Jobs</button>
+                    <button type="button" onClick={() => { setShowSettings(false); openOmniHash(); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Omni Lab</button>
                   </div>
                   <label className="flex items-start gap-2 text-[12px] text-violet-800/80 mt-2">
                     <input type="checkbox" className="mt-0.5" checked={nightly} onChange={(e) => { const on = e.target.checked; setNightly(on); setNightlyOptIn(on); if (on) void syncLoops(loadStateOfYou().summary); }} />
