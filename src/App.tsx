@@ -605,7 +605,7 @@ export default function App() {
               raw += chunk;
               const shown = stripTagsForDisplay(raw);
               writeAssistant(shown);
-              speech?.push(shown);
+              speech?.push(stripSourcesForSpeech(shown));
             },
             abort.signal,
           );
@@ -626,7 +626,7 @@ export default function App() {
                 raw += chunk;
                 const shown = stripTagsForDisplay(raw);
                 writeAssistant(shown);
-                speech?.push(shown);
+                speech?.push(stripSourcesForSpeech(shown));
               },
               abort.signal,
             );

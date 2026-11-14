@@ -22,10 +22,10 @@
  * AudioContext "suspended"/"interrupted" states in home-screen PWAs. Web Audio is only used for
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
  */
-import { attachAudio, detachAudio, setSpeakingFlag, unlockAudioContext } from "./audioBus";
+import { attachAudio, detachAudio, getAudioContext, setSpeakingFlag, unlockAudioContext } from "./audioBus";
 import { primeScreenAwake } from "./screenAwake";
 import { ensurePuck, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
-import { createOrderedSpeaker, FatalVoiceError, firstSuccess, splitAtPauses, takeChunks, withRetry } from "./voiceQueue";
+import { createOrderedSpeaker, FatalVoiceError, firstSuccess, splitAtPauses, splitToLimit, takeChunks, withRetry } from "./voiceQueue";
 
 /* ---- the locked voice (one per session; changed only from Settings) ---- */
 export type VoiceId = "edge-andrew" | "gemini" | "aura-orion" | "puck-device";
@@ -81,8 +81,12 @@ const EDGE_VOICE = "en-US-AndrewMultilingualNeural";
 const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/84TAAAAAAAAAAAAASW5mbwAAAA8AAAAFAAACoABtbW1tbW1tbW1tbW1tbW1tbW1tkpKSkpKSkpKSkpKSkpKSkpKSkpK2tra2tra2tra2tra2tra2tra2ttvb29vb29vb29vb29vb29vb29vb//////////////////////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJARQAAAAAAAAAqC9P8vrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80TEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEUwAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEpgAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=";
 let generation = 0;
 let unlocked = false;
-let el: HTMLAudioElement | null = null;
-let currentUrl: string | null = null;
+/** Two primed HTMLAudioElements (A/B ping-pong). Reusing one element without a proper reset is a
+ *  well-known iOS Safari bug: later clips fire "ended" immediately or cut off mid-sentence. */
+const EL_COUNT = 2;
+const els: HTMLAudioElement[] = [];
+const urlOf = new WeakMap<HTMLAudioElement, string>();
+let playTurn = 0;
 let finishCurrentClip: (() => void) | null = null;
 /** In-flight voice requests of the current reply (aborted on stop so they don't hog connections). */
 const inflightCtrls = new Set<AbortController>();
@@ -101,14 +105,73 @@ function errText(e: unknown) { const x = e as { name?: string; message?: string 
 export function getVoiceDebug() { return debug; }
 export function subscribeVoiceDebug(l: (d: VoiceDebug) => void) { debugListeners.add(l); return () => { debugListeners.delete(l); }; }
 
-function audioEl(): HTMLAudioElement {
-  if (!el) {
-    el = new Audio();
-    el.setAttribute("playsinline", ""); el.setAttribute("webkit-playsinline", "");
-    (el as any).playsInline = true;
-    el.preload = "auto";
+function makeAudioEl(): HTMLAudioElement {
+  const a = new Audio();
+  a.setAttribute("playsinline", ""); a.setAttribute("webkit-playsinline", "");
+  (a as any).playsInline = true;
+  a.preload = "auto";
+  a.muted = false;
+  return a;
+}
+function audioEls(): HTMLAudioElement[] {
+  while (els.length < EL_COUNT) els.push(makeAudioEl());
+  return els;
+}
+function resetEl(a: HTMLAudioElement): void {
+  try { a.pause(); } catch { /* ignore */ }
+  try { a.currentTime = 0; } catch { /* ignore */ }
+  const old = urlOf.get(a);
+  if (old) { try { URL.revokeObjectURL(old); } catch { /* ignore */ } urlOf.delete(a); }
+  try { a.removeAttribute("src"); a.src = ""; a.load(); } catch { /* ignore */ }
+}
+function assignSrc(a: HTMLAudioElement, blob: Blob): string {
+  const old = urlOf.get(a);
+  if (old) { try { URL.revokeObjectURL(old); } catch { /* ignore */ } }
+  const u = URL.createObjectURL(blob);
+  urlOf.set(a, u);
+  a.src = u;
+  try { a.load(); } catch { /* ignore */ }
+  return u;
+}
+/** Edge Andrew is 24 kHz 48 kbps MP3 (~6 KB/s). Gemini/Puck are 24 kHz 16-bit mono WAV (~48 KB/s).
+ *  iOS often reports a bogus duration (or fires "ended" early) for headerless Edge MP3s, so we
+ *  also estimate length from the file size and refuse to move on until enough audio has actually played. */
+function estimateSecs(blob: Blob): number {
+  const t = (blob.type || "").toLowerCase();
+  if (t.includes("wav") || t.includes("pcm")) return Math.max(0.25, (blob.size - 44) / 48000);
+  return Math.max(0.25, blob.size / 6000);
+}
+function encodeWav(buf: AudioBuffer): Blob {
+  const ch = buf.numberOfChannels, sr = buf.sampleRate, len = buf.length;
+  const channels = Array.from({ length: ch }, (_, i) => buf.getChannelData(i));
+  const pcm = new Int16Array(len);
+  for (let i = 0; i < len; i++) {
+    let s = 0;
+    for (let c = 0; c < ch; c++) s += channels[c][i];
+    s = Math.max(-1, Math.min(1, s / Math.max(1, ch)));
+    pcm[i] = s < 0 ? (s * 0x8000) : (s * 0x7fff);
   }
-  return el;
+  const out = new ArrayBuffer(44 + pcm.length * 2);
+  const v = new DataView(out);
+  const w = (o: number, str: string) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); w(8, "WAVE");
+  w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, "data"); v.setUint32(40, pcm.length * 2, true);
+  new Uint8Array(out, 44).set(new Uint8Array(pcm.buffer));
+  return new Blob([out], { type: "audio/wav" });
+}
+async function decodeToWav(blob: Blob): Promise<Blob | null> {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return null;
+    if (ctx.state === "suspended") await ctx.resume().catch(() => {});
+    const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
+    return encodeWav(audio);
+  } catch (e) {
+    dbg("mp3→wav decode failed", e);
+    return null;
+  }
 }
 
 export type SpeakResult = "success" | "skipped" | "error";
@@ -130,14 +193,19 @@ export function primePlayback(): void {
   void unlockAudioContext();
   primeScreenAwake(); // same tap lets the iOS Home Screen keep-awake fallback start later
   if (unlocked) return;
-  const a = audioEl();
-  try {
-    a.muted = false;
-    a.src = SILENT_MP3;
-    const p = a.play();
-    unlocked = true;
-    if (p && typeof p.then === "function") p.then(() => dbg("audio unlocked"), (e) => { unlocked = false; dbg("unlock failed", e); });
-  } catch (e) { dbg("unlock threw", e); }
+  // Unlock BOTH elements inside this tap — iOS will not let a later, never-primed Audio play() after an async fetch.
+  let ok = false;
+  for (const a of audioEls()) {
+    try {
+      a.muted = false;
+      a.src = SILENT_MP3;
+      const p = a.play();
+      ok = true;
+      if (p && typeof p.then === "function") p.then(() => {}, (e) => { dbg("unlock failed", e); });
+    } catch (e) { dbg("unlock threw", e); }
+  }
+  unlocked = ok;
+  if (ok) dbg("audio unlocked");
 }
 
 /* "Wilson is in the middle of a spoken reply" (from the first request until the last sentence ends, gaps included). */
@@ -151,10 +219,11 @@ export function stopSpeaking(): void {
   generation++;
   puckCancel(generation);
   inflightCtrls.forEach((c) => { try { c.abort(); } catch { /* ignore */ } }); inflightCtrls.clear();
-  if (el && currentUrl) { try { el.pause(); } catch { /* ignore */ } }
   finishCurrentClip?.(); finishCurrentClip = null;
-  if (currentUrl) { URL.revokeObjectURL(currentUrl); currentUrl = null; }
-  if (el) detachAudio(el);
+  for (const a of els) {
+    resetEl(a);
+    detachAudio(a);
+  }
   setSpeakingFlag(false);
   setPending(false);
   setActive(false);
@@ -162,59 +231,117 @@ export function stopSpeaking(): void {
   const e = endCurrent; endCurrent = null; e?.();
 }
 
-/** Play one audio blob on the shared element; resolves true when it ends, false if playback itself failed. */
-function playBlob(blob: Blob, my: number): Promise<boolean> {
+/** Play one audio blob on a primed element; resolves true when it has actually finished, false if playback itself failed. */
+function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     if (my !== generation) return resolve(true);
-    const a = audioEl();
-    if (currentUrl) URL.revokeObjectURL(currentUrl);
-    currentUrl = URL.createObjectURL(blob);
+    const a = audioEls()[playTurn % EL_COUNT];
+    playTurn++;
     let settled = false;
     let stall: ReturnType<typeof setTimeout> | null = null;
     let resumeAttempts = 0;
     let playAttempts = 0;
+    let started = false;
+    let ignorePause = true; // ignore pause events caused by our own reset / src swap
+    let maxTime = 0;
+    const est = estimateSecs(blob);
+
     const cleanup = () => {
-      a.removeEventListener("ended", done); a.removeEventListener("error", onErr);
-      a.removeEventListener("pause", onPause); a.removeEventListener("loadedmetadata", armStall);
+      a.removeEventListener("ended", onEnded);
+      a.removeEventListener("error", onErr);
+      a.removeEventListener("pause", onPause);
+      a.removeEventListener("playing", onPlaying);
+      a.removeEventListener("timeupdate", onTime);
+      a.removeEventListener("canplay", onCanPlay);
+      a.removeEventListener("loadedmetadata", armStall);
       if (stall) clearTimeout(stall);
     };
-    const settle = (ok: boolean) => {
+    const settle = (ok: boolean | "early") => {
       if (settled) return; settled = true;
       cleanup();
       if (finishCurrentClip === done) finishCurrentClip = null;
+      if (ok === "early") {
+        void (async () => {
+          if (my !== generation) return resolve(true);
+          // Headerless Edge MP3s often "end" after a fraction of a second on iOS. Decode to WAV
+          // (correct duration) and replay on the other primed element, same voice, same words.
+          let next = blob;
+          if (attempt === 0 && !(blob.type || "").toLowerCase().includes("wav")) {
+            const wav = await decodeToWav(blob);
+            if (wav) { dbg(`replaying as wav (${(wav.size / 1024).toFixed(0)} KB)`); next = wav; }
+          }
+          resolve(await playBlob(next, my, attempt + 1));
+        })();
+        return;
+      }
       resolve(ok);
     };
     const done = () => settle(true);
     const fail = (why: string) => { dbg("audio playback failed", why); settle(false); };
     const onErr = () => fail(a.error ? `MediaError code ${a.error.code} ${a.error.message ?? ""}` : "unknown media error");
-    // iOS may interrupt playback temporarily. Give the same clip several bounded resume attempts.
+    const onTime = () => { if (isFinite(a.currentTime) && a.currentTime > maxTime) maxTime = a.currentTime; };
+    const onPlaying = () => { started = true; ignorePause = false; };
+    const onCanPlay = () => {
+      if (settled || my !== generation || started) return;
+      const p = a.play();
+      if (p && typeof p.then === "function") p.catch((e) => dbg("canplay play() rejected", e));
+    };
     const resumeAfterPause = () => {
-      if (settled || my !== generation || a.ended || !a.paused) return;
-      if (resumeAttempts >= 5) { fail("kept getting interrupted (resume retries exhausted)"); return; }
+      if (settled || my !== generation || a.ended || !a.paused || ignorePause) return;
+      if (resumeAttempts >= 6) { fail("kept getting interrupted (resume retries exhausted)"); return; }
       const delay = Math.min(2000, 250 * (2 ** resumeAttempts++));
       setTimeout(() => {
-        if (settled || my !== generation || a.ended || !a.paused) return;
+        if (settled || my !== generation || a.ended || !a.paused || ignorePause) return;
         a.play().catch((e) => { dbg("resume play() rejected", e); resumeAfterPause(); });
       }, delay);
     };
-    const onPause = () => { if (settled || my !== generation || a.ended) return; resumeAfterPause(); };
+    const onPause = () => { if (settled || my !== generation || a.ended || ignorePause || !started) return; resumeAfterPause(); };
+    const onEnded = () => {
+      if (settled || my !== generation) return;
+      const playedFor = Math.max(a.currentTime || 0, maxTime);
+      // iOS Safari + Edge MP3: "ended" often fires after only a fraction of the clip. Don't move
+      // on — retry the SAME words (optionally remuxed to WAV) so the rest of the script is spoken.
+      if (attempt < 2 && playedFor + 0.35 < est * 0.8) {
+        dbg(`clip ended early (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
+        settle("early");
+        return;
+      }
+      done();
+    };
     const armStall = () => {
       if (stall) clearTimeout(stall);
-      const secs = isFinite(a.duration) && a.duration > 0 ? a.duration : 60;
-      // Duration known and well past: it played (some WebViews never fire "ended").
-      stall = setTimeout(() => { dbg("clip never fired 'ended', moving on"); done(); }, secs * 1000 + 5000);
+      const reported = isFinite(a.duration) && a.duration > 0.2 ? a.duration : 0;
+      // Trust the browser duration only when it roughly agrees with the byte-size estimate.
+      const secs = reported && Math.abs(reported - est) / est < 0.5 ? Math.max(reported, est) : Math.max(est, reported);
+      stall = setTimeout(() => {
+        const playedFor = Math.max(a.currentTime || 0, maxTime);
+        if (playedFor + 0.35 < Math.max(est, secs) * 0.8 && attempt < 2) {
+          dbg(`clip stalled (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
+          settle("early");
+        } else {
+          dbg("clip never fired 'ended', moving on");
+          done();
+        }
+      }, secs * 1000 + 8000);
     };
     finishCurrentClip = done;
-    a.addEventListener("ended", done); a.addEventListener("error", onErr);
-    a.addEventListener("pause", onPause); a.addEventListener("loadedmetadata", armStall);
-    a.src = currentUrl;
+    ignorePause = true;
+    resetEl(a);
+    assignSrc(a, blob);
+    a.addEventListener("ended", onEnded);
+    a.addEventListener("error", onErr);
+    a.addEventListener("pause", onPause);
+    a.addEventListener("playing", onPlaying);
+    a.addEventListener("timeupdate", onTime);
+    a.addEventListener("canplay", onCanPlay);
+    a.addEventListener("loadedmetadata", armStall);
     attachAudio(a);
     armStall();
     const tryPlay = () => {
       if (settled || my !== generation) return;
       playAttempts++;
       const p = a.play();
-      if (p && typeof p.then === "function") p.then(() => dbg(`playing ${(blob.size / 1024).toFixed(0)} KB`), (e) => {
+      if (p && typeof p.then === "function") p.then(() => { started = true; ignorePause = false; dbg(`playing ${(blob.size / 1024).toFixed(0)} KB`); }, (e) => {
         dbg("play() rejected", e);
         if (playAttempts < 4 && !settled && my === generation) setTimeout(tryPlay, Math.min(1600, 300 * (2 ** (playAttempts - 1))));
         else if (!settled) fail(`browser rejected audio playback: ${errText(e)}`);
@@ -396,14 +523,39 @@ async function synthPiece(voice: VoiceId, text: string, index: number, my: numbe
     }, { attempts: 3, backoffMs: [300, 1000], stopped, onRetry: (a, e) => dbg(`Puck retry ${a}`, e) });
   }
   const e = ENGINES[voice];
-  const key = await clipKey(`${voice}|${voice === "edge-andrew" ? EDGE_VOICE : ""}|${text}`).catch(() => "");
-  if (key) { const hit = await cacheGet(key, e.type); if (hit) { dbg(`${voiceLabel(voice)} clip from device cache`); return hit; } }
-  const b = await withRetry((attempt) => {
+  const keyP = clipKey(`${voice}|${voice === "edge-andrew" ? EDGE_VOICE : ""}|${text}`).catch(() => "");
+  const request = (attempt: number) => {
     // Edge is uncapped: hedge the first piece and every retry with two identical requests (first back wins),
     // which cuts both the long first-byte waits and the intermittent "closed without audio" failures.
     if (voice === "edge-andrew" && (index === 0 || attempt > 0)) return firstSuccess([requestOnce(e, text, my), requestOnce(e, text, my)]);
     return requestOnce(e, text, my);
-  }, { ...RETRY, stopped, onRetry: (a, err) => dbg(`${voiceLabel(voice)} retry ${a} for piece ${index + 1}`, err) });
+  };
+  const net = () => withRetry(request, { ...RETRY, stopped, onRetry: (a, err) => dbg(`${voiceLabel(voice)} retry ${a} for piece ${index + 1}`, err) });
+
+  // First piece: start the TTS request immediately. A cache lookup must never delay the first words
+  // (IndexedDB can take up to 350 ms on a miss). A cache hit can still win if it comes back first.
+  if (index === 0) {
+    const netP = net();
+    const key = await keyP;
+    const hitP = key ? cacheGet(key, e.type) : Promise.resolve(null);
+    const winner = await new Promise<{ hit?: Blob; net?: Blob }>((resolve, reject) => {
+      let cacheDone = !key;
+      let netErr: unknown;
+      hitP.then((h) => {
+        if (h) resolve({ hit: h });
+        else { cacheDone = true; if (netErr !== undefined) reject(netErr); }
+      }, () => { cacheDone = true; if (netErr !== undefined) reject(netErr); });
+      netP.then((b) => resolve({ net: b }), (err) => { netErr = err; if (cacheDone) reject(err); });
+    });
+    if (winner.hit) { dbg(`${voiceLabel(voice)} clip from device cache`); return winner.hit; }
+    const b = winner.net ?? await netP;
+    if (key) void cachePut(key, b);
+    return b;
+  }
+
+  const key = await keyP;
+  if (key) { const hit = await cacheGet(key, e.type); if (hit) { dbg(`${voiceLabel(voice)} clip from device cache`); return hit; } }
+  const b = await net();
   if (key) void cachePut(key, b);
   return b;
 }
@@ -459,8 +611,9 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   const dispatch = (text: string) => {
     const t = toSpeakable(text);
     if (!t) return;
-    // On-device Puck is faster on short pieces; cloud voices get whole sentences (fewer requests, natural prosody).
-    const pieces = voice === "puck-device" ? splitAtPauses(t, dispatched === 0) : [t];
+    // On-device Puck is faster on short pieces; cloud voices get whole sentences (fewer requests, natural prosody)
+    // but are hard-capped so a long paragraph can never be silently truncated by the voice server (Edge = 1500 chars).
+    const pieces = voice === "puck-device" ? splitAtPauses(t, dispatched === 0) : splitToLimit(t);
     for (const p of pieces) { speaker.push(p); dispatched++; }
   };
   /* Gather sentences into bigger pieces, but never let the speaker run dry: when nothing is queued behind

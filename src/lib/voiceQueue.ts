@@ -58,6 +58,40 @@ export function takeChunks(text: string, from: number, final: boolean, isFirst: 
   return { parts, next: start };
 }
 
+/** Hard cap so a single piece never exceeds the voice-server character limit (Edge silently truncates at 1500). */
+export const HARD_PIECE_MAX = 480;
+
+/** Split text into pieces of at most `max` chars, breaking at sentence ends, then commas/dashes, then spaces. Never cuts mid-word if a space exists. */
+export function splitToLimit(text: string, max = HARD_PIECE_MAX): string[] {
+  const t = text.trim();
+  if (!t) return [];
+  if (t.length <= max) return [t];
+  const out: string[] = [];
+  let rest = t;
+  while (rest.length > max) {
+    const win = rest.slice(0, max);
+    let cut = -1;
+    for (const re of [/[.!?]["')\]]*(\s|$)/g, /[,;:—–](\s|$)/g, /\s/g]) {
+      let m: RegExpExecArray | null, last = -1;
+      re.lastIndex = 0;
+      while ((m = re.exec(win)) !== null) {
+        const end = m.index + m[0].length;
+        if (end >= 24) last = end;
+      }
+      if (last >= 24) { cut = last; break; }
+    }
+    if (cut < 24) {
+      const sp = win.lastIndexOf(" ");
+      cut = sp >= 24 ? sp + 1 : max;
+    }
+    const piece = rest.slice(0, cut).trim();
+    if (piece) out.push(piece);
+    rest = rest.slice(cut).trim();
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
 /** Split a long sentence at commas/semicolons/dashes into pieces of ~max chars (first piece shorter). Used for on-device Puck. */
 export function splitAtPauses(text: string, first: boolean, max = 110, firstMax = 42): string[] {
   const out: string[] = [];

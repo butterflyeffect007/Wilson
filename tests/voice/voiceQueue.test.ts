@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { takeChunks, withRetry, firstSuccess, createOrderedSpeaker, FatalVoiceError } from '../../src/lib/voiceQueue.ts';
+import { takeChunks, withRetry, firstSuccess, createOrderedSpeaker, FatalVoiceError, splitToLimit } from '../../src/lib/voiceQueue.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -131,4 +131,19 @@ test('speaker: stop cancels cleanly', async () => {
   for (let i = 0; i < 6; i++) sp.push('x'); sp.finish();
   while (!ended) await sleep(5);
   assert.deepEqual(played, [0, 1]);
+});
+
+test('splitToLimit: leaves short text alone', () => {
+  assert.deepEqual(splitToLimit('Hello Jenny, it is Wilson.'), ['Hello Jenny, it is Wilson.']);
+});
+
+test('splitToLimit: long text is fully covered, never mid-word, each piece under the cap', () => {
+  const words = 'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu.';
+  const text = (words + ' ').repeat(8).trim();
+  const parts = splitToLimit(text, 80);
+  assert.ok(parts.length > 1);
+  for (const p of parts) assert.ok(p.length <= 80, `piece too long: ${p.length} ${p}`);
+  assert.equal(parts.join(' ').replace(/\s+/g, ' '), text.replace(/\s+/g, ' '));
+  const all = new Set(text.split(/\s+/));
+  for (const p of parts) for (const w of p.split(/\s+/)) assert.ok(all.has(w), `split word: ${w}`);
 });
