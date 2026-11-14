@@ -32,7 +32,9 @@ import { canOpenOmni, openOmniHash, omniHashOpen } from "./omni/access";
 import Backdrop from "./components/Backdrop";
 import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
 import type { ModelRequest } from "./intelligence";
-import { prepareTools } from "./intelligence";
+import { runToolLoop } from "./omni/oracle";
+import { HARM_STOP_REPLY, seriousHarmStop } from "./omni/harmStop";
+import { generateWithActiveBrain, loadedPack } from "./omni/engine";
 import { linksIn } from "./intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
@@ -493,6 +495,11 @@ export default function App() {
           messages: [...t.messages, { id: newId(), role: "assistant", content: text, timestamp: new Date().toISOString() }],
         }));
 
+      if (seriousHarmStop(content)) {
+        pushAssistant(HARM_STOP_REPLY);
+        return;
+      }
+
       const engine = getPreferredEngine(DEFAULT_WILSON_POLICY);
       // Interface -> Wilson Core -> Intelligence Router -> Model Adapter -> Model
       const router = new IntelligenceRouter(DEFAULT_WILSON_POLICY, {
@@ -527,8 +534,13 @@ export default function App() {
       let toolCtx = "";
       if (!orgAction) try {
         const step = await Promise.race([
-          prepareTools(content, { toolsUrl: WILSON_PROXY_URL, adapter }),
-          new Promise<{ context: string }>((r) => setTimeout(() => r({ context: "" }), 15000)),
+          runToolLoop(content, {
+            toolsUrl: WILSON_PROXY_URL,
+            adapter,
+            architect: !!(isAdmin || cachedIsAdmin()),
+            speakerId: voiceCtxRef.current.id,
+          }),
+          new Promise<{ context: string }>((r) => setTimeout(() => r({ context: "" }), 20000)),
         ]);
         toolCtx = step.context;
       } catch (e) { console.warn("[tools]", e); }
@@ -593,7 +605,43 @@ export default function App() {
       const speakIt = settings.voiceEnabled || wakeSpeakRef.current; wakeSpeakRef.current = false;
       const speech = speakIt ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"]) : null;
       let attempt = 0;
-      for (;;) {
+
+      // If a local Omni pack is already loaded, try it first. Empty or failed replies escalate to the rented stream.
+      let usedLocal = false;
+      if (loadedPack()) {
+        try {
+          const gen = await generateWithActiveBrain({
+            userText: content,
+            systemContext: request.systemContext,
+            preferLocal: true,
+            allowEscalate: false,
+            maxTokens: 400,
+          });
+          if (gen.reply) {
+            usedLocal = true;
+            raw = gen.reply;
+            setThinking(false);
+            setStreamingId(msgId);
+            const { clean, vibe: newVibe, dream } = parseAndStripTags(raw);
+            const finalText = clean || raw;
+            writeAssistant(finalText);
+            if (newVibe) {
+              setVibe(newVibe);
+              saveProfile({ vibe: newVibe });
+              if (settings.longMemory) recordVibe(newVibe);
+            }
+            if (dream) saveProfile({ dream });
+            if (clean && settings.longMemory) {
+              void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
+              const recentMsgs: StoredMessage[] = [...history, { id: "u", role: "user", content, timestamp: "" }, { id: "a", role: "assistant", content: clean, timestamp: "" }];
+              setTimeout(() => void maybeRefreshStateOfYou(adapter, recentMsgs), 1500);
+            }
+            if (clean && speech) speech.finish(stripSourcesForSpeech(clean));
+          }
+        } catch (e) { console.warn("[omni-local]", e); }
+      }
+
+      if (!usedLocal) for (;;) {
         try {
           let result = await adapter.generateStream(
             request,

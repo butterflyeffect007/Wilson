@@ -104,15 +104,15 @@ async function createEngine(mod: WebLLMModule, modelId: string, onProgress: (p: 
   });
 }
 
-async function chatWithEngine(engine: MLCEngine, userText: string): Promise<{ reply: string; tokens: number; ms: number }> {
+async function chatWithEngine(engine: MLCEngine, userText: string, opts?: { system?: string; maxTokens?: number; temperature?: number }): Promise<{ reply: string; tokens: number; ms: number }> {
   const t0 = performance.now();
   const res = await engine.chat.completions.create({
     messages: [
-      { role: "system", content: WILSON_BRAIN_PROMPT },
+      { role: "system", content: opts?.system || WILSON_BRAIN_PROMPT },
       { role: "user", content: userText },
     ],
-    max_tokens: 120,
-    temperature: 0.8,
+    max_tokens: opts?.maxTokens ?? 120,
+    temperature: opts?.temperature ?? 0.8,
   }) as {
     choices?: { message?: { content?: string } }[];
     usage?: { completion_tokens?: number };
@@ -212,6 +212,65 @@ export async function followUpChat(userText: string): Promise<{ reply: string; t
     };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Chat failed." };
+  }
+}
+
+
+export type ActiveBrain = "on-device" | "rented";
+
+function proxyUrl(): string {
+  return ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) || "https://wilson-proxy.butterflyeffect007.workers.dev";
+}
+
+/** Answer with the loaded on-device pack when present; otherwise the rented path. Escalates if the local pack fails and allowEscalate is true. */
+export async function generateWithActiveBrain(opts: {
+  userText: string;
+  systemContext?: string;
+  preferLocal?: boolean;
+  allowEscalate?: boolean;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<{ reply: string; brain: ActiveBrain; modelId: string; escalated: boolean; error?: string }> {
+  const system = opts.systemContext || WILSON_BRAIN_PROMPT;
+  const maxTokens = opts.maxTokens ?? 280;
+  const temperature = opts.temperature ?? 0.8;
+  const pack = loadedEngine;
+  const wantLocal = opts.preferLocal !== false && !!pack;
+  if (wantLocal && pack) {
+    try {
+      const chat = await chatWithEngine(pack.engine, opts.userText, { system, maxTokens, temperature });
+      if (chat.reply) return { reply: chat.reply, brain: "on-device", modelId: pack.modelId, escalated: false };
+      if (!opts.allowEscalate) return { reply: "", brain: "on-device", modelId: pack.modelId, escalated: false, error: "Empty reply from the on-device pack." };
+    } catch (err) {
+      if (!opts.allowEscalate) {
+        return { reply: "", brain: "on-device", modelId: pack.modelId, escalated: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+  }
+  try {
+    const model = getPreferredEngine(DEFAULT_WILSON_POLICY).model;
+    const ad = new OpenRouterAdapter("", model, proxyUrl());
+    const res = await ad.generate({
+      systemContext: system,
+      userInput: opts.userText,
+      generation: { maxTokens, temperature },
+    });
+    const reply = (res.text || "").trim();
+    return {
+      reply,
+      brain: "rented",
+      modelId: res.model || model,
+      escalated: wantLocal,
+      error: reply ? undefined : "The rented brain returned an empty reply.",
+    };
+  } catch (err) {
+    return {
+      reply: "",
+      brain: "rented",
+      modelId: "",
+      escalated: wantLocal,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
