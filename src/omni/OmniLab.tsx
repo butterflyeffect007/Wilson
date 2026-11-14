@@ -12,6 +12,7 @@ import {
   type OmniTierId,
 } from "./tiers";
 import "./OmniLab.css";
+import OraclePanel from "./OraclePanel";
 
 type Props = { allowed: boolean; onClose: () => void };
 
@@ -102,6 +103,8 @@ export default function OmniLab({ allowed, onClose }: Props) {
             {caps?.error && <p className="why">{caps.error}</p>}
             {picked && <p className="why"><strong>Auto-pick:</strong> {OMNI_TIERS.find((t) => t.id === picked)?.label}. {reason}</p>}
           </section>
+
+          <OraclePanel />
 
           <div className="lane-title">Tiers</div>
           {OMNI_TIERS.map((tier) => {

@@ -12,7 +12,7 @@ export function isE2EOmni(): boolean {
 }
 
 export function canOpenOmni(isAdmin: boolean): boolean {
-  return isAdmin || cachedIsAdmin() || isE2EArchitect();
+  return isAdmin || cachedIsAdmin() || isE2EArchitect() || isE2EOmni();
 }
 
 export function omniHashOpen(): boolean {
