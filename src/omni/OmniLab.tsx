@@ -12,7 +12,6 @@ import {
   type OmniTierId,
 } from "./tiers";
 import "./OmniLab.css";
-import MatrixField from "./MatrixField";
 
 type Props = { allowed: boolean; onClose: () => void };
 
@@ -104,7 +103,7 @@ export default function OmniLab({ allowed, onClose }: Props) {
             {picked && <p className="why"><strong>Auto-pick:</strong> {OMNI_TIERS.find((t) => t.id === picked)?.label}. {reason}</p>}
           </section>
 
-          <section className="card" data-testid="omni-matrix-field">\n            <h3>Unified Matrix Field</h3>\n            <p className="meta">A calm spectrum of fading symbols · deterministic visual field</p>\n            <MatrixField />\n          </section>\n\n          <div className="lane-title">Tiers</div>
+          <div className="lane-title">Tiers</div>
           {OMNI_TIERS.map((tier) => {
             const res = results[tier.id];
             const crashed = crashes[tier.id];
