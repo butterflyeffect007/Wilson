@@ -58,7 +58,7 @@ export function takeChunks(text: string, from: number, final: boolean, isFirst: 
   return { parts, next: start };
 }
 
-/** Hard cap so a single piece never exceeds the voice-server character limit (Edge silently truncates at 1500). */
+/** Cap per piece so one slow voice request can't stall the reply (the worker no longer truncates; it splits). */
 export const HARD_PIECE_MAX = 480;
 
 /** Split text into pieces of at most `max` chars, breaking at sentence ends, then commas/dashes, then spaces. Never cuts mid-word if a space exists. */

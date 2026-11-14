@@ -17,7 +17,9 @@
  *   aura-orion   Deepgram Aura-2 Orion via worker /tts — free tier, daily limit
  *   puck-device  On-device Kokoro (am_michael) — free/unlimited after a one-time ~92 MB download
  *
- * Playback: ONE reused HTMLAudioElement (playsinline), unlocked by playing a silent clip inside the first tap.
+ * Playback: two primed HTMLAudioElements (A/B ping-pong, playsinline), unlocked by a silent clip inside the first tap.
+ * Edge Andrew clips come from the worker as MP3 with a proper "Info" header plus an X-Audio-Duration header,
+ * so iOS Safari gets the real length; the early-"ended" retry below is only a safety net now.
  * HTMLAudioElement is not muted by the iPhone ringer switch the way Web Audio is, and avoids
  * AudioContext "suspended"/"interrupted" states in home-screen PWAs. Web Audio is only used for
  * the orb's analyser on non-iOS browsers (audioBus.attachAudio bypasses it on iOS/Safari).
@@ -133,10 +135,14 @@ function assignSrc(a: HTMLAudioElement, blob: Blob): string {
   try { a.load(); } catch { /* ignore */ }
   return u;
 }
+/** Exact clip length reported by the voice server (X-Audio-Duration), when known. */
+const knownDur = new WeakMap<Blob, number>();
 /** Edge Andrew is 24 kHz 48 kbps MP3 (~6 KB/s). Gemini/Puck are 24 kHz 16-bit mono WAV (~48 KB/s).
- *  iOS often reports a bogus duration (or fires "ended" early) for headerless Edge MP3s, so we
- *  also estimate length from the file size and refuse to move on until enough audio has actually played. */
+ *  Prefer the server's exact duration; otherwise estimate from the file size. Used to refuse to move on
+ *  until enough audio has actually played (safety net for iOS firing "ended" early). */
 function estimateSecs(blob: Blob): number {
+  const k = knownDur.get(blob);
+  if (k && isFinite(k) && k > 0) return Math.max(0.25, k);
   const t = (blob.type || "").toLowerCase();
   if (t.includes("wav") || t.includes("pcm")) return Math.max(0.25, (blob.size - 44) / 48000);
   return Math.max(0.25, blob.size / 6000);
@@ -245,6 +251,7 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
     let ignorePause = true; // ignore pause events caused by our own reset / src swap
     let maxTime = 0;
     const est = estimateSecs(blob);
+    const exact = knownDur.has(blob);
 
     const cleanup = () => {
       a.removeEventListener("ended", onEnded);
@@ -268,7 +275,7 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
           let next = blob;
           if (attempt === 0 && !(blob.type || "").toLowerCase().includes("wav")) {
             const wav = await decodeToWav(blob);
-            if (wav) { dbg(`replaying as wav (${(wav.size / 1024).toFixed(0)} KB)`); next = wav; }
+            if (wav) { dbg(`replaying as wav (${(wav.size / 1024).toFixed(0)} KB)`); if (knownDur.has(blob)) knownDur.set(wav, knownDur.get(blob)!); next = wav; }
           }
           resolve(await playBlob(next, my, attempt + 1));
         })();
@@ -301,7 +308,7 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       const playedFor = Math.max(a.currentTime || 0, maxTime);
       // iOS Safari + Edge MP3: "ended" often fires after only a fraction of the clip. Don't move
       // on — retry the SAME words (optionally remuxed to WAV) so the rest of the script is spoken.
-      if (attempt < 2 && playedFor + 0.35 < est * 0.8) {
+      if (attempt < 2 && playedFor + 0.35 < est * (exact ? 0.9 : 0.8)) {
         dbg(`clip ended early (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
         settle("early");
         return;
@@ -312,7 +319,7 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       if (stall) clearTimeout(stall);
       const reported = isFinite(a.duration) && a.duration > 0.2 ? a.duration : 0;
       // Trust the browser duration only when it roughly agrees with the byte-size estimate.
-      const secs = reported && Math.abs(reported - est) / est < 0.5 ? Math.max(reported, est) : Math.max(est, reported);
+      const secs = exact ? est : reported && Math.abs(reported - est) / est < 0.5 ? Math.max(reported, est) : Math.max(est, reported);
       stall = setTimeout(() => {
         const playedFor = Math.max(a.currentTime || 0, maxTime);
         if (playedFor + 0.35 < Math.max(est, secs) * 0.8 && attempt < 2) {
@@ -322,7 +329,7 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
           dbg("clip never fired 'ended', moving on");
           done();
         }
-      }, secs * 1000 + 8000);
+      }, secs * 1000 + (exact ? 4000 : 8000));
     };
     finishCurrentClip = done;
     ignorePause = true;
@@ -441,20 +448,25 @@ export function geminiRestingUntil() { return gRestUntil > Date.now() ? gRestUnt
 export function geminiUsedToday() { return gToday; }
 
 /* ---- one request to the locked voice (no fallbacks; retries live in synthPiece) ---- */
-type Engine = { id: VoiceId; type: string; timeoutMs: number; once: (text: string, signal: AbortSignal) => Promise<Blob> };
+type Engine = { id: VoiceId; type: string; timeoutMs: number; timeoutFor?: (text: string) => number; once: (text: string, signal: AbortSignal) => Promise<Blob> };
 async function post(url: string, body: unknown, signal: AbortSignal) {
   return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
 }
 const ENGINES: Record<Exclude<VoiceId, "puck-device">, Engine> = {
   "edge-andrew": {
-    id: "edge-andrew", type: "audio/mpeg", timeoutMs: 14000,
+    // Microsoft's free endpoint currently synthesizes at roughly real time per stream (the worker splits and
+    // parallelizes), so a long piece needs a length-scaled timeout instead of a flat 14 s that killed it.
+    id: "edge-andrew", type: "audio/mpeg", timeoutMs: 14000, timeoutFor: (t) => Math.min(60000, 15000 + t.length * 70),
     async once(text, signal) {
       const res = await post(EDGE_TTS_URL, { text, voice: EDGE_VOICE }, signal);
       if (res.status === 404) throw new FatalVoiceError("Andrew isn't on the voice server (404)", "missing");
       if (!res.ok) throw new Error("edge tts http " + res.status);
       const blob = await res.blob();
       if (blob.size < 500) throw new Error("edge tts empty audio");
-      return new Blob([blob], { type: "audio/mpeg" });
+      const out = new Blob([blob], { type: "audio/mpeg" });
+      const d = Number(res.headers.get("X-Audio-Duration"));
+      if (d > 0 && isFinite(d)) knownDur.set(out, d);
+      return out;
     },
   },
   gemini: {
@@ -493,20 +505,21 @@ const ENGINES: Record<Exclude<VoiceId, "puck-device">, Engine> = {
 async function requestOnce(e: Engine, text: string, my: number): Promise<Blob> {
   if (my !== generation) throw new Error("stopped");
   const ctrl = new AbortController(); inflightCtrls.add(ctrl);
-  const to = setTimeout(() => ctrl.abort(), e.timeoutMs);
+  const ms = e.timeoutFor ? e.timeoutFor(text) : e.timeoutMs;
+  const to = setTimeout(() => ctrl.abort(), ms);
   const t0 = Date.now();
   try {
     const b = await e.once(text, ctrl.signal);
     dbg(`${voiceLabel(e.id)} ${(b.size / 1024).toFixed(0)} KB in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     return b;
   } catch (err) {
-    if ((err as Error)?.name === "AbortError") throw new Error(my !== generation ? "stopped" : `${voiceLabel(e.id)} timed out after ${e.timeoutMs / 1000}s`);
+    if ((err as Error)?.name === "AbortError") throw new Error(my !== generation ? "stopped" : `${voiceLabel(e.id)} timed out after ${Math.round(ms / 1000)}s`);
     throw err;
   } finally { clearTimeout(to); inflightCtrls.delete(ctrl); }
 }
 
 /** Retry policy: same voice, short backoff, bounded overall so a dead voice is reported instead of hanging. */
-const RETRY = { attempts: 4, backoffMs: [350, 1000, 2200], deadlineMs: 40000 };
+const RETRY = { attempts: 4, backoffMs: [350, 1000, 2200], deadlineMs: 75000 };
 
 /** Voice one piece with the locked voice. Throws only after the same voice failed every retry. */
 async function synthPiece(voice: VoiceId, text: string, index: number, my: number, speed: number, gaveUp: () => boolean): Promise<Blob> {
@@ -612,7 +625,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     const t = toSpeakable(text);
     if (!t) return;
     // On-device Puck is faster on short pieces; cloud voices get whole sentences (fewer requests, natural prosody)
-    // but are hard-capped so a long paragraph can never be silently truncated by the voice server (Edge = 1500 chars).
+    // but are capped (~480 chars) so one slow request can't hold up the rest of the reply.
     const pieces = voice === "puck-device" ? splitAtPauses(t, dispatched === 0) : splitToLimit(t);
     for (const p of pieces) { speaker.push(p); dispatched++; }
   };
