@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test:copy": "node --test tests/copy/*.test.ts",
     "test:voice": "node --test tests/voice/*.test.ts",
+    "test:operator": "npx --yes tsx --test tests/operator/*.test.ts",
     "fetch-assets": "node scripts/fetch-assets.mjs",
     "alchemy:observe": "node scripts/alchemy-observe.mjs"
   },

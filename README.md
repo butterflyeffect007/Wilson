@@ -173,6 +173,34 @@ Do not replace Wilson’s established visual DNA with a generic AI interface.
 
 Do not fragment Wilson into artificial modes when the underlying intelligence can determine the appropriate response itself.
 
+## Operator mode
+
+Operator mode lets Wilson **do things on the web for you**, not just talk about them. Give him a goal, like *"search for free AI grants for solo founders and list the top 3 with links"* or *"find three options and compare them"*, and he makes a short plan, searches, opens pages, follows links, and reports back with links. Every step shows up in a live progress log, with pictures of the pages he opens, so you can follow along on your phone.
+
+**Open it:** menu → **✨ Operator** (or Settings → ✨ Operator). You can also type `operator: <your goal>` or `/operator <your goal>` in chat. It's on The Architect's device.
+
+**Stay in control**
+
+- **■ Stop** at the bottom halts a task instantly.
+- Wilson **pauses and asks "Yes, do it / No, don't"** before anything with consequences: submitting a form, buying, sending a message or email, signing in, deleting, subscribing, or opening log-out/checkout style links. "No" means he won't try it another way.
+- He **never types passwords, codes, card or ID numbers**, and never logs in for you. When a step needs that, he stops and tells you what to do.
+- Pages he reads are treated as untrusted. Instructions hidden inside a web page are ignored.
+
+**What works with no setup (Reading mode):** web search (Brave, through Wilson's own server, same as chat), reading pages and following their links, page pictures, and Wilson's built-in data tools (Grants.gov, Wikipedia, news, papers, weather, places and more). Page reading and pictures come from the free Jina Reader (`r.jina.ai`, no key, no account); it only receives the page addresses.
+
+**Optional extras** (both free, no card, set in Operator → ⚙︎, saved only on your device, never in the code):
+
+| Setting | What it adds | Free signup |
+| --- | --- | --- |
+| **Groq API key** ("Private brain") | Runs Operator on Groq, which doesn't train on your prompts. Turn on *Zero Data Retention* in Groq → Settings → Data Controls to skip even its short abuse logs. | [console.groq.com](https://console.groq.com) → API Keys → Create (sign in with email, Google or GitHub; no card) |
+| **Live browser address + key** | Wilson can click real buttons, type into forms and show live screenshots, about 10 browser minutes a day. | Uses your existing Cloudflare account. Phone-only steps: [workers/operator-browser/README.md](workers/operator-browser/README.md) |
+
+Without a Groq key, Operator uses **Wilson's usual brain** through `wilson-proxy`, the same route chat already uses, so it adds no new place your words go. That route's model is picked on the server; it currently answers with a Google Gemini/Gemma free-tier model, and Google's free tier may use prompts to improve its products. For private tasks, add the Groq key.
+
+**Env vars (optional):** `VITE_OPERATOR_BROWSER_URL` presets the live-browser address in a build (not a secret). Never put the Groq key or the Operator browser key in a `VITE_` variable, because those end up in the public website.
+
+**Developers:** `src/operator/` (`loop.ts` plan→act→observe loop, `safety.ts` confirm gate, `tools.ts`, `brain.ts`, `OperatorRoom.tsx`), `src/intelligence/GroqAdapter.ts`, `workers/operator-browser/`. Tests: `npm run test:operator`. Try a task from a terminal: `npx tsx scripts/operator-demo.ts "your goal"`.
+
 ## Diagnostics and deployment
 
 - The app supplies the current session's voice/runtime status to Wilson; that is not full repository access or proof that audio playback works.
