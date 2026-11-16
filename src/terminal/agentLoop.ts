@@ -51,7 +51,7 @@ export async function askWilson(
   onDelta: (full: string) => void,
   signal: AbortSignal,
 ): Promise<string> {
-  const request = composeRequest(userInput, conversation, {});
+  const request = composeRequest(userInput, conversation, { isArchitect: true, personName: "Jenny" });
   request.systemContext = (request.systemContext ? request.systemContext + "\n\n" : "") + TERMINAL_SYSTEM;
   request.generation = { ...(request.generation ?? {}), temperature: 0.6, maxTokens: 2048 };
   let text = "";

@@ -3,13 +3,13 @@
  * Never reads HF_TOKEN or any other secret. Public MLC packs only.
  * The chat test uses Jenny's Wilson identity text as-is — no extra policies.
  */
-import { WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES } from "../core/wilson/WilsonIdentity";
+import { buildSystemContext } from "../core/wilson/WilsonCore";
 import { OpenRouterAdapter } from "../intelligence/OpenRouterAdapter";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "../core/wilson/WilsonPolicy";
 import type { OmniCaps } from "./caps";
 import { beginLoadWatch, clearTierCrash, endLoadWatch, markTierCrash, type OmniTier, type OmniTierId } from "./tiers";
 
-export const WILSON_BRAIN_PROMPT = `${WILSON_SYSTEM_CONTEXT}\n\n${WILSON_PRINCIPLES}`;
+export const WILSON_BRAIN_PROMPT = buildSystemContext({ isArchitect: true, personName: "Jenny" });
 export const PERSONA_TEST_PROMPT = "In one or two sentences, who are you?";
 
 export type TestProgress = { text: string; progress: number };

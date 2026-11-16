@@ -36,6 +36,7 @@ import { prepareTools } from "./intelligence";
 import { linksIn } from "./intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
+import { resolveCompanionName } from "./core/wilson/WilsonIdentity";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
 import { APP_VERSION } from "./lib/beta";
@@ -365,11 +366,30 @@ export default function App() {
   const acctRoute = useAccountRoute();
   const goHome = () => { setSidebarOpen(false); setShowSettings(false); location.hash = "#home"; };
   const [acctUser, setAcctUser] = useState<AcctUser | null>(() => getUser());
+  const isArchitectUser = !!(isAdmin || acctUser?.architect);
+  const personName = resolveCompanionName({
+    isArchitect: isArchitectUser,
+    displayName,
+    accountUsername: acctUser?.username,
+    spokenName: null,
+  }) || "";
   const [acctFlags, setAcctFlags] = useState<Flags | null>(null);
   const [banner, setBanner] = useState<Banner>(null);
   const [bannerHidden, setBannerHidden] = useState<number>(() => { try { return Number(localStorage.getItem("wilson_banner_hidden")) || 0; } catch { return 0; } });
   const [syncNote, setSyncNote] = useState<string | null>(null);
   useEffect(() => subscribeAccount(() => setAcctUser(getUser())), []);
+  // When a non-Architect account signs in, use THEIR name — never a leftover "Jenny" from this device.
+  useEffect(() => {
+    const u = acctUser;
+    if (!u) return;
+    setSettings((s) => {
+      if (u.architect) return s.displayName.trim() ? s : { ...s, displayName: "Jenny" };
+      const current = s.displayName.trim();
+      const next = resolveCompanionName({ isArchitect: false, displayName: current, accountUsername: u.username });
+      if (!next || next === s.displayName) return s;
+      return { ...s, displayName: next };
+    });
+  }, [acctUser?.id]);
   useEffect(() => {
     const f = (e: Event) => { if ((e as CustomEvent).detail) setIsAdmin(true); else setIsAdmin(cachedIsAdmin()); };
     window.addEventListener("wilson-architect-changed", f);
@@ -466,7 +486,7 @@ export default function App() {
     const greetingMsg: StoredMessage = {
       id: newId(),
       role: "assistant",
-      content: getThreadGreeting(displayName, threadsRef.current.length > 0),
+      content: getThreadGreeting(personName, threadsRef.current.length > 0),
       timestamp: new Date().toISOString(),
     };
     const t: StoredThread = { id: newId(), title: "New Thread", createdAt: new Date().toISOString(), messages: [greetingMsg] };
@@ -475,7 +495,7 @@ export default function App() {
     setActiveId(t.id);
     setSidebarOpen(false);
     return t;
-  }, [displayName]);
+  }, [displayName, personName]);
 
   const deleteThread = useCallback((id: string) => {
     if (!window.confirm("Delete this thread?")) return;
@@ -519,7 +539,7 @@ export default function App() {
       const learned = detectLesson(content);
       if (learned) setLessons(addLesson(learned) && loadLessons());
       if (settings.longMemory) {
-        for (const f of extractFacts(content, voiceCtxRef.current.name || displayName))
+        for (const f of extractFacts(content, resolveCompanionName({ isArchitect: isAdmin || !!getUser()?.architect, displayName, accountUsername: getUser()?.username, spokenName: voiceCtxRef.current.name }) || "this person"))
           void upsertMemory(f, voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch(() => {});
       }
       const orgAction = detectAction(content);
@@ -561,6 +581,13 @@ export default function App() {
         memory: buildMemoryContext(threadsRef.current),
         recalled,
         speakerName: voiceCtxRef.current.name,
+        isArchitect: isAdmin || !!getUser()?.architect,
+        personName: resolveCompanionName({
+          isArchitect: isAdmin || !!getUser()?.architect,
+          displayName,
+          accountUsername: getUser()?.username,
+          spokenName: voiceCtxRef.current.name,
+        }),
         emotion: emo && EMOTION_GUIDANCE[emo] ? { tag: emo, guidance: EMOTION_GUIDANCE[emo] } : null,
         tools: (orgCtx ? `\n\n${orgCtx}` : "") + toolCtx,
         lessons: loadLessons().map((l) => l.text),
@@ -1189,6 +1216,7 @@ export default function App() {
                   <input
                     value={settings.displayName}
                     onChange={(e) => setSettings((s) => ({ ...s, displayName: e.target.value }))}
+                    placeholder={acctUser && !acctUser.architect ? "Your name" : "Jenny"}
                     className="mt-1 w-full rounded-xl px-3 py-2 text-[14px] bg-white/70 border border-violet-200/60 outline-none focus:ring-2 focus:ring-violet-300/50 text-violet-950"
                   />
                 </label>
@@ -1386,7 +1414,7 @@ export default function App() {
                 className="text-center space-y-2 mb-8"
               >
                 <h2 className="wl-thin text-[27px] text-violet-950/85 tracking-tight">
-                  {greeting}, {displayName}
+                  {personName ? `${greeting}, ${personName}` : greeting}
                   <span className="ml-1.5 text-pink-400">♡</span>
                 </h2>
                 <p className="text-[13px] text-violet-700/55 wl-thin tracking-wide">
@@ -1436,7 +1464,7 @@ export default function App() {
                   <div className="mt-2 pt-2 border-t border-violet-200/30 space-y-1 text-[12px] text-violet-800/80 wl-thin">
                     <div>Mood: {vibe}{heard ? ` · I heard you sounding ${heard.tag}` : ""}</div>
                     <div>Dream: {loadProfile().dream || "Still dreaming…"}</div>
-                    <div>Talking with: {speakerProfile?.name || displayName}</div>
+                    <div>Talking with: {speakerProfile?.name || personName || displayName || "a new person"}</div>
                   </div>
                 )}
               </div>
@@ -1508,7 +1536,7 @@ export default function App() {
                   </div>
                   {msg.role === "user" && (
                     <div className="user-avatar w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-[14px] font-light select-none" aria-hidden="true">
-                      {(displayName || "J").trim().charAt(0).toUpperCase()}
+                      {(personName || displayName || "?").trim().charAt(0).toUpperCase()}
                     </div>
                   )}
                 </motion.div>

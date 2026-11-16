@@ -31,20 +31,20 @@ export function detectLesson(msg: string): string | null {
   const m = msg.trim();
   let r: RegExpMatchArray | null;
   if ((r = m.match(/\b(?:please\s+)?(?:don'?t|do not|never|stop)\s+(?:say(?:ing)?|call(?:ing)? me|use|using)\s+(.{2,80})/i)))
-    return /call/i.test(r[0]) ? `Never call her ${clean(r[1])}.` : `Don't say or use: ${clean(r[1])}.`;
-  if ((r = m.match(/\b(?:please\s+)?call me\s+([A-Z][\w' -]{1,30})/i))) return `Call her ${clean(r[1])}.`;
-  if ((r = m.match(/\bmy name is\s+([A-Z][\w'-]{1,20})/))) return `Her name is ${clean(r[1])}.`;
+    return /call/i.test(r[0]) ? `Never call them ${clean(r[1])}.` : `Don't say or use: ${clean(r[1])}.`;
+  if ((r = m.match(/\b(?:please\s+)?call me\s+([A-Z][\w' -]{1,30})/i))) return `Call them ${clean(r[1])}.`;
+  if ((r = m.match(/\bmy name is\s+([A-Z][\w'-]{1,20})/))) return `Their name is ${clean(r[1])}.`;
   if ((r = m.match(/\bbe (shorter|briefer|more concise|longer|more detailed|calmer|more direct|less \w+|more \w+)(?:\s+(?:about|when|with)\s+(.{2,80}))?/i)))
     return `Be ${r[1].toLowerCase()}${r[2] ? ` about ${clean(r[2])}` : ""}.`;
   if ((r = m.match(/\b(?:i (?:don'?t|do not) (?:like|want) (?:it )?when you|(?:from now on|going forward|in the future),?\s*(?:please\s+)?)(.{3,100})/i)))
-    return /when you/i.test(r[0]) ? `She doesn't like it when Wilson ${clean(r[1])}.` : `From now on: ${clean(r[1])}.`;
+    return /when you/i.test(r[0]) ? `They don't like it when Wilson ${clean(r[1])}.` : `From now on: ${clean(r[1])}.`;
   if ((r = m.match(/\b(?:remember (?:that|to)|always)\s+(.{3,100})/i)) && /\byou\b|\bme\b/i.test(r[1]))
     return `Always: ${clean(r[1])}.`;
   return null;
 }
 
 /** Lightweight on-device key-fact extraction (people, projects, dreams, preferences). */
-export function extractFacts(msg: string, who = "Jenny"): string[] {
+export function extractFacts(msg: string, who = "this person"): string[] {
   const out = new Set<string>();
   const s = msg.replace(/\s+/g, " ");
   const add = (t: string) => out.add(t.replace(/\s+([.,])/g, "$1"));
