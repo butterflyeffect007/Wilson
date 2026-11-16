@@ -11,7 +11,8 @@
     "test:voice": "node --test tests/voice/*.test.ts",
     "test:operator": "npx --yes tsx --test tests/operator/*.test.ts",
     "fetch-assets": "node scripts/fetch-assets.mjs",
-    "alchemy:observe": "node scripts/alchemy-observe.mjs"
+    "alchemy:observe": "node scripts/alchemy-observe.mjs",
+    "test:connect": "npx --yes tsx --test tests/search/connect.test.ts tests/search/routing.test.ts"
   },
   "dependencies": {
     "@fontsource/lexend": "^5.3.0",

@@ -46,3 +46,13 @@ export function clearOperatorKeys(): void {
   const s = loadOperatorSettings();
   saveOperatorSettings({ ...s, groqKey: "", browserToken: "" });
 }
+
+/**
+ * Live browser to use: a browser the user set up by hand wins; otherwise the Architect's device goes through
+ * Wilson's own backend (wilson-proxy /operator/*, Architect key), where the browser token stays server-side.
+ */
+export function liveBrowserConfig(s: OperatorSettings, architect: { isArchitect: boolean; key: string }): { url: string; token: string; via: "own" | "wilson" } | null {
+  if (s.browserUrl && s.browserToken) return { url: s.browserUrl, token: s.browserToken, via: "own" };
+  if (architect.isArchitect && architect.key) return { url: WILSON_PROXY_URL.replace(/\/$/, "") + "/operator", token: architect.key, via: "wilson" };
+  return null;
+}

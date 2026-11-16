@@ -173,6 +173,16 @@ Do not replace Wilson’s established visual DNA with a generic AI interface.
 
 Do not fragment Wilson into artificial modes when the underlying intelligence can determine the appropriate response itself.
 
+## Connected to Wilson's backend (wilson-proxy)
+
+Three abilities now run through the same backend Worker (`https://wilson-proxy.butterflyeffect007.workers.dev`):
+
+- **Texas power & economy data** — `/tools/texas`. Ask things like *"how's the Texas grid this week?"*, *"what are mortgage rates?"*, *"what's the fed funds rate?"*. Answers come from Jenny's weekly Texas Power & Economy Brief (public FRED, ERCOT and EIA data plus her macro "system tension" score), published to the backend from her box every week; if that snapshot is ever more than 10 days old, the backend pulls the headline rates live from FRED.
+- **IBM Quantum** — everyone can ask about the saved real-hardware Bell-state result (`/tools/quantum`). On the Architect's device, *"run a quantum job"* (Bell state) or *"run a quantum random number"* submits one tiny fixed circuit to IBM's free-plan hardware, and *"quantum status"* checks the queue. Budget guard: one job at a time, 4 a day, at most 120 of IBM's 600 free seconds a period, never IBM's last minute. If IBM is unavailable, Wilson says so and shows a clearly labeled simulation instead.
+- **Operator mode** — search, page reading and the brain already used the backend; the **live browser** (click, type, submit) is now behind it too (`/operator/*`, Architect key), so nothing has to be pasted into Operator's settings on Jenny's devices.
+
+Tests: `npm run test:connect`.
+
 ## Operator mode
 
 Operator mode lets Wilson **do things on the web for you**, not just talk about them. Give him a goal, like *"search for free AI grants for solo founders and list the top 3 with links"* or *"find three options and compare them"*, and he makes a short plan, searches, opens pages, follows links, and reports back with links. Every step shows up in a live progress log, with pictures of the pages he opens, so you can follow along on your phone.

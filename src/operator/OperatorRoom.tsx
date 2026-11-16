@@ -10,7 +10,8 @@ import { speakMessage, stopSpeaking } from "../lib/kokoroTTS";
 import { closeOperatorHash, operatorGoalFromHash } from "./access";
 import { makeBrain } from "./brain";
 import { runOperator, type ConfirmRequest, type OperatorResult, type Step } from "./loop";
-import { loadOperatorSettings, saveOperatorSettings, type OperatorSettings } from "./settings";
+import { liveBrowserConfig, loadOperatorSettings, saveOperatorSettings, type OperatorSettings } from "./settings";
+import { cachedIsAdmin, storedAdminKey } from "../lib/admin";
 import { createOperatorTools } from "./tools";
 import "./OperatorRoom.css";
 
@@ -42,7 +43,8 @@ export default function OperatorRoom({ allowed, onClose, personName = "Jenny" }:
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const brainLabel = settings.groqKey ? "Private brain" : "Usual brain";
-  const live = !!(settings.browserUrl && settings.browserToken);
+  const browser = liveBrowserConfig(settings, { isArchitect: cachedIsAdmin(), key: storedAdminKey() });
+  const live = !!browser;
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [steps.length, result, pending]);
   useEffect(() => () => { ctlRef.current?.abort(); pendingRef.current?.resolve(false); }, []);
@@ -64,7 +66,7 @@ export default function OperatorRoom({ allowed, onClose, personName = "Jenny" }:
     const ctl = new AbortController();
     ctlRef.current = ctl;
     setRunning(true);
-    const tools = createOperatorTools({ browser: live ? { url: settings.browserUrl, token: settings.browserToken } : null, snapshots: settings.snapshots });
+    const tools = createOperatorTools({ browser: browser ? { url: browser.url, token: browser.token } : null, snapshots: settings.snapshots });
     try {
       const res = await runOperator(text, {
         brain: makeBrain(settings),
@@ -88,7 +90,7 @@ export default function OperatorRoom({ allowed, onClose, personName = "Jenny" }:
       setRunning(false);
       ctlRef.current = null;
     }
-  }, [goal, running, settings, live, personName]);
+  }, [goal, running, settings, live, browser?.url, browser?.token, personName]);
 
   const save = (s: OperatorSettings) => { setSettings(s); saveOperatorSettings(s); };
 
@@ -233,7 +235,7 @@ function SettingsCard({ s, onSave, onDone }: { s: OperatorSettings; onSave: (s: 
       <label>Live browser key
         <input type="password" autoComplete="off" value={d.browserToken} onChange={(e) => set("browserToken", e.target.value)} placeholder="the OPERATOR_TOKEN you chose" />
       </label>
-      <p className="hint">With a live browser Wilson can click real buttons and type into forms (Cloudflare's free plan: about 10 browser minutes a day). Without it he reads pages and follows links.</p>
+      <p className="hint">On the Architect's device the live browser is already connected through Wilson's own backend, so these two boxes can stay empty. With a live browser Wilson can click real buttons and type into forms (Cloudflare's free plan: about 10 browser minutes a day). Without it he reads pages and follows links.</p>
 
       <label className="check"><input type="checkbox" checked={d.snapshots} onChange={(e) => set("snapshots", e.target.checked)} /> Show page pictures</label>
 
