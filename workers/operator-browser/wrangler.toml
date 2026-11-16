@@ -1,0 +1,13 @@
+# Wilson's live browser for Operator mode (Cloudflare Workers Free plan).
+# Secrets (never put them here): npx wrangler secret put OPERATOR_TOKEN
+name = "wilson-operator-browser"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[browser]
+binding = "BROWSER"
+
+[vars]
+# Who may call this Worker from a web page. Add your local dev URL if you need it.
+ALLOWED_ORIGINS = "https://butterflyeffect007.github.io"
