@@ -52,8 +52,8 @@ function CodeBlock({ lang, code, compact = false }: { lang?: string; code: strin
 export function renderInline(text: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*|`[^`]+`|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g);
   return parts.map((p, i) => {
-    if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{hl(p.slice(2, -2))}</strong>;
-    if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <em key={i}>{hl(p.slice(1, -1))}</em>;
+    if (p.length > 4 && p.startsWith("**") && p.endsWith("**")) return <strong key={i}>{renderInline(p.slice(2, -2))}</strong>; // inner links like **[name](url)** stay clickable
+    if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <em key={i}>{renderInline(p.slice(1, -1))}</em>;
     if (p.length > 2 && p.startsWith("`") && p.endsWith("`")) {
       const code = p.slice(1, -1);
       if (isLongInlineCommand(code)) return <CodeBlock key={i} code={code} compact />;

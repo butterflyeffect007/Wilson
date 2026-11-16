@@ -29,7 +29,7 @@ if (import.meta.env.PROD) {
       if (!r.ok) return;
       const { build } = await r.json();
       if (!build || build === __BUILD_ID__ || sessionStorage.getItem(KEY) === build) return;
-      if (document.querySelector("textarea:focus")) return; // don't yank her mid-typing; next foreground will do it
+      if ((document.querySelector("textarea:focus") || document.querySelector("[data-operator-running='1']"))) return; // don't yank her mid-typing; next foreground will do it
       sessionStorage.setItem(KEY, build);
       const reg = await navigator.serviceWorker?.getRegistration();
       await reg?.update().catch(() => {});
@@ -49,7 +49,7 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
         // per build at startup so it is; if this browser ignores the headers, don't try again for this build.
         try {
           const K = "wilson_coi_try";
-          if (navigator.serviceWorker.controller && !window.crossOriginIsolated && localStorage.getItem(K) !== __BUILD_ID__ && performance.now() < 8000 && !document.querySelector("textarea:focus")) {
+          if (navigator.serviceWorker.controller && !window.crossOriginIsolated && localStorage.getItem(K) !== __BUILD_ID__ && performance.now() < 8000 && !(document.querySelector("textarea:focus") || document.querySelector("[data-operator-running='1']"))) {
             localStorage.setItem(K, __BUILD_ID__); location.reload(); return;
           }
         } catch { /* ignore */ }
@@ -57,7 +57,7 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
         navigator.serviceWorker.addEventListener("controllerchange", () => {
           try {
             const K = "wilson_coi_try";
-            if (!window.crossOriginIsolated && localStorage.getItem(K) !== __BUILD_ID__ && performance.now() < 15000 && !document.querySelector("textarea:focus")) { localStorage.setItem(K, __BUILD_ID__); location.reload(); }
+            if (!window.crossOriginIsolated && localStorage.getItem(K) !== __BUILD_ID__ && performance.now() < 15000 && !(document.querySelector("textarea:focus") || document.querySelector("[data-operator-running='1']"))) { localStorage.setItem(K, __BUILD_ID__); location.reload(); }
           } catch { /* ignore */ }
         });
         // Quietly pick up new deploys: check on return to the app; the new worker activates itself.

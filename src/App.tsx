@@ -29,6 +29,8 @@ import JobsRoom from "./jobs/JobsRoom";
 import { canOpenJobs, openJobsHash, jobsHashOpen } from "./jobs/access";
 import OmniLab from "./omni/OmniLab";
 import { canOpenOmni, openOmniHash, omniHashOpen } from "./omni/access";
+import OperatorRoom from "./operator/OperatorRoom";
+import { canOpenOperator, openOperatorHash, operatorHashOpen } from "./operator/access";
 import Backdrop from "./components/Backdrop";
 import { OpenRouterAdapter, OpenRouterError } from "./intelligence/OpenRouterAdapter";
 import type { ModelRequest } from "./intelligence";
@@ -120,8 +122,9 @@ export default function App() {
   const [showTerminal, setShowTerminal] = useState(() => terminalHashOpen());
   const [showJobs, setShowJobs] = useState(() => jobsHashOpen());
   const [showOmni, setShowOmni] = useState(() => omniHashOpen());
+  const [showOperator, setShowOperator] = useState(() => operatorHashOpen());
   useEffect(() => {
-    const sync = () => { setShowTerminal(terminalHashOpen()); setShowJobs(jobsHashOpen()); setShowOmni(omniHashOpen()); };
+    const sync = () => { setShowTerminal(terminalHashOpen()); setShowJobs(jobsHashOpen()); setShowOmni(omniHashOpen()); setShowOperator(operatorHashOpen()); };
     window.addEventListener("hashchange", sync);
     return () => window.removeEventListener("hashchange", sync);
   }, []);
@@ -720,6 +723,9 @@ export default function App() {
     async (text?: string) => {
       const content = (text ?? input).trim();
       if (!content || busy) return;
+      // "operator: <goal>" or "/operator <goal>" hands the goal to Operator mode (Architect device).
+      const op = content.match(/^(?:\/operator\b|operator:)\s*(.*)$/is);
+      if (op && canOpenOperator(isAdmin)) { setInput(""); openOperatorHash(op[1].trim() || undefined); return; }
       stopSpeaking(); // interrupt any voice on send (parity)
       primePlayback();
       emitRipple();
@@ -885,6 +891,7 @@ export default function App() {
       {showTerminal && <ErrorBoundary label="Wilson's Terminal"><WilsonTerminal allowed={canOpenTerminal(isAdmin)} onClose={() => setShowTerminal(false)} /></ErrorBoundary>}
       {showJobs && <ErrorBoundary label="Jobs"><JobsRoom allowed={canOpenJobs(isAdmin)} onClose={() => setShowJobs(false)} /></ErrorBoundary>}
       {showOmni && <ErrorBoundary label="Omni Lab"><OmniLab allowed={canOpenOmni(isAdmin)} onClose={() => setShowOmni(false)} /></ErrorBoundary>}
+      {showOperator && <ErrorBoundary label="Operator"><OperatorRoom allowed={canOpenOperator(isAdmin)} onClose={() => setShowOperator(false)} /></ErrorBoundary>}
       {orgTab && <ErrorBoundary label="organizer" compact><Organizer tab={orgTab} onTab={setOrgTab} onClose={() => setOrgTab(null)} /></ErrorBoundary>}
       {dueBanner.length > 0 && !orgTab && (
         <div className="fixed z-[45] left-3 right-3 top-[max(4.25rem,calc(env(safe-area-inset-top)+3.5rem))] max-w-lg mx-auto glass-strong rounded-2xl px-4 py-3 flex items-start gap-3 shadow-lg">
@@ -969,6 +976,14 @@ export default function App() {
                 </button>
                 {isAdmin && (
                   <>
+                  <button
+                    type="button"
+                    onClick={() => { setSidebarOpen(false); openOperatorHash(); }}
+                    aria-label="Open Operator mode"
+                    className="mt-2 w-full flex items-center justify-center gap-2 rounded-xl py-2.5 border border-violet-200/70 bg-gradient-to-r from-cyan-400/15 via-violet-500/10 to-fuchsia-500/15 text-violet-800 text-[13px] font-medium"
+                  >
+                    ✨ Operator
+                  </button>
                   <button
                     type="button"
                     onClick={() => { setSidebarOpen(false); openTerminalHash(); }}
@@ -1156,6 +1171,7 @@ export default function App() {
                   <div className="flex flex-wrap gap-2">
                     <button type="button" onClick={() => { setShowSettings(false); setShowAdmin(true); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Open Architect view</button>
                     <button type="button" onClick={() => { setShowSettings(false); location.hash = "#architect"; }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">🛡 Dashboard</button>
+                    <button type="button" onClick={() => { setShowSettings(false); openOperatorHash(); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">✨ Operator</button>
                     <button type="button" onClick={() => { setShowSettings(false); openTerminalHash(); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Wilson's Terminal</button>
                     <button type="button" onClick={() => { setShowSettings(false); openJobsHash(); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Jobs</button>
                     <button type="button" onClick={() => { setShowSettings(false); openOmniHash(); }} className="flex-1 text-left text-[13px] px-3 py-2 rounded-xl bg-violet-100/60 hover:bg-violet-100 text-violet-800">Omni Lab</button>
