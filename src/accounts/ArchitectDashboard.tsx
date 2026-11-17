@@ -328,7 +328,7 @@ function BannerCard({ banner, reload, setErr }: { banner: { text: string; until:
       <div className="field"><textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={280} placeholder="A short message everyone sees at the top of Wilson" style={{ minHeight: 70 }} /></div>
       <div className="row" style={{ marginTop: 10 }}>
         <span className="small soft">Show for</span>
-        <div className="field" style={{ width: 90, padding: "6px 10px" }}><input type="number" min={1} max={720} value={hours} onChange={(e) => setHours(Number(e.target.value) || 24)} aria-label="Hours" /></div>
+        <div className="field" style={{ width: 90 }}><input type="number" min={1} max={720} value={hours} onChange={(e) => setHours(Number(e.target.value) || 24)} aria-label="Hours" /></div>
         <span className="small soft">hours</span>
         <div className="sp" />
         <button type="button" className="btn sm" style={{ width: "auto", marginTop: 0 }} disabled={!text.trim()} onClick={() => void publish(text.trim())}>Publish</button>
