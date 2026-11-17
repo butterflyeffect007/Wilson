@@ -8,7 +8,14 @@ const WILSON_PROXY_URL: string =
 const STORE = "wilson_selffix_state";
 
 export type DiffLine = { kind: "ctx" | "del" | "add" | "file"; text: string };
-export type SelfFixFile = { path: string; status: "edited" | "added" | "deleted" };
+export type SelfFixFile = {
+  path: string;
+  status: "edited" | "added" | "deleted";
+  /** Full new file contents (what actually gets committed). */
+  content?: string;
+  /** The GitHub blob sha Wilson read, so a stale proposal is refused instead of overwriting newer code. */
+  baseSha?: string | null;
+};
 export type SelfFixView = "propose" | "review" | "live";
 export type SelfFixProposal = {
   id?: string;
@@ -20,9 +27,22 @@ export type SelfFixProposal = {
   diff: DiffLine[];
   previewUrl?: string;
   prNumber?: number;
+  prUrl?: string;
   status?: "draft" | "review" | "live" | "declined" | "undone";
+  createdAt?: string;
   liveAt?: string;
+  mergeSha?: string;
+  undoPrNumber?: number;
+  undoneAt?: string;
   error?: string;
+  /** What Jenny asked for, kept so a retry can reuse it. */
+  request?: string;
+};
+
+export type PushLiveStatus = SelfFixProposal & {
+  pr?: { state: string; url: string; mergeable?: boolean | null } | null;
+  check?: { state: "waiting" | "running" | "passed" | "failed"; run?: { url?: string } | null };
+  publish?: { state: "waiting" | "building" | "publishing" | "live" | "failed" | "superseded" };
 };
 
 export function canUseSelfFix(): boolean {
@@ -106,7 +126,7 @@ export function saveSelfFix(p: SelfFixProposal | null): void {
   } catch { /* ignore */ }
 }
 
-async function selffixApi(path: string, init: RequestInit = {}): Promise<unknown> {
+export async function selffixApi(path: string, init: RequestInit = {}): Promise<unknown> {
   const res = await fetch(`${WILSON_PROXY_URL}/admin/selffix${path}`, {
     ...init,
     headers: {
@@ -121,6 +141,9 @@ async function selffixApi(path: string, init: RequestInit = {}): Promise<unknown
 }
 
 export async function submitForReview(p: SelfFixProposal): Promise<SelfFixProposal> {
+  if (p.files.some((f) => f.status !== "deleted" && typeof f.content !== "string")) {
+    throw new Error("This proposal is missing the new file contents. Ask Wilson to make it again.");
+  }
   const data = await selffixApi("/propose", {
     method: "POST",
     body: JSON.stringify({
@@ -128,11 +151,12 @@ export async function submitForReview(p: SelfFixProposal): Promise<SelfFixPropos
       summary: p.summary,
       changelogTitle: p.changelogTitle || p.title,
       changelogBody: p.changelogBody || p.summary,
-      files: p.files,
+      files: p.files.map((f) => ({ path: f.path, status: f.status, content: f.content, baseSha: f.baseSha ?? undefined })),
       diff: p.diff,
     }),
   }) as SelfFixProposal;
-  return { ...p, ...data, status: "review" };
+  // Keep our local copy of the file contents (the worker doesn't echo them back).
+  return { ...p, ...data, files: p.files, status: "review" };
 }
 
 export async function approveSelfFix(p: SelfFixProposal): Promise<SelfFixProposal> {
@@ -147,4 +171,25 @@ export async function declineSelfFix(p: SelfFixProposal): Promise<void> {
 export async function undoSelfFix(p: SelfFixProposal): Promise<SelfFixProposal> {
   const data = await selffixApi(`/${encodeURIComponent(p.id || "")}/undo`, { method: "POST" }) as SelfFixProposal;
   return { ...p, ...data, status: "undone" };
+}
+
+/* ---------- Reading Wilson's own code (via the worker; the GitHub token never reaches this app) ---------- */
+
+export async function fetchSourceTree(): Promise<{ path: string; size: number }[]> {
+  const data = await selffixApi("/tree") as { paths?: { path: string; size: number }[] };
+  return Array.isArray(data.paths) ? data.paths : [];
+}
+
+export async function fetchSourceFile(path: string): Promise<{ path: string; content: string; sha: string | null; exists: boolean }> {
+  const data = await selffixApi(`/file?path=${encodeURIComponent(path)}`) as { path: string; content?: string; sha?: string | null; exists?: boolean };
+  return { path: data.path || path, content: data.content || "", sha: data.sha ?? null, exists: data.exists !== false };
+}
+
+export async function fetchPushes(): Promise<SelfFixProposal[]> {
+  const data = await selffixApi("/list") as { pushes?: SelfFixProposal[] };
+  return Array.isArray(data.pushes) ? data.pushes : [];
+}
+
+export async function fetchPushStatus(id: string): Promise<PushLiveStatus> {
+  return await selffixApi(`/${encodeURIComponent(id)}/status`) as PushLiveStatus;
 }
