@@ -93,14 +93,14 @@ function pickRandom<T>(arr: T[]): T {
 }
 function getThreadGreeting(displayName: string, isReturning: boolean): string {
   const name = displayName ? ` ${displayName}` : "";
-  if (!isReturning) return `Hey${name} — I'm **Wilson**. Ask me anything. ✨`;
+  if (!isReturning) return `Hey${name} — I'm **Wilson**. What else? ✨`;
   return pickRandom([
-    `Hey${name}. What's on your mind?`,
-    `Welcome back${name}. What are we tackling?`,
-    `Good to see you${name}. Where do we start?`,
-    `Hey${name} — back for more? Hit me.`,
-    `Yo${name}. What do you need?`,
-    `${name ? name.trim() + "!" : "Hey!"} What's up?`,
+    `Hey${name}. What else?`,
+    `Welcome back${name}. What else are we tackling?`,
+    `Good to see you${name}. What else?`,
+    `Hey${name} — back for more? What else?`,
+    `Yo${name}. What else do you need?`,
+    `${name ? name.trim() + "!" : "Hey!"} What else?`,
   ]);
 }
 
