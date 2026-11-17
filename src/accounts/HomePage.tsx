@@ -15,7 +15,7 @@ export function HomePage({ user, onStart }: { user: AcctUser | null; onStart: ()
       <div className="hero">
         <div className="logowrap"><div className="halo" aria-hidden="true" /><img className="logo" src={logo} alt="W22 Wilson logo" width={300} height={169} /></div>
         <h1>Wilson + The Only One</h1>
-        <div className="tag grad">Imagination becomes intelligence™</div>
+        <div className="tag grad">Imagination becomes intelligence™ ✦ preview test 2</div>
         <p className="d">Wilson is a warm, thoughtful AI companion that lives in your browser. Talk or type, think out loud, plan, or explore an idea. He listens, and he remembers what matters to you.</p>
       </div>
       <div className="ctas">
