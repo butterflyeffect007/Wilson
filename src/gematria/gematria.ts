@@ -9,6 +9,7 @@ export type CipherId =
   | "english-reverse-ordinal"
   | "english-reduction"
   | "english-reverse-reduction"
+  | "matrix-cipher"
   | "hebrew-ordinal"
   | "hebrew-final-large";
 
@@ -39,6 +40,7 @@ export const CIPHERS: readonly CipherDefinition[] = [
   { id: "english-reverse-ordinal", label: "English Reverse Ordinal", alphabet: "latin", description: "Z=1 through A=26." },
   { id: "english-reduction", label: "English Full Reduction", alphabet: "latin", description: "A=1 through I=9, then repeats 1–9." },
   { id: "english-reverse-reduction", label: "English Reverse Reduction", alphabet: "latin", description: "Reverse ordinal values reduced to 1–9." },
+  { id: "matrix-cipher", label: "The Matrix Cipher", alphabet: "latin", description: "A=7, B=14, C=21... (Ordinal × 7, the digital rain multiplier)." },
   { id: "hebrew-ordinal", label: "Hebrew Ordinal", alphabet: "hebrew", description: "Standard Hebrew letter values; final forms use their ordinary letter values." },
   { id: "hebrew-final-large", label: "Hebrew Final-Letter Large Values", alphabet: "hebrew", description: "Mispar Gadol-style values for final forms: ך=500, ם=600, ן=700, ף=800, ץ=900." },
 ] as const;
@@ -72,6 +74,7 @@ function englishValue(character: string, cipherId: CipherId): number | undefined
     const reverseOrdinal = 27 - ordinal;
     return ((reverseOrdinal - 1) % 9) + 1;
   }
+  if (cipherId === "matrix-cipher") return ordinal * 7;
   return undefined;
 }
 
