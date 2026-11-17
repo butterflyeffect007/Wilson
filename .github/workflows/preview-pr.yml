@@ -2,7 +2,7 @@ name: Preview PR
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, closed]
 
 permissions:
   contents: write
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   preview:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +37,8 @@ jobs:
         run: npm run build
         env:
           VITE_BASE: /Wilson/preview/pr-${{ github.event.pull_request.number }}/
+          # Preview builds keep their own storage and never register a service worker (src/lib/previewIsolation.ts).
+          VITE_PREVIEW_ID: pr-${{ github.event.pull_request.number }}
 
       # Publish into a subfolder of gh-pages. keep_files must stay true.
       # Do not set force_orphan — that would wipe the live site.
@@ -75,3 +78,28 @@ jobs:
                 body,
               });
             }
+
+  # When a proposal is approved (merged) or declined (closed), remove its preview from gh-pages.
+  cleanup:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove preview/pr-N from gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N: ${{ github.event.pull_request.number }}
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            rm -rf site
+            git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" site
+            cd site
+            if [ ! -d "preview/pr-${N}" ]; then echo "No preview/pr-${N} on gh-pages; nothing to clean."; exit 0; fi
+            git rm -rq "preview/pr-${N}"
+            git commit -qm "Remove preview for PR #${N}"
+            if git push origin gh-pages; then echo "Removed preview/pr-${N}"; exit 0; fi
+            cd ..
+            sleep $((attempt * 10))
+          done
+          echo "Could not remove preview/pr-${N} after retries"; exit 1
