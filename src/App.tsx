@@ -451,7 +451,7 @@ export default function App() {
       if (!returning) location.hash = "#home";
     } catch { /* ignore */ }
   }, []);
-  const chatContext = (activeThread?.messages ?? []).slice(-6).map((m) => `${m.role === "user" ? "Me" : "Wilson"}: ${m.content.slice(0, 300)}`).join("\n");
+  const chatContext = (activeThread?.messages ?? []).slice(-6).map((m: { role: string; content: string }) => `${m.role === "user" ? "Me" : "Wilson"}: ${m.content.slice(0, 300)}`).join("\n");
   useEffect(() => { saveActiveThreadId(activeId); }, [activeId]);
   useEffect(() => { saveSettings(settings); }, [settings]);
 
