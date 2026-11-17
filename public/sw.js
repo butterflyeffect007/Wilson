@@ -43,6 +43,13 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || !url.pathname.startsWith(BASE)) return;
+  // Previews of proposed changes (…/preview/pr-N/): always straight from the network, never cached,
+  // never answered with the live app's shell. Isolation headers are still added so the preview can open
+  // inside the live app.
+  if (url.pathname.startsWith(BASE + "preview/")) {
+    e.respondWith(fetch(req, { cache: "no-store" }).then(isolate));
+    return;
+  }
   if (req.mode === "navigate") {
     // Network-first (fresh deploys), but fall back to the cached shell fast when offline / slow.
     e.respondWith(

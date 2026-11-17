@@ -1,3 +1,4 @@
+import { PREVIEW_ID } from "./lib/previewIsolation"; // must stay first: isolates a preview build's storage
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
@@ -21,7 +22,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 /* Update path for every install (incl. old service workers / iOS Home Screen apps that never reload):
    check version.json (no-store) on open + whenever the app comes back to the foreground; if a newer
    build is live, update the service worker and reload ONCE. */
-if (import.meta.env.PROD) {
+if (import.meta.env.PROD && !PREVIEW_ID) {
   const KEY = "wilson_reloaded_for";
   const check = async () => {
     try {
@@ -41,7 +42,8 @@ if (import.meta.env.PROD) {
   setInterval(check, 30 * 60 * 1000);
 }
 
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
+// Previews never register a service worker (it could take over or wipe the live app's caches).
+if ("serviceWorker" in navigator && import.meta.env.PROD && !PREVIEW_ID) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL, updateViaCache: "none" })
       .then((reg) => {
