@@ -1,0 +1,742 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#060818">
+<meta name="robots" content="noindex">
+<link rel="icon" href="favicon-32.png">
+<title>Wilson Orb · Playable Preview</title>
+<style>
+:root{
+  --orb-core-intensity:0.35;
+  --orb-frequency:0;
+  --ink:#efe9ff; --ink-soft:rgba(214,205,255,.72);
+  --glass:rgba(30,27,75,.46); --glass-strong:rgba(40,30,95,.66);
+  --gold:#ffcf6b; --magenta:#ff4fd8; --violet:#9b5cff; --cyan:#4fe6ff;
+  --rainbow:linear-gradient(90deg,#ff5f9e,#ffb35c,#ffe66b,#6bffb8,#4fe6ff,#7a7bff,#c85cff,#ff5f9e);
+  --font:"Lexend","Lexend Deca",-apple-system,BlinkMacSystemFont,"SF Pro Rounded","SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#060818;color:var(--ink);font-family:var(--font);overflow:hidden;
+  -webkit-text-size-adjust:100%;overscroll-behavior:none}
+body{display:flex;flex-direction:column;height:100dvh;
+  background:radial-gradient(120% 80% at 50% 28%,#1b1640 0%,#0d1030 45%,#060818 100%);
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.haze{position:fixed;inset:-20%;pointer-events:none;z-index:0;
+  background:radial-gradient(40% 30% at 20% 30%,rgba(139,92,246,.30),transparent 70%),
+             radial-gradient(35% 28% at 82% 62%,rgba(236,72,153,.20),transparent 70%),
+             radial-gradient(30% 25% at 60% 15%,rgba(34,211,238,.14),transparent 70%),
+             radial-gradient(30% 22% at 35% 85%,rgba(255,190,90,.12),transparent 70%)}
+header{position:relative;z-index:2;text-align:center;padding:14px 16px 0}
+h1{margin:0;font-size:20px;font-weight:600;letter-spacing:.04em;
+  background:linear-gradient(90deg,#ffd27a,#ff7ad9 40%,#b48cff 70%,#7fe8ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{margin:4px 0 0;font-size:14px;line-height:1.45;color:var(--ink-soft);letter-spacing:.02em}
+#stage{position:relative;z-index:1;flex:1 1 auto;min-height:0;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#stage canvas,#stage svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+#stage svg{pointer-events:none}
+.halo{position:absolute;left:50%;top:50%;width:var(--halo,300px);height:var(--halo,300px);border-radius:50%;pointer-events:none;
+  transform:translate(-50%,-50%) scale(calc(1 + var(--orb-core-intensity) * .16));
+  opacity:calc(.42 + var(--orb-core-intensity) * .5);
+  background:radial-gradient(circle,rgba(200,110,255,.55) 0%,rgba(120,80,255,.28) 38%,rgba(255,170,80,.10) 58%,transparent 70%);
+  will-change:transform,opacity}
+#stage.glitch svg{animation:jitter 70ms steps(2,end) 12}
+@keyframes jitter{0%{transform:translate(1.4px,-.8px)}50%{transform:translate(-1.2px,1px)}100%{transform:translate(.6px,.4px)}}
+.status{position:relative;z-index:2;margin:0 16px;min-height:44px;text-align:center;font-size:15px;line-height:1.45;letter-spacing:.02em;color:var(--ink)}
+.status b{color:var(--gold);font-weight:600}
+.dock{position:relative;z-index:2;padding:6px 14px 12px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:8px;justify-content:center}
+button{font:inherit;color:var(--ink);cursor:pointer;border:0;outline:0}
+.act{flex:1 1 0;min-width:0;min-height:56px;padding:8px 6px;border-radius:18px;font-size:15px;font-weight:600;letter-spacing:.02em;line-height:1.2;
+  background:linear-gradient(160deg,rgba(70,45,150,.75),rgba(28,20,70,.82)) padding-box,
+             linear-gradient(120deg,rgba(255,120,220,.65),rgba(150,120,255,.55),rgba(80,230,255,.5)) border-box;
+  border:1.5px solid transparent;box-shadow:0 8px 24px -10px rgba(120,60,255,.7),inset 0 1px 0 rgba(255,255,255,.14);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);transition:transform .12s ease,box-shadow .2s ease}
+.act small{display:block;font-size:12px;font-weight:400;color:var(--ink-soft);margin-top:3px}
+.act:active{transform:scale(.97)}
+.act[aria-pressed="true"]{background:linear-gradient(160deg,rgba(150,40,140,.85),rgba(60,20,90,.9)) padding-box,var(--rainbow) border-box;
+  box-shadow:0 0 22px rgba(255,80,210,.55),inset 0 1px 0 rgba(255,255,255,.18)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff4f8a;margin-right:6px;vertical-align:1px;box-shadow:0 0 8px #ff4f8a;animation:blink 1s ease-in-out infinite}
+@keyframes blink{50%{opacity:.35}}
+.chips{display:flex;gap:6px;justify-content:center}
+.chip{flex:1 1 0;min-width:0;padding:0 4px;white-space:nowrap;min-height:48px;border-radius:999px;font-size:14px;font-weight:500;letter-spacing:.03em;
+  background:linear-gradient(var(--glass),var(--glass)) padding-box,linear-gradient(120deg,rgba(167,139,250,.45),rgba(167,139,250,.2)) border-box;
+  border:1.5px solid transparent;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);color:var(--ink-soft)}
+.chip i{font-style:normal;margin-right:5px}
+.chip[aria-pressed="true"]{color:var(--ink);background:linear-gradient(var(--glass-strong),var(--glass-strong)) padding-box,var(--rainbow) border-box;
+  box-shadow:0 0 16px rgba(180,120,255,.5)}
+.chips-label{text-align:center;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:-2px}
+.note{text-align:center;font-size:12px;color:var(--ink-soft);letter-spacing:.02em;margin:0 0 2px}
+@media (prefers-reduced-motion:reduce){ #stage.glitch svg,.dot{animation:none} .act{transition:none} }
+@media (max-width:420px){ .chip i{display:none} .chip{letter-spacing:.01em} }
+@media (max-width:350px){ .chip{font-size:13px;letter-spacing:0} .chips{gap:4px} .dock{padding-left:8px;padding-right:8px} }
+@media (max-height:640px){ .sub{display:none} .act{min-height:50px} .chip{min-height:44px} .status{min-height:40px;font-size:14px} }
+</style>
+</head>
+<body>
+<div class="haze"></div>
+<header>
+  <h1>Wilson Orb · Playable Preview</h1>
+  <p class="sub">Touch near the glass to pull the nodes. Flick it to spin.</p>
+</header>
+
+<div id="stage" aria-label="Wilson orb. Touch to pull the light, swipe to spin.">
+  <div class="halo"></div>
+  <canvas id="cv"></canvas>
+  <svg id="glass" aria-hidden="true">
+    <defs>
+      <linearGradient id="rimGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#7fe8ff"/><stop offset=".2" stop-color="#7a7bff"/>
+        <stop offset=".4" stop-color="#ff5fd2"/><stop offset=".6" stop-color="#ffb35c"/>
+        <stop offset=".8" stop-color="#ffe66b"/><stop offset="1" stop-color="#6bffcf"/>
+      </linearGradient>
+      <radialGradient id="edgeShade" cx=".5" cy=".5" r=".5">
+        <stop offset=".72" stop-color="#000" stop-opacity="0"/>
+        <stop offset=".93" stop-color="#14062e" stop-opacity=".35"/>
+        <stop offset="1" stop-color="#ffffff" stop-opacity=".22"/>
+      </radialGradient>
+      <radialGradient id="spec" cx=".5" cy=".5" r=".5">
+        <stop offset="0" stop-color="#fff" stop-opacity=".55"/>
+        <stop offset=".55" stop-color="#fff" stop-opacity=".12"/>
+        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="specLow" cx=".5" cy=".5" r=".5">
+        <stop offset="0" stop-color="#ffd59a" stop-opacity=".28"/>
+        <stop offset="1" stop-color="#ffd59a" stop-opacity="0"/>
+      </radialGradient>
+      <clipPath id="orbClip"><path id="clipPath"/></clipPath>
+    </defs>
+    <path id="shade" fill="url(#edgeShade)"/>
+    <g clip-path="url(#orbClip)">
+      <ellipse id="specTop" fill="url(#spec)"/>
+      <ellipse id="specBot" fill="url(#specLow)"/>
+    </g>
+    <path id="rim" fill="none" stroke="url(#rimGrad)" stroke-width="2" stroke-opacity=".75"/>
+    <path id="rimSoft" fill="none" stroke="url(#rimGrad)" stroke-width="7" stroke-opacity=".16"/>
+  </svg>
+</div>
+
+<div class="status" id="status" role="status" aria-live="polite"><b>Calm.</b> Wilson is resting and listening for your touch.</div>
+
+<div class="dock">
+  <div class="row">
+    <button class="act" id="btnTalk" aria-pressed="false">🎙 Talk to it<small>uses your mic</small></button>
+    <button class="act" id="btnHear" aria-pressed="false">🔊 Hear Wilson<small>tone sample</small></button>
+    <button class="act" id="btnTask">✦ Task finished<small>morph</small></button>
+  </div>
+  <div class="chips-label">Orb state</div>
+  <div class="chips" role="group" aria-label="Orb state">
+    <button class="chip" data-state="calm" aria-pressed="true"><i>◯</i>Calm</button>
+    <button class="chip" data-state="dreaming" aria-pressed="false"><i>≈</i>Dreaming</button>
+    <button class="chip" data-state="thinking" aria-pressed="false"><i>◎</i>Thinking</button>
+    <button class="chip" data-state="glitch" aria-pressed="false"><i>⚡</i>Glitch</button>
+  </div>
+  <p class="note">Preview only. Wilson's real app is not changed.</p>
+</div>
+
+<script>
+(() => {
+"use strict";
+const stage = document.getElementById("stage");
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const statusEl = document.getElementById("status");
+const $ = (id) => document.getElementById(id);
+const svgEls = { clip: $("clipPath"), shade: $("shade"), rim: $("rim"), rimSoft: $("rimSoft"), specTop: $("specTop"), specBot: $("specBot") };
+
+const mq = window.matchMedia ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
+let reduce = mq.matches;
+if (mq.addEventListener) mq.addEventListener("change", (e) => { reduce = e.matches; });
+
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const lerp = (a, b, t) => a + (b - a) * t;
+const buzz = (p) => { try { if (navigator.vibrate) navigator.vibrate(p); } catch (_) {} };
+
+/* ---------- geometry ---------- */
+let W = 0, H = 0, DPR = 1, CX = 0, CY = 0, R = 100;
+function resize() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  CX = W / 2; CY = H / 2;
+  R = Math.min(W * 0.36, H * 0.34);
+  stage.style.setProperty("--halo", (R * 3) + "px");
+  document.getElementById("glass").setAttribute("viewBox", `0 0 ${W} ${H}`);
+  shapeDirty = true;
+}
+
+/* ---------- state ---------- */
+let mode = "calm";          // calm | dreaming | thinking
+let glitchT = 0;            // seconds remaining
+let morph = 0, morphTarget = 0, morphUntil = 0;
+let rot = 0, omega = 0, tilt = 0.32, tiltV = 0;
+let coreIntensity = 0.35, freqNorm = 0, kick = 0;
+let t = 0, shapeDirty = true;
+const MODE_TEXT = {
+  calm: "<b>Calm.</b> Wilson is resting and listening for your touch.",
+  dreaming: "<b>Dreaming.</b> Slow light drifts through the glass, like sun through water.",
+  thinking: "<b>Thinking.</b> A sharp ring pulses and data packets race around his equator.",
+};
+function setStatus(html) { statusEl.innerHTML = html; }
+
+/* ---------- shape (sphere -> shifting droplet) ---------- */
+const SEG = 96;
+const shapeK = new Float32Array(SEG + 1);
+function shapeAt(th) {
+  if (morph < 0.002) return 1;
+  const m = morph;
+  const up = -Math.PI / 2 + 0.55 * Math.sin(t * 0.9) * (reduce ? 0.3 : 1);
+  const c = Math.cos(th - up);
+  const tip = Math.pow(Math.max(0, c), 4) * 0.30;
+  const belly = Math.pow(Math.max(0, -c), 2) * 0.05;
+  const w = reduce ? 0.3 : 1;
+  const wob = w * (0.045 * Math.sin(3 * th + t * 2.3) + 0.03 * Math.sin(5 * th - t * 1.7) + 0.035 * Math.sin(2 * th + t * 1.1));
+  return 1 + m * (tip + belly + wob - 0.04);
+}
+function buildShape() {
+  for (let i = 0; i <= SEG; i++) shapeK[i] = shapeAt((i / SEG) * TAU);
+}
+function kAt(th) { // lookup
+  let u = (th / TAU) % 1; if (u < 0) u += 1;
+  const f = u * SEG, i = f | 0, fr = f - i;
+  return shapeK[i] + (shapeK[i + 1] - shapeK[i]) * fr;
+}
+function shapePath(scale = 1, dx = 0, dy = 0) {
+  const p = new Path2D();
+  for (let i = 0; i <= SEG; i++) {
+    const th = (i / SEG) * TAU, r = R * scale * shapeK[i];
+    const x = CX + dx + Math.cos(th) * r, y = CY + dy + Math.sin(th) * r;
+    i ? p.lineTo(x, y) : p.moveTo(x, y);
+  }
+  p.closePath();
+  return p;
+}
+function svgShapeD(scale = 1) {
+  let d = "";
+  for (let i = 0; i < SEG; i += 2) {
+    const th = (i / SEG) * TAU, r = R * scale * shapeK[i];
+    d += (i ? "L" : "M") + (CX + Math.cos(th) * r).toFixed(1) + " " + (CY + Math.sin(th) * r).toFixed(1);
+  }
+  return d + "Z";
+}
+function updateSvg() {
+  const d = svgShapeD(1);
+  svgEls.clip.setAttribute("d", d);
+  svgEls.rim.setAttribute("d", d);
+  svgEls.rimSoft.setAttribute("d", svgShapeD(1.015));
+  svgEls.shade.setAttribute("d", d);
+  const top = R * kAt(-Math.PI / 2);
+  svgEls.specTop.setAttribute("cx", CX - R * 0.3); svgEls.specTop.setAttribute("cy", CY - top * 0.52);
+  svgEls.specTop.setAttribute("rx", R * 0.42); svgEls.specTop.setAttribute("ry", R * 0.26);
+  svgEls.specTop.setAttribute("transform", `rotate(-28 ${CX - R * 0.3} ${CY - top * 0.52})`);
+  svgEls.specBot.setAttribute("cx", CX + R * 0.28); svgEls.specBot.setAttribute("cy", CY + R * 0.62);
+  svgEls.specBot.setAttribute("rx", R * 0.4); svgEls.specBot.setAttribute("ry", R * 0.16);
+}
+
+/* ---------- particles (Neural Void nodes) ---------- */
+const N = 150;
+const P = [];
+function rand(a, b) { return a + Math.random() * (b - a); }
+for (let i = 0; i < N; i++) {
+  // random point in a shell-weighted ball
+  let x, y, z, d;
+  do { x = rand(-1, 1); y = rand(-1, 1); z = rand(-1, 1); d = x * x + y * y + z * z; } while (d > 1 || d < 0.02);
+  const rr = Math.pow(Math.random(), 0.45) * 0.86 + 0.08;
+  const n = Math.sqrt(d);
+  P.push({ hx: x / n * rr, hy: y / n * rr, hz: z / n * rr, ox: 0, oy: 0, vx: 0, vy: 0, sx: 0, sy: 0, z: 0,
+    tw: Math.random() * TAU, hue: [275, 300, 320, 40, 195, 250][i % 6], nb: [] });
+}
+// two nearest neighbours each -> filament graph
+for (let i = 0; i < N; i++) {
+  const a = P[i], best = [];
+  for (let j = 0; j < N; j++) if (j !== i) {
+    const b = P[j], d = (a.hx - b.hx) ** 2 + (a.hy - b.hy) ** 2 + (a.hz - b.hz) ** 2;
+    best.push([d, j]);
+  }
+  best.sort((m, n) => m[0] - n[0]);
+  a.nb = [best[0][1], best[1][1]].filter((j) => j > i);
+}
+// glow sprites per hue
+const sprites = {};
+function sprite(h) {
+  if (sprites[h]) return sprites[h];
+  const s = document.createElement("canvas"); s.width = s.height = 64;
+  const g = s.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, "rgba(255,255,255,1)");
+  gr.addColorStop(0.18, `hsla(${h},100%,80%,.95)`);
+  gr.addColorStop(0.45, `hsla(${h},100%,62%,.35)`);
+  gr.addColorStop(1, `hsla(${h},100%,50%,0)`);
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return (sprites[h] = s);
+}
+
+/* ---------- pointer: magnetism + flick spin ---------- */
+const ptr = { x: 0, y: 0, on: false, down: false, lastX: 0, lastY: 0, lastT: 0, vel: 0, id: null };
+function local(e) { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+stage.addEventListener("pointerdown", (e) => {
+  ensureAudio();
+  const [x, y] = local(e);
+  ptr.x = x; ptr.y = y; ptr.on = true;
+  if (Math.hypot(x - CX, y - CY) < R * 1.35) {
+    ptr.down = true; ptr.id = e.pointerId; ptr.lastX = x; ptr.lastY = y; ptr.lastT = performance.now(); ptr.vel = 0;
+    omega *= 0.3; buzz(8);
+    try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+  }
+});
+stage.addEventListener("pointermove", (e) => {
+  const [x, y] = local(e);
+  ptr.x = x; ptr.y = y; ptr.on = true;
+  if (ptr.down && e.pointerId === ptr.id) {
+    const now = performance.now(), dt = Math.max(1, now - ptr.lastT) / 1000;
+    const dRot = (x - ptr.lastX) / R;           // horizontal drag spins the globe
+    rot += dRot;
+    tilt = clamp(tilt + (y - ptr.lastY) / R * 0.5, -0.9, 1.2);
+    const v = dRot / dt;
+    ptr.vel = lerp(ptr.vel, v, 0.5);
+    ptr.lastX = x; ptr.lastY = y; ptr.lastT = now;
+  }
+});
+function release(e) {
+  if (ptr.down && (!e || e.pointerId === ptr.id)) {
+    ptr.down = false;
+    const stale = performance.now() - ptr.lastT > 90;
+    omega = stale ? 0 : clamp(ptr.vel, -14, 14) * (reduce ? 0.35 : 1);
+    if (Math.abs(omega) > 3) buzz(14);
+  }
+  if (e && e.pointerType !== "mouse") ptr.on = false;
+}
+stage.addEventListener("pointerup", release);
+stage.addEventListener("pointercancel", release);
+stage.addEventListener("pointerleave", (e) => { if (!ptr.down) ptr.on = false; });
+
+/* ---------- audio ---------- */
+let AC = null, analyser = null, fbins = null, tbins = null, mic = null, micSrc = null, micGain = null, samplePlaying = false;
+function ensureAudio() {
+  if (!AC) {
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return null;
+    AC = new C();
+    analyser = AC.createAnalyser();
+    analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.62;
+    fbins = new Uint8Array(analyser.frequencyBinCount);
+    tbins = new Uint8Array(analyser.fftSize);
+  }
+  if (AC.state === "suspended") AC.resume().catch(() => {});
+  return AC;
+}
+const btnTalk = $("btnTalk"), btnHear = $("btnHear"), btnTask = $("btnTask");
+function micUi(on) {
+  btnTalk.setAttribute("aria-pressed", on ? "true" : "false");
+  btnTalk.innerHTML = on ? '<span class="dot"></span>Stop mic<small>mic is on</small>' : "🎙 Talk to it<small>uses your mic</small>";
+}
+async function startMic() {
+  if (!ensureAudio()) { setStatus("<b>Sorry.</b> This browser has no Web Audio, so the mic can't drive the orb."); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setStatus("<b>Mic unavailable.</b> This browser doesn't allow microphone access here."); return; }
+  setStatus("<b>Asking for your mic…</b> Tap Allow to let the orb hear you.");
+  try {
+    mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    micSrc = AC.createMediaStreamSource(mic);
+    micGain = AC.createGain(); micGain.gain.value = 2.5;
+    micSrc.connect(micGain); micGain.connect(analyser);   // analysed only, never played back
+    micUi(true); buzz(12);
+    setStatus("<b>Mic is on.</b> Talk and watch the core lines spike. Tap <b>Stop mic</b> to turn it off.");
+  } catch (err) {
+    mic = null; micUi(false);
+    setStatus("<b>Mic blocked.</b> Allow the microphone for this site in Settings, then try again.");
+  }
+}
+function stopMic(quiet) {
+  if (micSrc) { try { micSrc.disconnect(); micGain.disconnect(); } catch (_) {} micSrc = null; micGain = null; }
+  if (mic) { mic.getTracks().forEach((tr) => tr.stop()); mic = null; }
+  micUi(false);
+  if (!quiet) setStatus("<b>Mic is off.</b> The orb is no longer listening.");
+}
+btnTalk.addEventListener("click", () => { buzz(10); mic ? stopMic() : startMic(); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && mic) stopMic(true); });
+
+// A short voice-shaped tone (buzz source through vowel formant filters, syllable rhythm). Not Wilson's real voice.
+function playSample() {
+  if (!ensureAudio() || samplePlaying) return;
+  samplePlaying = true;
+  btnHear.setAttribute("aria-pressed", "true");
+  btnHear.innerHTML = "🔊 Playing…<small>tone sample</small>";
+  setStatus("<b>Tone sample.</b> A voice-shaped tone, not Wilson's real voice, so you can see the core react.");
+  const now = AC.currentTime + 0.05, dur = 3.4;
+  const src1 = AC.createOscillator(), src2 = AC.createOscillator();
+  src1.type = "sawtooth"; src2.type = "triangle";
+  const pitch = [118, 128, 122, 138, 126, 116, 132, 124, 112, 104];
+  src1.frequency.setValueAtTime(pitch[0], now);
+  src2.frequency.setValueAtTime(pitch[0] * 2.01, now);
+  pitch.forEach((p, i) => {
+    const at = now + (i / (pitch.length - 1)) * dur;
+    src1.frequency.linearRampToValueAtTime(p, at);
+    src2.frequency.linearRampToValueAtTime(p * 2.01, at);
+  });
+  const mix = AC.createGain(); mix.gain.value = 0.5;
+  src1.connect(mix); src2.connect(mix);
+  const env = AC.createGain(); env.gain.setValueAtTime(0, now);
+  const vowels = [[700, 1220], [400, 2000], [600, 1000], [300, 870], [500, 1700], [650, 1100], [350, 2200], [700, 1220], [450, 900], [600, 1500], [380, 1900], [520, 1000]];
+  const f1 = AC.createBiquadFilter(), f2 = AC.createBiquadFilter(), f3 = AC.createBiquadFilter();
+  [f1, f2, f3].forEach((f) => { f.type = "bandpass"; f.Q.value = 7; });
+  f3.frequency.value = 2600;
+  const g1 = AC.createGain(), g2 = AC.createGain(), g3 = AC.createGain();
+  g1.gain.value = 1.0; g2.gain.value = 0.55; g3.gain.value = 0.18;
+  mix.connect(f1); mix.connect(f2); mix.connect(f3);
+  f1.connect(g1); f2.connect(g2); f3.connect(g3);
+  g1.connect(env); g2.connect(env); g3.connect(env);
+  const syl = vowels.length, step = dur / syl;
+  for (let i = 0; i < syl; i++) {
+    const a = now + i * step, peak = (i % 4 === 3) ? 0.55 : 0.85 + 0.15 * Math.sin(i);
+    env.gain.linearRampToValueAtTime(0.04, a);
+    env.gain.linearRampToValueAtTime(peak, a + step * 0.28);
+    env.gain.linearRampToValueAtTime(peak * 0.7, a + step * 0.7);
+    f1.frequency.setTargetAtTime(vowels[i][0], a, 0.03);
+    f2.frequency.setTargetAtTime(vowels[i][1], a, 0.03);
+  }
+  env.gain.linearRampToValueAtTime(0, now + dur + 0.08);
+  const out = AC.createGain(); out.gain.value = 0.45;
+  const sense = AC.createGain(); sense.gain.value = 7;   // analysis-only boost, not louder playback
+  env.connect(out); out.connect(AC.destination); out.connect(sense); sense.connect(analyser);
+  src1.start(now); src2.start(now); src1.stop(now + dur + 0.15); src2.stop(now + dur + 0.15);
+  src1.onended = () => {
+    samplePlaying = false; try { out.disconnect(); sense.disconnect(); } catch (_) {}
+    btnHear.setAttribute("aria-pressed", "false");
+    btnHear.innerHTML = "🔊 Hear Wilson<small>tone sample</small>";
+    setStatus(mic ? "<b>Mic is on.</b> Tap <b>Stop mic</b> to turn it off." : MODE_TEXT[mode]);
+  };
+}
+btnHear.addEventListener("click", () => { buzz(10); playSample(); });
+
+/* ---------- triggers ---------- */
+btnTask.addEventListener("click", () => {
+  buzz([12, 40, 18]);
+  morphTarget = 1; morphUntil = t + 3.2; kick = 1;
+  setStatus("<b>Task finished.</b> The orb melts into a shifting droplet, then settles back.");
+});
+const chips = [...document.querySelectorAll(".chip")];
+function selectChip(name) { chips.forEach((c) => c.setAttribute("aria-pressed", c.dataset.state === name ? "true" : "false")); }
+chips.forEach((c) => c.addEventListener("click", () => {
+  const s = c.dataset.state; buzz(10);
+  if (s === "glitch") {
+    glitchT = 0.95; selectChip("glitch");
+    if (!reduce) stage.classList.remove("glitch"), void stage.offsetWidth, stage.classList.add("glitch");
+    setStatus("<b>Glitch.</b> A call stalled, so the rim jitters for a moment, then clears.");
+    return;
+  }
+  mode = s; selectChip(s); setStatus(MODE_TEXT[s]);
+}));
+stage.addEventListener("animationend", () => stage.classList.remove("glitch"));
+
+/* ---------- render ---------- */
+const FREQ_PTS = 72;
+const level = new Float32Array(FREQ_PTS);
+let amp = 0;
+
+function readAudio(dt) {
+  let a = 0, cen = 0;
+  const live = (mic || samplePlaying) && analyser;
+  if (live) {
+    analyser.getByteFrequencyData(fbins);
+    analyser.getByteTimeDomainData(tbins);
+    let s = 0; for (let i = 0; i < tbins.length; i++) { const v = (tbins[i] - 128) / 128; s += v * v; }
+    a = clamp(Math.sqrt(s / tbins.length) * 4.2, 0, 1);
+    let num = 0, den = 0;
+    for (let i = 1; i < 64; i++) { num += i * fbins[i]; den += fbins[i]; }
+    cen = den > 0 ? clamp(num / den / 40, 0, 1) : 0;
+    const half = FREQ_PTS / 2;
+    for (let i = 0; i < FREQ_PTS; i++) {
+      const k = Math.abs(i - half) / half;                // mirror for symmetry
+      const b = 2 + Math.floor(k * 46);
+      const v = fbins[b] / 255;
+      level[i] = lerp(level[i], v, 0.55);
+    }
+  } else {
+    for (let i = 0; i < FREQ_PTS; i++) level[i] = lerp(level[i], 0.08 + 0.06 * Math.sin(t * 1.3 + i * 0.5), 0.08);
+  }
+  amp = lerp(amp, a, live ? 0.45 : 0.08);
+  freqNorm = lerp(freqNorm, cen, 0.15);
+}
+
+function frame(dt) {
+  t += dt;
+  const motion = reduce ? 0.25 : 1;
+  readAudio(dt);
+
+  // spin & tilt physics
+  const auto = (mode === "thinking" ? 0.55 : mode === "dreaming" ? 0.07 : 0.14) * motion;
+  if (!ptr.down) {
+    rot += (auto + omega) * dt;
+    omega *= Math.exp(-dt * (reduce ? 4 : 1.1));
+    if (Math.abs(omega) < 0.005) omega = 0;
+    tiltV += (0.32 - tilt) * 6 * dt; tiltV *= Math.exp(-dt * 4); tilt += tiltV * dt;
+  }
+  const spinT = clamp(Math.abs(omega) / 7, 0, 1);
+
+  // morph
+  if (morphTarget && t > morphUntil) morphTarget = 0;
+  const pm = morph;
+  morph += (morphTarget - morph) * (1 - Math.exp(-dt * (morphTarget ? 3.2 : 2.2)));
+  if (morph < 0.002) morph = 0;
+  if (morph > 0 || pm > 0 || shapeDirty) { buildShape(); updateSvg(); shapeDirty = false; }
+
+  kick *= Math.exp(-dt * 2.5);
+  if (glitchT > 0) { glitchT -= dt; if (glitchT <= 0) { glitchT = 0; selectChip(mode); setStatus(MODE_TEXT[mode]); } }
+
+  // core intensity
+  const baseI = mode === "thinking" ? 0.6 : mode === "dreaming" ? 0.28 + 0.08 * Math.sin(t * 0.8) : 0.36;
+  const targetI = clamp(baseI + amp * 0.75 + kick * 0.5 + spinT * 0.25, 0, 1);
+  coreIntensity = lerp(coreIntensity, targetI, 1 - Math.exp(-dt * 10));
+  stage.style.setProperty("--orb-core-intensity", coreIntensity.toFixed(3));
+  stage.style.setProperty("--orb-frequency", freqNorm.toFixed(3));
+
+  const hue = lerp(248, 284, spinT);           // deep indigo -> electric violet
+  const breathe = mode === "dreaming" ? 1 + 0.018 * Math.sin(t * 0.8) * motion : 1;
+
+  const c = ctx;
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.clearRect(0, 0, W, H);
+
+  // thinking ring: back half
+  if (mode === "thinking") drawRing(false, motion);
+
+  const body = shapePath(breathe);
+  c.save();
+  c.clip(body);
+  // base
+  let g = c.createRadialGradient(CX, CY, R * 0.1, CX, CY, R * 1.05);
+  g.addColorStop(0, `hsl(${hue + 20},70%,24%)`); g.addColorStop(0.7, `hsl(${hue},75%,12%)`); g.addColorStop(1, "#08051c");
+  c.fillStyle = g; c.fillRect(CX - R * 1.6, CY - R * 1.6, R * 3.2, R * 3.2);
+  c.globalCompositeOperation = "lighter";
+  // iridescent lobes that orbit with rotation (blue top-left, magenta left, gold lower-right)
+  const lobes = [
+    [hue, 0.0, -0.45, 0.85, 0.55],
+    [312, -2.1, 0.1, 0.8, 0.45],
+    [38, 2.3, 0.35, 0.8, 0.42],
+    [190, 3.6, -0.2, 0.6, 0.22],
+  ];
+  for (const [h, ph, yo, rr, al] of lobes) {
+    const a = rot + ph;
+    const lx = CX + Math.sin(a) * R * 0.42, ly = CY + (yo + Math.cos(a) * 0.12) * R * 0.8;
+    const front = 0.55 + 0.45 * Math.cos(a);
+    g = c.createRadialGradient(lx, ly, 0, lx, ly, R * rr);
+    g.addColorStop(0, `hsla(${h},100%,62%,${al * front})`); g.addColorStop(1, `hsla(${h},100%,50%,0)`);
+    c.fillStyle = g; c.fillRect(CX - R * 1.6, CY - R * 1.6, R * 3.2, R * 3.2);
+  }
+  // inner core glow
+  const coreR = R * (0.34 + coreIntensity * 0.16);
+  g = c.createRadialGradient(CX, CY, 0, CX, CY, coreR);
+  g.addColorStop(0, `rgba(255,236,190,${0.55 + coreIntensity * 0.4})`);
+  g.addColorStop(0.35, `hsla(320,100%,65%,${0.25 + coreIntensity * 0.35})`);
+  g.addColorStop(1, "hsla(280,100%,50%,0)");
+  c.fillStyle = g; c.fillRect(CX - coreR, CY - coreR, coreR * 2, coreR * 2);
+
+  if (mode === "dreaming") drawCaustics(motion);
+
+  // project particles
+  const cr = Math.cos(rot), sr = Math.sin(rot), ct = Math.cos(tilt * 0.6), st = Math.sin(tilt * 0.6);
+  const pOn = ptr.on;
+  const pd = pOn ? Math.hypot(ptr.x - CX, ptr.y - CY) / R : 9;
+  const nearGlass = pOn ? Math.exp(-((pd - 1) ** 2) / (2 * 0.3 * 0.3)) * 1.0 + (pd < 1 ? 0.3 : 0) : 0;
+  const K = 2100 * (R / 150), kSpring = 30, damp = 6.5, infl = R * 0.42, maxOff = R * 0.5;
+  for (const p of P) {
+    const x1 = p.hx * cr + p.hz * sr, z1 = -p.hx * sr + p.hz * cr;
+    const y2 = p.hy * ct - z1 * st, z2 = p.hy * st + z1 * ct;
+    const k = kAt(Math.atan2(y2, x1)) * breathe;
+    const bx = CX + x1 * R * k * (1 + kick * 0.2), by = CY + y2 * R * k * (1 + kick * 0.2);
+    let ax = -kSpring * p.ox - damp * p.vx, ay = -kSpring * p.oy - damp * p.vy;
+    if (nearGlass > 0.02) {
+      const dx = ptr.x - (bx + p.ox), dy = ptr.y - (by + p.oy), dist = Math.hypot(dx, dy) + 0.001;
+      const f = K * nearGlass / (1 + (dist / infl) ** 2);
+      ax += f * dx / dist; ay += f * dy / dist;
+      // slight swirl = lens shear
+      ax += -f * 0.25 * dy / dist; ay += f * 0.25 * dx / dist;
+    }
+    p.vx += ax * dt; p.vy += ay * dt;
+    p.ox += p.vx * dt; p.oy += p.vy * dt;
+    const om = Math.hypot(p.ox, p.oy);
+    if (om > maxOff) { p.ox *= maxOff / om; p.oy *= maxOff / om; }
+    p.sx = bx + p.ox; p.sy = by + p.oy; p.z = z2;
+    p.sp = Math.hypot(p.vx, p.vy);
+  }
+  // iris (warps with spin)
+  const warp = (0.03 + spinT * 0.2 + amp * 0.06) * (reduce ? 0.5 : 1);
+  for (let ring = 0; ring < 3; ring++) {
+    const r0 = R * (0.17 + ring * 0.055) * (1 + coreIntensity * 0.15);
+    c.beginPath();
+    for (let i = 0; i <= 80; i++) {
+      const th = (i / 80) * TAU;
+      const r = r0 * (1 + warp * Math.sin(4 * th + rot * 3 + ring) + warp * 0.5 * Math.sin(7 * th - t * 2 * motion + ring * 2));
+      const x = CX + Math.cos(th) * r, y = CY + Math.sin(th) * r * 0.96;
+      i ? c.lineTo(x, y) : c.moveTo(x, y);
+    }
+    c.strokeStyle = ring === 1 ? `hsla(${hue + 40},100%,75%,.55)` : ring === 0 ? "rgba(255,214,140,.55)" : "hsla(320,100%,72%,.4)";
+    c.lineWidth = 1.2; c.stroke();
+  }
+  // audio frequency lines: spike + fracture
+  drawFreq(hue, motion);
+  c.restore();
+  // nodes + filaments are drawn unclipped so a finger near the glass can pull them out past the rim
+  c.globalCompositeOperation = "lighter";
+  // filaments
+  const think = mode === "thinking" ? 1 : 0;
+  c.lineWidth = 0.8;
+  for (let pass = 0; pass < 2; pass++) {
+    c.beginPath();
+    for (const a of P) for (const j of a.nb) {
+      const b = P[j];
+      if ((a.z + b.z > 0) !== (pass === 1)) continue;
+      c.moveTo(a.sx, a.sy); c.lineTo(b.sx, b.sy);
+    }
+    c.strokeStyle = pass ? `hsla(${hue + 30},100%,78%,${0.30 + think * 0.25 + amp * 0.3})` : `hsla(${hue},90%,70%,0.12)`;
+    c.stroke();
+  }
+  // particles
+  for (const p of P) {
+    const depth = (p.z + 1) / 2;
+    const tw = reduce ? 1 : 0.75 + 0.25 * Math.sin(t * 2.2 + p.tw);
+    const s = (3 + depth * 7 + Math.min(p.sp / 40, 5)) * (1 + coreIntensity * 0.3);
+    c.globalAlpha = clamp((0.22 + depth * 0.78) * tw, 0, 1);
+    const h = p.hue === 250 ? (Math.round(hue / 6) * 6) : p.hue;
+    c.drawImage(sprite(h), p.sx - s, p.sy - s, s * 2, s * 2);
+  }
+  c.globalAlpha = 1;
+  c.globalCompositeOperation = "source-over";
+
+  // touch lens near glass
+  if (nearGlass > 0.05) {
+    c.globalCompositeOperation = "lighter";
+    g = c.createRadialGradient(ptr.x, ptr.y, 0, ptr.x, ptr.y, R * 0.3);
+    g.addColorStop(0, `rgba(255,220,255,${0.35 * nearGlass})`); g.addColorStop(1, "rgba(160,120,255,0)");
+    c.fillStyle = g; c.beginPath(); c.arc(ptr.x, ptr.y, R * 0.3, 0, TAU); c.fill();
+    c.globalCompositeOperation = "source-over";
+  }
+
+  if (mode === "thinking") drawRing(true, motion);
+  if (glitchT > 0) drawGlitch(body);
+}
+
+function drawFreq(hue, motion) {
+  const c = ctx;
+  const cols = [`rgba(255,210,120,.9)`, `hsla(315,100%,70%,.85)`, `hsla(${hue + 25},100%,76%,.8)`];
+  for (let L = 0; L < 3; L++) {
+    const base = R * (0.40 + L * 0.06);
+    c.beginPath();
+    let pen = false;
+    for (let i = 0; i <= FREQ_PTS; i++) {
+      const idx = i % FREQ_PTS, v = level[idx];
+      const th = (i / FREQ_PTS) * TAU + L * 0.12 + rot * 0.15;
+      // spike outward with amplitude; fracture (break the line + jag) on hot bins
+      const hot = v > 0.5 && amp > 0.08;
+      const jag = hot ? (Math.random() - 0.5) * v * R * 0.12 * motion : 0;
+      const r = base + v * R * (0.16 + L * 0.03) * (L === 1 ? 1.2 : 1) + jag;
+      const x = CX + Math.cos(th) * r, y = CY + Math.sin(th) * r;
+      if (hot && Math.random() < 0.28) { pen = false; continue; }
+      pen ? c.lineTo(x, y) : c.moveTo(x, y);
+      pen = true;
+    }
+    c.strokeStyle = cols[L];
+    c.lineWidth = L === 0 ? 1.6 : 1.1;
+    c.globalAlpha = 0.35 + amp * 0.65;
+    c.stroke();
+  }
+  c.globalAlpha = 1;
+}
+
+function drawCaustics(motion) {
+  const c = ctx, tt = t * motion;
+  c.lineCap = "round";
+  for (let k = 0; k < 7; k++) {
+    const y0 = CY - R * 0.9 + (k + 0.5) * R * 0.26;
+    c.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const x = CX - R + (i / 40) * R * 2;
+      const y = y0 + Math.sin(x * 0.035 + tt * 0.7 + k) * R * 0.06 + Math.sin(x * 0.09 - tt * 0.45 + k * 2.1) * R * 0.035;
+      i ? c.lineTo(x, y) : c.moveTo(x, y);
+    }
+    const h = k % 2 ? 190 : 45;
+    c.strokeStyle = `hsla(${h},100%,75%,.06)`; c.lineWidth = R * 0.07; c.stroke();
+    c.strokeStyle = `hsla(${h},100%,85%,.22)`; c.lineWidth = 1.2; c.stroke();
+  }
+}
+
+function drawRing(front, motion) {
+  const c = ctx, rx = R * 1.3, ry = R * 0.3, ang = -0.18;
+  c.save();
+  c.translate(CX, CY); c.rotate(ang);
+  // ellipse half: back = upper (sin<0), front = lower
+  const a0 = front ? 0 : Math.PI, a1 = front ? Math.PI : TAU;
+  c.beginPath(); c.ellipse(0, 0, rx, ry, 0, a0, a1);
+  c.strokeStyle = front ? "rgba(140,220,255,.45)" : "rgba(140,160,255,.18)"; c.lineWidth = 1.2; c.stroke();
+  c.globalCompositeOperation = "lighter";
+  // sweeping pulse with trail
+  const sweep = (t * 3.2 * motion) % TAU;
+  for (let s = 0; s < 14; s++) {
+    const a = sweep - s * 0.06;
+    const n = ((a % TAU) + TAU) % TAU;
+    if ((n < Math.PI) !== front) continue;
+    c.beginPath(); c.ellipse(0, 0, rx, ry, 0, a - 0.06, a);
+    c.strokeStyle = `rgba(255,${200 - s * 8},${120 + s * 8},${(1 - s / 14) * (front ? 0.95 : 0.4)})`;
+    c.lineWidth = 3 - s * 0.15; c.stroke();
+  }
+  // packets
+  for (let i = 0; i < 12; i++) {
+    const a = ((t * (1.4 + (i % 3) * 0.35) * motion + i * (TAU / 12)) % TAU);
+    if ((a < Math.PI) !== front) continue;
+    const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
+    const s = front ? 9 : 6;
+    c.globalAlpha = front ? 1 : 0.45;
+    c.drawImage(sprite(i % 2 ? 190 : 45), x - s, y - s, s * 2, s * 2);
+  }
+  c.globalAlpha = 1;
+  c.restore();
+  // sharp outer ring pulse
+  if (front) {
+    const ph = (t * motion / 1.1) % 1;
+    c.beginPath(); c.arc(CX, CY, R * (1.03 + ph * 0.32), 0, TAU);
+    c.strokeStyle = `rgba(190,170,255,${0.7 * (1 - ph)})`; c.lineWidth = 1.5; c.stroke();
+  }
+  c.globalCompositeOperation = "source-over";
+}
+
+function drawGlitch(body) {
+  const c = ctx, k = glitchT / 0.95;
+  const j = reduce ? 0 : 2.4 * k;
+  const offs = [[j * (Math.random() - 0.5) * 2, 0, "rgba(255,70,140,.7)"], [-j * (Math.random() - 0.5) * 2, j * 0.4, "rgba(70,230,255,.7)"], [0, 0, "rgba(225,228,240,.9)"]];
+  c.save(); c.lineWidth = 2;
+  for (const [dx, dy, col] of offs) {
+    c.save(); c.translate(dx, dy); c.strokeStyle = col; c.globalAlpha = 0.4 + 0.6 * k; c.stroke(body); c.restore();
+  }
+  // metallic sheen sweep
+  const g = c.createLinearGradient(CX - R, CY - R, CX + R, CY + R);
+  const p = clamp(1 - k, 0, 1);
+  g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(clamp(p - 0.08, 0, 1), "rgba(255,255,255,0)");
+  g.addColorStop(p, `rgba(235,240,255,${0.9 * k})`); g.addColorStop(clamp(p + 0.08, 0, 1), "rgba(255,255,255,0)"); g.addColorStop(1, "rgba(255,255,255,0)");
+  c.strokeStyle = g; c.lineWidth = 3.5; c.globalAlpha = 1; c.stroke(body);
+  c.restore();
+}
+
+/* ---------- loop ---------- */
+const stats = { frames: 0, drawMs: 0, maxDrawMs: 0, start: performance.now() };
+window.__orb = { stats, get mode() { return mode; }, get morph() { return morph; }, get amp() { return amp; } };
+let last = performance.now(), raf = 0;
+function loop(now) {
+  const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
+  const s = performance.now();
+  frame(dt);
+  const d = performance.now() - s;
+  stats.frames++; stats.drawMs += d; if (d > stats.maxDrawMs) stats.maxDrawMs = d;
+  raf = requestAnimationFrame(loop);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) cancelAnimationFrame(raf);
+  else { last = performance.now(); raf = requestAnimationFrame(loop); }
+});
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stage); else window.addEventListener("resize", resize);
+resize(); buildShape(); updateSvg();
+raf = requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
