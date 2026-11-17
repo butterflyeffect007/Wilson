@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { DiffLine, SelfFixProposal, SelfFixView } from "./selfFix";
 import { FIXTURE, formatLiveWhen, proposeCardDiff } from "./selfFix";
 
-function DiffView({ lines, full }: { lines: DiffLine[]; full?: boolean }) {
+export function DiffView({ lines, full }: { lines: DiffLine[]; full?: boolean }) {
   return (
     <div className={`diff${full ? " full" : ""}`}>
       {lines.map((ln, i) => (
