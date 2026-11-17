@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: pages
@@ -36,6 +37,17 @@ jobs:
         run: npm run build
         env:
           VITE_BASE: /Wilson/
+
+      - name: Keep previews of changes still waiting for approval
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          if ! git clone --quiet --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/ghp; then echo "No gh-pages yet"; exit 0; fi
+          [ -d /tmp/ghp/preview ] || { echo "No previews to keep"; exit 0; }
+          for n in $(gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 --json number -q '.[].number'); do
+            if [ -d "/tmp/ghp/preview/pr-$n" ]; then mkdir -p dist/preview; cp -r "/tmp/ghp/preview/pr-$n" "dist/preview/pr-$n"; echo "Kept preview/pr-$n"; fi
+          done
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
