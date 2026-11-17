@@ -12,12 +12,27 @@ import { cachedIsAdmin } from "../lib/admin";
 import { ProposalCard, ReviewScreen, LiveScreen, selfFixBadge } from "./SelfFixViews";
 import {
   FIXTURE, canUseSelfFix, loadSelfFix, saveSelfFix,
-  submitForReview, approveSelfFix, declineSelfFix, undoSelfFix,
-  type SelfFixProposal, type SelfFixView,
+  submitForReview, approveSelfFix, declineSelfFix, undoSelfFix, fetchPushes, fetchPushStatus,
+  type PushLiveStatus, type SelfFixProposal, type SelfFixView,
 } from "./selfFix";
+import { buildSelfFixProposal } from "./selfFixAgent";
+import { stepperFor, type CheckState, type PublishState } from "./selfFixPipeline";
+import { LivePushesPanel, ModeToggle, PushReminder, type TermMode } from "./LivePushes";
 import "./WilsonTerminal.css";
 
 type Tab = "terminal" | "files";
+
+const MODE_KEY = "wilson_term_mode";
+function loadMode(): TermMode {
+  try { return localStorage.getItem(MODE_KEY) === "python" ? "python" : "fix"; } catch { return "fix"; }
+}
+
+/** Which screen to restore when the Terminal reopens, from the saved push status. */
+function viewForSaved(p: SelfFixProposal | null): SelfFixView | null {
+  if (!p) return null;
+  if (p.status === "review") return "review";
+  return null;
+}
 type Line = { kind: "prompt" | "out" | "err" | "figure" | "caret"; text?: string; src?: string };
 
 function linesOf(code: string): number {
@@ -83,9 +98,16 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     if (e2eFix) return { ...FIXTURE, status: e2eFix === "live" ? "live" : e2eFix === "review" ? "review" : "draft" };
     return loadSelfFix();
   });
-  const [fixView, setFixView] = useState<SelfFixView | null>(e2eFix);
+  const [fixView, setFixView] = useState<SelfFixView | null>(() => e2eFix ?? (canUseSelfFix() ? viewForSaved(loadSelfFix()) : null));
   const [fixBusy, setFixBusy] = useState(false);
   const [fixErr, setFixErr] = useState("");
+  const [mode, setModeState] = useState<TermMode>(() => (e2eFix || !cachedIsAdmin() ? "python" : loadMode()));
+  const [liveStatus, setLiveStatus] = useState<PushLiveStatus | null>(null);
+  const [history, setHistory] = useState<SelfFixProposal[]>([]);
+  const [building, setBuilding] = useState<string[] | null>(null);
+  const buildAbort = useRef<AbortController | null>(null);
+  const realFix = canUseSelfFix() && cachedIsAdmin() && !e2eFix;
+  const setMode = (m: TermMode) => { setModeState(m); try { localStorage.setItem(MODE_KEY, m); } catch { /* ignore */ } };
   const clientRef = useRef<PyodideClient | null>(null);
   const loopAbort = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -102,6 +124,40 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     if (box) box.scrollTop = box.scrollHeight;
   }, [chat]);
 
+  const refreshHistory = useCallback(async () => {
+    if (!realFix) return;
+    try { setHistory(await fetchPushes()); } catch { /* offline: keep what we have */ }
+  }, [realFix]);
+  useEffect(() => { void refreshHistory(); }, [refreshHistory]);
+
+  // Follow the current push for real: PR state, build check, then the GitHub Pages publish.
+  const pushId = proposal?.id && proposal.status !== "draft" && !proposal.id.startsWith("draft-") ? proposal.id : "";
+  const pushStatus = proposal?.status;
+  useEffect(() => {
+    if (!realFix || !pushId || pushStatus === "declined") return;
+    let stop = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      try {
+        const st = await fetchPushStatus(pushId);
+        if (stop) return;
+        setLiveStatus(st);
+        setProposal((prev) => {
+          if (!prev || prev.id !== st.id) return prev;
+          if (prev.status === st.status && prev.prUrl === st.prUrl && prev.mergeSha === st.mergeSha) return prev;
+          const next = { ...prev, status: st.status, prUrl: st.prUrl, liveAt: st.liveAt || prev.liveAt, mergeSha: st.mergeSha, undoneAt: st.undoneAt };
+          saveSelfFix(next);
+          return next;
+        });
+        const settled = st.status === "declined" || ((st.status === "live" || st.status === "undone") && (st.publish?.state === "live" || st.publish?.state === "failed"));
+        if (settled) { void refreshHistory(); return; }
+      } catch { /* try again next tick */ }
+      if (!stop) timer = setTimeout(tick, 9000);
+    };
+    void tick();
+    return () => { stop = true; if (timer) clearTimeout(timer); };
+  }, [realFix, pushId, pushStatus, refreshHistory]);
+
   useEffect(() => {
     const c = new PyodideClient();
     clientRef.current = c;
@@ -113,7 +169,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
       if (ev.type === "stderr") appendStream("err", ev.text);
     });
     void c.ensureReady().catch(() => {});
-    return () => { off(); c.dispose(); clientRef.current = null; loopAbort.current?.abort(); };
+    return () => { off(); c.dispose(); clientRef.current = null; loopAbort.current?.abort(); buildAbort.current?.abort(); };
   }, []);
 
   const appendStream = (kind: "out" | "err", text: string) => {
@@ -226,10 +282,63 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     clearChatStore();
   };
 
+  const pushChat = (role: "user" | "wilson", msg: string, replaceLast = false) => {
+    setChat((prev) => {
+      let next: typeof prev;
+      if (replaceLast && prev.length && prev[prev.length - 1].role === "wilson") {
+        next = [...prev.slice(0, -1), { ...prev[prev.length - 1], text: msg }];
+      } else {
+        next = [...prev, { id: "m-" + Math.random().toString(36).slice(2, 8), role, text: msg }];
+      }
+      return next.length > 300 ? next.slice(-300) : next;
+    });
+  };
+
+  const runSelfFix = async (text: string) => {
+    if (proposal && proposal.status === "review") {
+      pushChat("user", text);
+      pushChat("wilson", "I already have a change waiting for you. Approve it or Decline it first (tap Open review in Live pushes), then I'll start the next one.");
+      return;
+    }
+    if (!realFix) {
+      pushChat("user", text);
+      pushChat("wilson", "Fixing my own code needs the Architect key on this phone. Sign in as the Architect, then ask me again.");
+      return;
+    }
+    const abort = new AbortController();
+    buildAbort.current = abort;
+    setLooping(true);
+    setFixErr("");
+    setBuilding(["Starting…"]);
+    pushChat("user", text);
+    pushChat("wilson", "On it. I'm reading my own code now.");
+    try {
+      const next = await buildSelfFixProposal(text, {
+        signal: abort.signal,
+        onStep: (step) => setBuilding((prev) => (prev && prev[prev.length - 1] === "Starting…" ? [step] : [...(prev || []), step])),
+      });
+      if (abort.signal.aborted) return;
+      setProposal(next); saveSelfFix(next); setLiveStatus(null); setFixView(null);
+      pushChat("wilson", `Done. My proposed change: "${next.title}". ${next.summary} Look it over in Live pushes, then tap Send for review.`, true);
+    } catch (err) {
+      if (abort.signal.aborted || (err as Error).name === "AbortError") {
+        pushChat("wilson", "Stopped. Nothing was changed.", true);
+      } else {
+        const msg = err instanceof Error ? err.message : "Something went wrong.";
+        pushChat("wilson", `${msg}\nNothing was sent anywhere.`, true);
+      }
+    } finally {
+      setBuilding(null);
+      setLooping(false);
+      buildAbort.current = null;
+    }
+  };
+
   const sendChat = async () => {
     const text = draftMsg.trim();
     if (!text || looping) return;
     setDraftMsg("");
+    if (mode === "fix" && !e2eFix) { await runSelfFix(text); return; }
     const abort = new AbortController();
     loopAbort.current = abort;
     setLooping(true);
@@ -269,7 +378,8 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
         setProposal(next); saveSelfFix(next); setFixView("review");
       } else {
         const next = await submitForReview(proposal);
-        setProposal(next); saveSelfFix(next); setFixView("review");
+        setProposal(next); saveSelfFix(next); setLiveStatus(null); setFixView("review");
+        void refreshHistory();
       }
     } catch (err) {
       setFixErr(err instanceof Error ? err.message : "Couldn't send for review.");
@@ -284,7 +394,8 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
         setProposal(next); saveSelfFix(next); setFixView("live");
       } else {
         const next = await approveSelfFix(proposal);
-        setProposal(next); saveSelfFix(next); setFixView("live");
+        setProposal(next); saveSelfFix(next); setLiveStatus(null); setFixView("live");
+        void refreshHistory();
       }
     } catch (err) {
       setFixErr(err instanceof Error ? err.message : "Couldn't approve this update.");
@@ -295,30 +406,49 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     setFixBusy(true); setFixErr("");
     try {
       if (!(isE2EArchitect() && !cachedIsAdmin())) await declineSelfFix(proposal);
-      setProposal(null); saveSelfFix(null); setFixView(null);
+      setProposal(null); saveSelfFix(null); setLiveStatus(null); setFixView(null);
+      void refreshHistory();
     } catch (err) {
       setFixErr(err instanceof Error ? err.message : "Couldn't decline this update.");
     } finally { setFixBusy(false); }
   };
-  const onUndoFix = async () => {
-    if (!proposal) return;
+  const onUndoFix = async (target?: SelfFixProposal) => {
+    const which = target || proposal;
+    if (!which) return;
     setFixBusy(true); setFixErr("");
     try {
       if (isE2EArchitect() && !cachedIsAdmin()) {
         setProposal(null); saveSelfFix(null); setFixView(null);
       } else {
-        const next = await undoSelfFix(proposal);
-        setProposal(next); saveSelfFix(next); setFixView(null);
+        const next = await undoSelfFix(which);
+        // Follow the undo's publish in the Live pushes panel.
+        setProposal(next); saveSelfFix(next); setLiveStatus(null); setFixView(null); setMode("fix");
+        void refreshHistory();
       }
     } catch (err) {
       setFixErr(err instanceof Error ? err.message : "Couldn't undo this update.");
     } finally { setFixBusy(false); }
   };
+  const onDiscardDraft = () => { setProposal(null); saveSelfFix(null); setLiveStatus(null); setFixErr(""); };
+  const onPushDone = () => { setProposal(null); saveSelfFix(null); setLiveStatus(null); setFixView(null); setFixErr(""); void refreshHistory(); };
+  const onStopBuild = () => { buildAbort.current?.abort(); };
+  const stepNow = proposal ? stepperFor(
+    (liveStatus?.status || proposal.status || "draft") as NonNullable<SelfFixProposal["status"]>,
+    liveStatus?.publish?.state as PublishState | undefined,
+    liveStatus?.check?.state as CheckState | undefined,
+  ) : null;
+  const checkLine = realFix && proposal?.status === "review" ? stepNow?.detail.split(". ")[0] : undefined;
+  const livePublish = realFix && proposal && (proposal.status === "live" || proposal.status === "undone") && stepNow
+    ? { headline: stepNow.headline, detail: stepNow.detail, done: stepNow.step === 3, failed: stepNow.tone === "warn" }
+    : undefined;
 
   const highlighted = useMemo(() => highlightPython(code.endsWith("\n") ? code : code + "\n"), [code]);
   const gutter = useMemo(() => Array.from({ length: linesOf(code) }, (_, i) => i + 1), [code]);
   const pyAttr = py === "ready" ? "ready" : py === "error" ? "error" : py === "loading" ? "loading" : "idle";
-  const chrome = selfFixBadge(fixView);
+  const publishingNow = fixView === "live" && !!livePublish && !livePublish.done;
+  const chrome = publishingNow
+    ? { badge: <>Publishing<br />to live site</>, pill: livePublish?.failed ? "publish failed" : "publishing…" }
+    : selfFixBadge(fixView);
   const pill = chrome?.pill
     || (py === "loading" ? progress || "loading Python…"
     : py === "error" ? (progress || "Python failed")
@@ -363,13 +493,17 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
             <h1>Wilson's Terminal</h1>
             <div className="sub">shared screen · he writes &amp; runs it</div>
           </div>
-          <div className="badge">{chrome?.badge || <>Python · runs<br />on this phone</>}</div>
+          <div className="badge">{chrome?.badge || (mode === "fix" && canUseSelfFix() ? <>Fixes his<br />own code</> : <>Python · runs<br />on this phone</>)}</div>
         </div>
 
-        <div className="tabs" role="tablist" aria-label="Terminal views">
+        {fixView !== "review" && fixView !== "live" && canUseSelfFix() && (
+          <ModeToggle mode={mode} onChange={(m) => { setMode(m); if (m === "python") setTab("terminal"); }} disabled={looping} />
+        )}
+
+        {(mode === "python" || !canUseSelfFix()) && <div className="tabs" role="tablist" aria-label="Terminal views">
           <button type="button" role="tab" aria-selected={tab === "terminal"} className={tab === "terminal" ? "on" : ""} onClick={() => setTab("terminal")}>Terminal</button>
           <button type="button" role="tab" aria-selected={tab === "files"} className={tab === "files" ? "on" : ""} onClick={() => setTab("files")}>Files / snippets</button>
-        </div>
+        </div>}
 
         <div className="scroll" id="wterm-scroll" ref={scrollRef}>
           {fixView === "review" && proposal && (
@@ -381,7 +515,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
                   <span className="sp" />
                   <span className="pill">{pill}</span>
                 </div>
-                <ReviewScreen proposal={proposal} busy={fixBusy} error={fixErr} onPreview={() => {}} onApprove={() => void onApproveFix()} onDecline={() => void onDeclineFix()} />
+                <ReviewScreen proposal={{ ...proposal, prUrl: proposal.prUrl || liveStatus?.prUrl }} busy={fixBusy} error={fixErr} checkLine={checkLine} onLater={realFix ? () => { setFixErr(""); setFixView(null); setMode("fix"); } : undefined} onPreview={() => {}} onApprove={() => void onApproveFix()} onDecline={() => void onDeclineFix()} />
               </div>
             </section>
           )}
@@ -392,14 +526,37 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
                   <span className="dots" aria-hidden="true"><i className="a" /><i className="b" /><i className="c" /></span>
                   <span className="fn">wilson@neural-void</span>
                   <span className="sp" />
-                  <span className="pill ok">{pill}</span>
+                  <span className={`pill${publishingNow ? (livePublish?.failed ? " bad" : "") : " ok"}`}>{pill}</span>
                 </div>
-                <LiveScreen proposal={proposal} busy={fixBusy} error={fixErr} onUndo={() => void onUndoFix()} />
+                <LiveScreen proposal={proposal} busy={fixBusy} error={fixErr} publish={livePublish} onBack={realFix ? () => { setFixErr(""); setFixView(null); setMode("fix"); } : undefined} onUndo={() => void onUndoFix()} />
               </div>
             </section>
           )}
           {fixView === "live" && <div className="footnote">Imagination becomes intelligence</div>}
-          {fixView !== "review" && fixView !== "live" && tab === "terminal" && (
+          {fixView !== "review" && fixView !== "live" && mode === "fix" && canUseSelfFix() && (
+            <>
+              <LivePushesPanel
+                current={proposal && (e2eFix || proposal.status !== "draft" || realFix) ? proposal : null}
+                status={liveStatus}
+                history={history}
+                busy={fixBusy}
+                error={fixErr}
+                building={building}
+                onOpenReview={() => { setFixErr(""); setFixView("review"); }}
+                onUndo={(p) => void onUndoFix(p)}
+                onDone={onPushDone}
+                onStopBuild={onStopBuild}
+              />
+              {showFix && proposal && proposal.status === "draft" && !building && (
+                <ProposalCard lifted proposal={proposal} busy={fixBusy} error={fixErr} onReview={() => void onSendForReview()} onDiscard={onDiscardDraft} />
+              )}
+              <p className="footnote">Tell Wilson what to change about himself in the box below. He reads his real code, shows you the change, and nothing goes live until you approve.</p>
+            </>
+          )}
+          {fixView !== "review" && fixView !== "live" && mode === "python" && canUseSelfFix() && (
+            <PushReminder current={proposal && proposal.status !== "declined" ? proposal : null} status={liveStatus} onOpen={() => setMode("fix")} />
+          )}
+          {fixView !== "review" && fixView !== "live" && (mode === "python" || !canUseSelfFix()) && tab === "terminal" && (
             <>
               <section className="stack" id="editor-card">
                 <div className="win">
@@ -466,7 +623,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
             </>
           )}
 
-          {fixView !== "review" && fixView !== "live" && tab === "files" && (
+          {fixView !== "review" && fixView !== "live" && (mode === "python" || !canUseSelfFix()) && tab === "files" && (
             <section className="stack">
               <div className="win">
                 <div className="chrome">
@@ -511,7 +668,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
                 </div>
               </div>
             ))}
-            {showFix && (fixView === "propose" || fixView === null) && proposal && (
+            {showFix && e2eFix === "propose" && fixView === "propose" && proposal && mode === "python" && (
               <ProposalCard proposal={proposal} busy={fixBusy} error={fixErr} onReview={() => void onSendForReview()} />
             )}
           </div>
@@ -526,7 +683,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
                 e.preventDefault();
                 pasteInto(draftMsg, e.currentTarget, text, setDraftMsg);
               }}
-              placeholder={looping ? "Wilson is working…" : "Ask Wilson to write or fix code"}
+              placeholder={looping ? "Wilson is working…" : mode === "fix" && canUseSelfFix() ? "Tell Wilson what to change about himself" : "Ask Wilson to write Python"}
               aria-label="Message Wilson"
               disabled={looping}
             />

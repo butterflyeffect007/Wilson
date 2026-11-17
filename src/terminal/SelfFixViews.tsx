@@ -20,34 +20,40 @@ function fileName(path: string) {
   return { name: parts[parts.length - 1], dir: parts.slice(0, -1).join("/") };
 }
 
-export function ProposalCard({ proposal, busy, error, onReview }: {
+export function ProposalCard({ proposal, busy, error, onReview, onDiscard, lifted }: {
   proposal: SelfFixProposal;
   busy?: boolean;
   error?: string;
   onReview: () => void;
+  onDiscard?: () => void;
+  lifted?: boolean;
 }) {
   const first = proposal.files[0]?.path || "src/";
+  const more = proposal.files.length > 1 ? ` + ${proposal.files.length - 1} more` : "";
   return (
-    <div className="proposal" data-testid="selffix-propose">
+    <div className={`proposal${lifted ? " lifted" : ""}`} data-testid="selffix-propose">
       <p className="kicker">Proposed update to my own code</p>
-      <p className="fname">{first}</p>
+      <p className="fname">{first}{more}</p>
       <p className="sum">{proposal.summary}</p>
-      <DiffView lines={proposeCardDiff(proposal)} />
+      <DiffView lines={lifted ? proposal.diff : proposeCardDiff(proposal)} />
       <button type="button" className="btn review" disabled={busy} onClick={onReview}>
         {busy ? "Sending…" : "Send for review"}
       </button>
+      {onDiscard && <button type="button" className="btn later" disabled={busy} onClick={onDiscard}>Throw it away</button>}
       {error && <p className="note warn">{error}</p>}
     </div>
   );
 }
 
-export function ReviewScreen({ proposal, busy, error, onPreview, onApprove, onDecline }: {
+export function ReviewScreen({ proposal, busy, error, onPreview, onApprove, onDecline, checkLine, onLater }: {
   proposal: SelfFixProposal;
   busy?: boolean;
   error?: string;
   onPreview: () => void;
   onApprove: () => void;
   onDecline: () => void;
+  checkLine?: string;
+  onLater?: () => void;
 }) {
   return (
     <div className="review-card" data-testid="selffix-review">
@@ -73,28 +79,40 @@ export function ReviewScreen({ proposal, busy, error, onPreview, onApprove, onDe
       <a className="preview-link" href={proposal.previewUrl || "#"} target={proposal.previewUrl ? "_blank" : undefined} rel="noopener" onClick={(e) => { if (!proposal.previewUrl) { e.preventDefault(); onPreview(); } }}>
         Preview it first <span className="arrow">→</span>
       </a>
+      {(proposal.prUrl || checkLine) && (
+        <p className="review-extra">
+          {proposal.prUrl && <a href={proposal.prUrl} target="_blank" rel="noopener">Pull request #{proposal.prNumber} on GitHub ↗</a>}
+          {proposal.prUrl && checkLine ? " · " : ""}{checkLine}
+        </p>
+      )}
       <p className="note">Nothing changes until you approve.</p>
       {error && <p className="note warn">{error}</p>}
       <div className="cta-row">
         <button type="button" className="btn approve" disabled={busy} onClick={onApprove}>{busy ? "Shipping…" : "Approve & go live"}</button>
         <button type="button" className="btn decline" disabled={busy} onClick={onDecline}>Decline</button>
       </div>
+      {onLater && <button type="button" className="btn later" disabled={busy} onClick={onLater}>Not now — keep it waiting</button>}
     </div>
   );
 }
 
-export function LiveScreen({ proposal, busy, error, onUndo }: {
+export function LiveScreen({ proposal, busy, error, onUndo, publish, onBack }: {
   proposal: SelfFixProposal;
   busy?: boolean;
   error?: string;
   onUndo: () => void;
+  /** Real publish progress; when omitted (e2e fixture) the screen shows the finished state. */
+  publish?: { headline: string; detail: string; done: boolean; failed?: boolean };
+  onBack?: () => void;
 }) {
+  const done = publish ? publish.done : true;
   return (
     <>
       <div className="live-hero" data-testid="selffix-live">
         <div className="live-mark" aria-hidden="true">✦</div>
-        <h2>Update is live ✦</h2>
-        <p>{proposal.id === "e2e-observatory-back" ? "The Observatory now has a proper Back button. It is on the live site for everyone." : "This update is on the live site for everyone."}</p>
+        <h2>{done ? "Update is live ✦" : publish?.failed ? "Approved — publish failed" : "Approved — publishing…"}</h2>
+        <p aria-live="polite">{publish ? (done ? `${publish.headline} ${publish.detail}` : publish.detail) : proposal.id === "e2e-observatory-back" ? "The Observatory now has a proper Back button. It is on the live site for everyone." : "This update is on the live site for everyone."}</p>
+        {proposal.prUrl && <p className="review-extra"><a href={proposal.prUrl} target="_blank" rel="noopener">Pull request #{proposal.prNumber} on GitHub ↗</a></p>}
       </div>
       <div className="change">
         <p className="when">{formatLiveWhen(proposal.liveAt)}</p>
@@ -104,6 +122,7 @@ export function LiveScreen({ proposal, busy, error, onUndo }: {
       <button type="button" className="btn undo" disabled={busy} onClick={onUndo}>{busy ? "Undoing…" : "Undo this update"}</button>
       <p className="live-note">Undo puts the previous version back live. Nothing else changes.</p>
       {error && <p className="live-note warn">{error}</p>}
+      {onBack && <button type="button" className="btn later" onClick={onBack}>Back to the Terminal</button>}
     </>
   );
 }
