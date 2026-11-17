@@ -111,7 +111,7 @@ function friendlyError(err: unknown): { text: string; retryable: boolean } {
   return { text: "*My brain's a little busy right now. Try again in a moment.*", retryable: true };
 }
 
-const TACHO_VISION = "the tacho climbs past 9,000 RPMs as the browser version stabilizes into unshakeable, native-grade code at the waterfront";
+const TACHO_VISION = "the tacho climbs past 9,000 RPMs as the browser version stabilizes into unshakeable, native-grade code";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
