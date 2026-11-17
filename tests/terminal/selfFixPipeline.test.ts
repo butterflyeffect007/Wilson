@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  applyEdits, diffForFiles, isWritablePath, lineDiff, parseEditReply, parseFilePick, stepperFor, validateChange,
+  applyEdits, diffForFiles, isWritablePath, lineDiff, parseEditReply, parseFilePick, simpleStatus, stepperFor, validateChange,
 } from "../../src/terminal/selfFixPipeline.ts";
 
 const APP = [
@@ -123,4 +123,18 @@ test("stepper: proposed -> waiting for you -> publishing -> live", () => {
   assert.equal(stepperFor("live", "live").headline, "Live — close and reopen Wilson to see it.");
   assert.equal(stepperFor("live", "failed").tone, "warn");
   assert.equal(stepperFor("declined").headline, "Declined");
+});
+
+test("simple status uses plain words: no PR / diff / merge / deploy / build check", () => {
+  const all = [
+    simpleStatus("draft"), simpleStatus("review"), simpleStatus("review", undefined, "passed"), simpleStatus("review", undefined, "failed"),
+    simpleStatus("live", "building"), simpleStatus("live", "live"), simpleStatus("live", "failed"),
+    simpleStatus("undone", "publishing"), simpleStatus("undone", "live"), simpleStatus("declined"),
+  ];
+  for (const s of all) assert.doesNotMatch(`${s.title} ${s.text}`, /\b(PR|pull request|diff|merge|merged|deploy|build check|GitHub)\b/i);
+  assert.equal(simpleStatus("review", undefined, "passed").title, "Safety check passed.");
+  assert.equal(simpleStatus("live", "live").title, "It's live!");
+  assert.equal(simpleStatus("live", "live").step, 3);
+  assert.equal(simpleStatus("live", "building").settled, false);
+  assert.equal(simpleStatus("review").step, 1);
 });

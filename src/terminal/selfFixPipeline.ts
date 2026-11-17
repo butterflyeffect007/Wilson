@@ -366,6 +366,31 @@ export function editUserPrompt(request: string, files: SourceFile[], feedback?: 
 export type PushStatus = "draft" | "review" | "live" | "declined" | "undone";
 export type PublishState = "waiting" | "building" | "publishing" | "live" | "failed" | "superseded";
 export type CheckState = "waiting" | "running" | "passed" | "failed";
+export type SimpleTone = "work" | "ok" | "warn" | "live" | "done";
+export type SimpleStatus = { step: 0 | 1 | 2 | 3; tone: SimpleTone; title: string; text: string; settled: boolean };
+
+/** Plain-words status for the simplified Terminal card (no PR / diff / merge / deploy wording).
+ *  step: 0 = proposed, 1 = waiting for you, 2 = going live, 3 = live. */
+export function simpleStatus(status: PushStatus | undefined, publish?: PublishState, check?: CheckState): SimpleStatus {
+  if (status === "declined") return { step: 0, tone: "done", title: "Declined.", text: "Nothing changed.", settled: true };
+  if (status === "undone") {
+    if (publish === "live") return { step: 3, tone: "live", title: "Undone. The old version is back.", text: "Close Wilson and open him again to see it.", settled: true };
+    if (publish === "failed") return { step: 2, tone: "warn", title: "Undo didn't go live.", text: "The live Wilson still has the change. Ask Wilson to try again.", settled: true };
+    return { step: 2, tone: "work", title: "Undoing… putting the old version back.", text: "About 1–2 minutes. You can leave this screen.", settled: false };
+  }
+  if (status === "live") {
+    if (publish === "live") return { step: 3, tone: "live", title: "It's live!", text: "Close Wilson and open him again to see it.", settled: true };
+    if (publish === "failed") return { step: 2, tone: "warn", title: "Approved, but it didn't go live.", text: "The live Wilson didn't change. Tap Undo it, or ask Wilson to try again.", settled: true };
+    return { step: 2, tone: "work", title: "Approved — putting it live…", text: "About 1–2 minutes. You can leave this screen.", settled: false };
+  }
+  if (status === "review") {
+    if (check === "passed") return { step: 1, tone: "ok", title: "Safety check passed.", text: "Wilson still works with this change. Nothing changes until you approve.", settled: false };
+    if (check === "failed") return { step: 1, tone: "warn", title: "Safety check failed.", text: "This change would break Wilson. Best to Decline it.", settled: false };
+    return { step: 1, tone: "work", title: "Safety check running…", text: "Wilson is making sure he still works with this change (about a minute). Nothing changes until you approve.", settled: false };
+  }
+  return { step: 0, tone: "warn", title: "Not sent yet.", text: "Wilson made the change but couldn't send it for its safety check. Tap Try again.", settled: false };
+}
+
 export type Stepper = { step: 0 | 1 | 2 | 3; headline: string; detail: string; tone: "work" | "ok" | "warn" | "done" };
 
 /** 0 = proposed, 1 = waiting for you, 2 = live (publishing), 3 = live and published. */

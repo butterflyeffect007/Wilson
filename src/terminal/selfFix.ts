@@ -43,6 +43,7 @@ export type PushLiveStatus = SelfFixProposal & {
   pr?: { state: string; url: string; mergeable?: boolean | null } | null;
   check?: { state: "waiting" | "running" | "passed" | "failed"; run?: { url?: string } | null };
   publish?: { state: "waiting" | "building" | "publishing" | "live" | "failed" | "superseded" };
+  preview?: { state: "waiting" | "building" | "publishing" | "ready" | "failed" | "gone"; url?: string };
 };
 
 export function canUseSelfFix(): boolean {
