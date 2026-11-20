@@ -3,6 +3,7 @@ import { useOverlayHistory } from "../hooks/useOverlayHistory";
 import scene from "../assets/observatory/cloud-reference-scene.webp";
 import "./GematriaObservatory.css";
 import { calculateCipher, CIPHERS, findPhraseMatches, type CipherId, type PhraseEntry } from "../gematria/gematria";
+import { canImportWord, fetchGematrixMatches, mergeImportedPhrases, nextImportDelay } from "../gematria/gematrixImport";
 
 const STORAGE_KEY = "wilson_gematria_phrase_library_v1";
 const WATER_KEY = "wilson_observatory_water_memory_v1";
@@ -24,13 +25,7 @@ function loadWater(): WaterEntry[] {
     return Array.isArray(saved) ? saved.filter((p): p is WaterEntry => !!p && typeof p.id === "string" && typeof p.phrase === "string" && typeof p.note === "string" && typeof p.at === "string") : [];
   } catch { return []; }
 }
-export async function fetchGematrixMatches(word: string, signal?: AbortSignal): Promise<string[]> {
-  const res = await fetch(`${IMPORT_ENDPOINT}?word=${encodeURIComponent(word)}`, { signal });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Could not import from gematrix.org.");
-  if (!Array.isArray(data.phrases)) throw new Error("The import returned an unreadable response.");
-  return [...new Set<string>(data.phrases.map((p: { phrase?: unknown }) => p?.phrase).filter((p: unknown): p is string => typeof p === "string" && p.trim().length > 0))];
-}
+export { fetchGematrixMatches } from "../gematria/gematrixImport";
 const PRIMARY = [
   { label: "English", id: "english-gematria" },
   { label: "Simple", id: "english-ordinal" },
@@ -52,7 +47,11 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
   const [note, setNote] = useState("");
   const [waterNotice, setWaterNotice] = useState("");
   const request = useRef<AbortController | null>(null);
+  const libraryRef = useRef(library);
+  const cacheRef = useRef(new Map<string, string[]>());
+  const lastNetworkAt = useRef(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  libraryRef.current = library;
   useLayoutEffect(() => { const el = inputRef.current; if (!el) return; el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }, [phraseDraft]);
   const opener = useRef<HTMLElement | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -77,8 +76,7 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
     setLoading(false); setError(""); setNotice(""); setPhraseDraft(value);
   }
   function chooseCipher(id: CipherId) {
-    request.current?.abort(); request.current = null;
-    setLoading(false); setError(""); setNotice(""); setCipherId(id);
+    setCipherId(id);
   }
   function addPhrase() {
     const clean = newPhrase.trim().replace(/\s+/g, " ");
@@ -86,26 +84,50 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
     if (!library.some(p => p.phrase.toUpperCase() === clean.toUpperCase())) persist([...library, { id: crypto.randomUUID(), phrase: clean, category: "My phrases", source: "Added on this device" }]);
     setNewPhrase("");
   }
-  async function importPhrases() {
-    if (!phrase || loading) return;
-    request.current?.abort();
-    const controller = new AbortController(); request.current = controller;
-    const timeout = window.setTimeout(() => controller.abort("timeout"), 22000);
-    setLoading(true); setError(""); setNotice("");
-    try {
-      const found = await fetchGematrixMatches(phrase, controller.signal);
-      if (controller.signal.aborted) return;
-      const existing = new Set(library.map(p => p.phrase.toUpperCase()));
-      const entries = found.filter(p => !existing.has(p.toUpperCase())).map(p => ({ id: "gematrix-" + crypto.randomUUID(), phrase: p, category: "gematrix.org", source: "Imported from gematrix.org" }));
-      if (entries.length) persist([...entries, ...library]);
-      const exact = findPhraseMatches(phrase, [...library, ...entries], cipherId, { excludeExactText: true });
-      setNotice(`Imported ${entries.length} new phrases from gematrix.org. ${exact.length} exact matches in the selected cipher.`);
-      setTab("matches");
-    } catch (e) {
-      if (controller.signal.reason === "timeout") setError("The import timed out. Please try again.");
-      else if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Could not reach gematrix.org.");
-    } finally { window.clearTimeout(timeout); if (request.current === controller) { setLoading(false); request.current = null; } }
+  function applyImported(found: string[]) {
+    const { next, added } = mergeImportedPhrases(libraryRef.current, found);
+    if (added) persist(next);
+    return added;
   }
+  useEffect(() => {
+    if (!canImportWord(phrase)) return;
+    const key = phrase.toUpperCase();
+    const cached = cacheRef.current.get(key);
+    if (cached) {
+      applyImported(cached);
+      return;
+    }
+    const controller = new AbortController();
+    let timeout = 0;
+    const delay = nextImportDelay(lastNetworkAt.current, Date.now());
+    const debounce = window.setTimeout(async () => {
+      request.current = controller;
+      timeout = window.setTimeout(() => controller.abort("timeout"), 22000);
+      setLoading(true);
+      setError("");
+      setNotice("Looking up matching phrases from gematrix.org…");
+      try {
+        lastNetworkAt.current = Date.now();
+        const found = await fetchGematrixMatches(phrase, controller.signal, IMPORT_ENDPOINT);
+        if (controller.signal.aborted) return;
+        cacheRef.current.set(key, found);
+        const added = applyImported(found);
+        setNotice(added ? `Loaded ${added} new phrases from gematrix.org.` : "Showing matching phrases from gematrix.org.");
+      } catch {
+        if (controller.signal.aborted && controller.signal.reason !== "timeout") return;
+        setNotice("Couldn't reach gematrix.org right now. Showing saved phrases.");
+      } finally {
+        window.clearTimeout(timeout);
+        if (request.current === controller) { setLoading(false); request.current = null; }
+      }
+    }, delay);
+    return () => {
+      window.clearTimeout(debounce);
+      window.clearTimeout(timeout);
+      controller.abort();
+      if (request.current === controller) { request.current = null; }
+    };
+  }, [phrase]);
   function saveWater() {
     if (!note.trim()) return;
     const next = [{ id: crypto.randomUUID(), phrase, note: note.trim(), at: new Date().toISOString() }, ...water];
@@ -131,10 +153,9 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
       <div className="obs-tabs" role="tablist" aria-label="Observatory panels" onKeyDown={e => { if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return; e.preventDefault(); const next = e.key === "Home" ? "matches" : e.key === "End" ? "library" : tab === "matches" ? "library" : "matches"; setTab(next); requestAnimationFrame(() => document.getElementById(`obs-tab-${next}`)?.focus()); }}>{([['matches', 'Matches'], ['library', 'Library of Light']] as const).map(([id, label]) => <button type="button" key={id} id={`obs-tab-${id}`} role="tab" tabIndex={tab === id ? 0 : -1} aria-controls={`obs-panel-${id}`} aria-selected={tab === id} className={`obs-tab${tab === id ? ' is-active' : ''}`} onClick={() => setTab(id)}>{label}</button>)}</div>
       <section className={`obs-card${tab === 'library' ? ' obs-card--library' : ''}`} id={`obs-panel-${tab}`} role="tabpanel" aria-labelledby={`obs-tab-${tab}`}>
         {tab === "matches" ? <>
-          {matches.length ? <ul className="obs-rows">{matches.map(match => <li key={match.id}><button type="button" className="obs-row" title={match.source} onClick={() => changePhrase(match.phrase)}><span className="obs-row-phrase">{match.phrase}</span><span className="obs-row-value">{match.total}</span></button></li>)}</ul> : <p className="obs-empty">{result.total === null ? (cipherId.startsWith('hebrew') ? 'Enter Hebrew letters (א–ת) for the Hebrew cipher.' : 'Enter a phrase to find matches.') : `No saved phrases equal ${result.total} yet. Open Library of Light to import more.`}</p>}
+          {matches.length ? <ul className="obs-rows" aria-busy={loading}>{matches.map(match => <li key={match.id}><button type="button" className="obs-row" title={match.source} onClick={() => changePhrase(match.phrase)}><span className="obs-row-phrase">{match.phrase}</span><span className="obs-row-value">{match.total}</span></button></li>)}</ul> : <p className="obs-empty" aria-busy={loading}>{result.total === null ? (cipherId.startsWith('hebrew') ? 'Enter Hebrew letters (א–ת) for the Hebrew cipher.' : 'Enter a phrase to find matches.') : loading ? 'Looking up matching phrases from gematrix.org…' : `No saved phrases equal ${result.total} yet.`}</p>}
         </> : <div className="obs-library">
-          <button type="button" className="obs-action" disabled={loading || !phrase} onClick={importPhrases}>{loading ? 'Importing gematrix.org…' : 'Import matching phrases from gematrix.org'}</button>
-          <p className="obs-caption">Imports all three result tables; Matches compares using your selected cipher. Gematrix’s Latin “Jewish” cipher is not Wilson’s Hebrew-letter cipher.</p>
+          <p className="obs-caption">Matching phrases are brought in automatically from gematrix.org. Matches compares using your selected cipher. Gematrix’s Latin “Jewish” cipher is not Wilson’s Hebrew-letter cipher.</p>
           <details><summary>Cipher options</summary><select className="obs-field" aria-label="All cipher options" value={cipherId} onChange={e => chooseCipher(e.target.value as CipherId)}>{CIPHERS.map(c => <option key={c.id} value={c.id}>{c.id === 'english-ordinal' ? 'Simple (A=1 … Z=26)' : c.label}</option>)}</select></details>
           <details open><summary>Living Library · {library.length} saved phrases</summary>
             <form className="obs-lib-add" onSubmit={e => { e.preventDefault(); addPhrase(); }}><input className="obs-field" aria-label="New phrase" placeholder="Add a phrase…" value={newPhrase} onChange={e => setNewPhrase(e.target.value)}/><button className="obs-action" disabled={loading || !newPhrase.trim()}>Add</button></form>
