@@ -88,7 +88,8 @@ export function proposeCardDiff(p: SelfFixProposal): DiffLine[] {
     { kind: "ctx", text: "  </header>" },
   ];
   if (p.id === FIXTURE.id) return short;
-  const noFiles = p.diff.filter((d) => d.kind !== "file");
+  const diffs = Array.isArray(p.diff) ? p.diff : [];
+  const noFiles = diffs.filter((d) => d.kind !== "file");
   return noFiles.slice(0, 8);
 }
 
