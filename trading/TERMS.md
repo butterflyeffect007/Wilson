@@ -7,7 +7,7 @@
    All signals, orders, and analysis are for personal experimentation only. Nothing in the software constitutes financial, investment, or trading advice.
 
 3. **Paper Trading Only**  
-   The system is designed to operate exclusively against Alpaca’s paper-trading environment. The user is solely responsible for any live trading they enable.
+   The portfolio manager always uses Alpaca’s paper endpoint (`paper=True`). It has no live-trading switch, and it does not trade crypto or move wallet funds. You are responsible for any trading you do with your own brokerage accounts outside this program.
 
 4. **Risk**  
    Automated trading involves risk of loss. The user assumes all risk associated with use of the software.
