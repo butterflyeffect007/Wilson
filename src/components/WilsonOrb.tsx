@@ -33,11 +33,11 @@ const vibeHue: Record<WilsonVibe, number> = {
 
 // Pastel mood glow only (no hue-rotation of the orb image, never green)
 const moodColor: Record<WilsonVibe, string> = {
-  neutral: "rgba(196, 160, 255, 0.55)",
-  excited: "rgba(255, 150, 210, 0.6)",
-  calm: "rgba(150, 215, 255, 0.55)",
-  tired: "rgba(200, 180, 240, 0.45)",
-  dreaming: "rgba(255, 215, 150, 0.55)",
+  neutral: "rgba(205, 170, 255, 0.6)",
+  excited: "rgba(255, 160, 220, 0.65)",
+  calm: "rgba(160, 225, 255, 0.6)",
+  tired: "rgba(210, 190, 250, 0.5)",
+  dreaming: "rgba(255, 225, 160, 0.6)",
 };
 
 const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
