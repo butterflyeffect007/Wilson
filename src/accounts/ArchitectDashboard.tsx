@@ -82,7 +82,7 @@ export function ArchitectDashboard({ user, onClose }: { user: AcctUser | null; o
     <div className="wrap wide">
       <Top right={<span className="pill arch">🛡 Architect</span>} onClose={onClose} />
       <div style={{ margin: "6px 2px 14px" }}>
-        <h1>{greet()}, Jenny</h1>
+        <h1>{greet()}, Jenny ✨</h1>
         <div className="soft small" style={{ marginTop: 3 }}>Only you can see this dashboard.{user ? ` Signed in as ${user.username}.` : ""}</div>
       </div>
       <div className="tabs" role="tablist" style={{ marginBottom: 6 }}>
