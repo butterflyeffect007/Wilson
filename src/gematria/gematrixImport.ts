@@ -23,12 +23,16 @@ export async function fetchGematrixMatches(
   word: string,
   signal?: AbortSignal,
   endpoint: string = DEFAULT_GEMATRIX_ENDPOINT,
+  cipher?: string,
 ): Promise<string[]> {
   const clean = normalizeImportWord(word);
   if (!canImportWord(clean)) {
     throw new Error("word must contain 1–200 characters");
   }
-  const res = await fetch(`${endpoint}?word=${encodeURIComponent(clean)}`, { signal });
+  const url = new URL(endpoint, window.location.href);
+  url.searchParams.set("word", clean);
+  if (cipher) url.searchParams.set("cipher", cipher);
+  const res = await fetch(url.toString(), { signal });
   let data: { error?: unknown; phrases?: unknown } = {};
   try {
     data = await res.json();
