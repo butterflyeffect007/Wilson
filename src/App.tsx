@@ -38,7 +38,7 @@ import { generateWithActiveBrain, loadedPack } from "./omni/engine";
 import { linksIn } from "./intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
-import { resolveCompanionName } from "./core/wilson/WilsonIdentity";
+import { isArchitectReservedName, resolveCompanionName } from "./core/wilson/WilsonIdentity";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
 import { APP_VERSION } from "./lib/beta";
@@ -387,7 +387,9 @@ export default function App() {
     setSettings((s) => {
       if (u.architect) return s.displayName.trim() ? s : { ...s, displayName: "Jenny" };
       const current = s.displayName.trim();
-      const next = resolveCompanionName({ isArchitect: false, displayName: current, accountUsername: u.username });
+      const first = (u.first_name || "").trim();
+      const seed = (current && !isArchitectReservedName(current, u.username)) ? current : (first || current);
+      const next = resolveCompanionName({ isArchitect: false, displayName: seed, accountUsername: u.username });
       if (!next || next === s.displayName) return s;
       return { ...s, displayName: next };
     });

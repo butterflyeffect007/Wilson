@@ -2,7 +2,7 @@
 import { WILSON_PROXY_URL } from "../App";
 import { getToken } from "./store";
 
-export type AcctUser = { id: string; username: string; email: string; architect: boolean; beta: boolean; room_blocked: boolean; created_at: number };
+export type AcctUser = { id: string; username: string; first_name?: string; email: string; architect: boolean; beta: boolean; room_blocked: boolean; created_at: number };
 export type Flags = { signups_open: boolean; room_open: boolean; wilson_in_room: boolean; beta_open: boolean; voice_for_all: boolean; maintenance: boolean; slow_mode: boolean };
 export type Banner = { text: string; until: number; at: number } | null;
 

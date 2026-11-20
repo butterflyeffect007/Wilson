@@ -23,6 +23,7 @@ export function AuthPage({ mode, onClose, onSignedIn, onRecovery, signupsOpen }:
   const [username, setUsername] = useState(() => { try { return localStorage.getItem("wilson_acct_last_user") || ""; } catch { return ""; } });
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [keep, setKeep] = useState(true);
   const [agreed, setAgreed] = useState(false);
   const [claimOpen, setClaimOpen] = useState(false);
@@ -57,7 +58,7 @@ export function AuthPage({ mode, onClose, onSignedIn, onRecovery, signupsOpen }:
     }
     setBusy(true);
     try {
-      const d = await api<AuthRes>(signup ? "/acct/signup" : "/acct/login", { token: null, body: signup ? { username: uNorm, password, email: email.trim(), keep, claim: claim.trim() || undefined } : { username: uNorm, password, keep } });
+      const d = await api<AuthRes>(signup ? "/acct/signup" : "/acct/login", { token: null, body: signup ? { username: uNorm, password, first_name: firstName.trim(), email: email.trim(), keep, claim: claim.trim() || undefined } : { username: uNorm, password, keep } });
       try { localStorage.setItem("wilson_acct_last_user", d.user.username); } catch { /* ignore */ }
       setSession(d.token, d.user, keep);
       setPassword(""); setClaim("");
@@ -99,6 +100,8 @@ export function AuthPage({ mode, onClose, onSignedIn, onRecovery, signupsOpen }:
           </div>
         )}
         {signup && <>
+          <label className="lbl" htmlFor="wa-first">First name <span className="opt">— optional, what Wilson should call you</span></label>
+          <div className="field"><input id="wa-first" value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" autoCapitalize="words" spellCheck={false} maxLength={40} placeholder="Your first name" /></div>
           <label className="lbl" htmlFor="wa-email">Email <span className="opt">— optional, for future reset links</span></label>
           <div className="field"><input id="wa-email" type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="you@example.com" /></div>
           <div className="tiny soft" style={{ marginTop: 6 }}>Password resets currently use the one-time recovery code you'll get next. Email reset links aren't turned on yet.</div>

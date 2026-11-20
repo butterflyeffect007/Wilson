@@ -43,10 +43,11 @@ export function AccountPage({ user, onClose, onSignOut, syncNote, notice }: { us
       <Top onClose={onClose} />
       {notice && <div className="card soft small" role="status" style={{ marginBottom: 12 }}>🛡 {notice}</div>}
       <div className="card row" style={{ gap: 12 }}>
-        <Avatar name={user.username} />
+        <Avatar name={user.first_name || user.username} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}><b style={{ fontWeight: 500, fontSize: 16 }}>{user.username}</b>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}><b style={{ fontWeight: 500, fontSize: 16 }}>{user.first_name || user.username}</b>
             {user.architect && <span className="pill arch">🛡 Architect</span>}{user.beta && <span className="pill">✦ beta</span>}</div>
+          {user.first_name ? <div className="tiny soft">@{user.username}</div> : null}
           <div className="tiny soft">Joined {when(user.created_at)}{syncNote ? ` · ${syncNote}` : ""}</div>
         </div>
       </div>
