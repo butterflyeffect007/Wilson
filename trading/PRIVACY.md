@@ -16,7 +16,7 @@
    The software contains no analytics, telemetry, or tracking.
 
 4. **Logs**  
-   Any console or file logs stay on the user’s machine and are not transmitted.
+   Console output, the trade CSV, and the session-state JSON stay on the user’s machine and are not transmitted.
 
 5. **Changes**  
    This policy applies to the current version of the software. Material changes will be noted in the repository.

@@ -5,6 +5,11 @@
 # Dependencies
 node_modules/
 
+# Python
+__pycache__/
+.pytest_cache/
+*.pyc
+
 # Build output
 dist/
 
@@ -17,6 +22,12 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# paper-trading output (local only)
+trading/trades.csv
+trading/trading_state.json
+trading/trading_state.json.tmp
+trading/backtest_trades.csv
 
 # fetched by deploy workflow
 src/assets/wilson-fluid.png
