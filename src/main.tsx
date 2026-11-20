@@ -1,4 +1,5 @@
 import { PREVIEW_ID } from "./lib/previewIsolation"; // must stay first: isolates a preview build's storage
+import { startVisualViewportSync } from "./lib/visualViewport";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
@@ -10,6 +11,8 @@ import "@fontsource/opendyslexic/400.css";
 import "@fontsource/opendyslexic/700.css";
 import "./index.css";
 import "./rainbow.css";
+
+startVisualViewportSync();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

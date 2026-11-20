@@ -9,7 +9,7 @@
   --sky:#07040D;--text:#F6EEFF;--soft:rgba(232,214,255,.62);
   --glass:rgba(30,12,46,.42);--border:rgba(160,110,230,.30);
   --send:linear-gradient(135deg,#6E21B0 0%,#A92FB8 55%,#E0628A 100%);
-  position:fixed;inset:0;z-index:80;color:var(--text);
+  position:fixed;top:var(--vv-top,0px);left:0;right:0;height:var(--app-height,100dvh);width:100%;z-index:80;color:var(--text);
   font-family:Lexend,system-ui,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.45;
   display:flex;flex-direction:column;overflow:hidden;background:#07040D;
 }

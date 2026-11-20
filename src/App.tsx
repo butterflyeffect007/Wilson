@@ -921,7 +921,7 @@ export default function App() {
   const isHome = !activeThread;
 
   return (
-    <div className="h-[100dvh] flex flex-col relative overflow-hidden">
+    <div className="h-full flex flex-col relative overflow-hidden" data-chat-root>
       <Backdrop chat={!isHome} />
       <ErrorBoundary label="accounts"><AccountsLayer route={acctRoute} user={acctUser} flags={acctFlags} isAdmin={isAdmin} chatContext={chatContext} syncNote={syncNote} onSignOut={signOut} /></ErrorBoundary>
       {banner && banner.at !== bannerHidden && !acctRoute && (
@@ -1442,6 +1442,7 @@ export default function App() {
         <div
           ref={scrollRef}
           onScroll={onScroll}
+          data-chat-scroller
           className="flex-1 overflow-y-auto px-4"
         >
           {isHome ? (
@@ -1621,7 +1622,7 @@ export default function App() {
           )}
         </div>
 
-        <div className="relative z-30 px-4 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+        <div className="relative z-30 px-4 pt-2 pb-[max(0.5rem,calc(max(1.25rem,env(safe-area-inset-bottom))-var(--kb-inset,0px)))]">
           <div className="max-w-lg mx-auto">
             {voiceId && speaker && (speaker.isNew || correcting) && (
               <form onSubmit={(e) => { e.preventDefault(); correcting ? correctSpeaker(nameDraft) : nameSpeaker(nameDraft); }} className="flex items-center gap-2 mb-1.5 px-2 text-[12px] text-violet-700/80">

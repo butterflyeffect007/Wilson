@@ -5,7 +5,7 @@
 --sky:#FCF7FF;--text:#2A1240;--soft:rgba(73,31,86,.8);--glass:rgba(255,255,255,.55);--glass2:rgba(255,255,255,.75);--border:rgba(110,33,176,.16);
 --fieldbg:rgba(255,255,255,.75);--inset:rgba(255,255,255,.55);--accent:var(--violet);
 --glow:0 0 0 1px rgba(255,255,255,.65) inset,0 10px 32px -10px rgba(110,33,176,.32),0 0 18px rgba(255,255,255,.45);
-position:fixed;inset:0;z-index:80;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+position:fixed;top:var(--vv-top,0px);left:0;right:0;height:var(--app-height,100dvh);width:100%;z-index:80;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
 font-family:Lexend,system-ui,sans-serif;color:var(--text);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased;
 background:radial-gradient(55% 32% at 70% 6%,rgba(252,188,126,.25),transparent 70%),radial-gradient(60% 40% at 8% 18%,rgba(209,59,178,.12),transparent 70%),linear-gradient(180deg,#FCF7FF 0%,#F2E9FF 45%,#F8F0FB 100%)}
 html.dark .wa{--sky:#07040D;--text:#F6EEFF;--soft:rgba(232,214,255,.62);--glass:rgba(30,12,46,.42);--glass2:rgba(36,14,54,.55);--border:rgba(160,110,230,.30);
@@ -87,7 +87,7 @@ background:radial-gradient(28% 16% at 52% 18%,rgba(243,159,95,.10),transparent 7
 .wa .mod button,.wa .mod span{font-size:10.5px;padding:2px 8px;border-radius:99px;border:1px solid var(--border);color:var(--soft);background:none;cursor:pointer;font-family:inherit}
 .wa .mod .d{color:var(--bad);border-color:rgba(244,123,143,.45)}
 .wa .mod .w{color:var(--warn);border-color:rgba(252,188,126,.45)}
-.wa .composer{position:sticky;bottom:0;display:flex;gap:8px;align-items:center;padding:14px 0 max(14px,env(safe-area-inset-bottom));background:linear-gradient(180deg,transparent,var(--sky) 35%)}
+.wa .composer{position:sticky;bottom:0;display:flex;gap:8px;align-items:center;padding:14px 0 max(8px,calc(max(14px,env(safe-area-inset-bottom)) - var(--kb-inset,0px)));background:linear-gradient(180deg,transparent,var(--sky) 35%)}
 .wa .composer .field{flex:1;border-radius:22px}
 .wa .sendb{width:46px;height:46px;border-radius:50%;background:var(--send);display:grid;place-items:center;color:#fff;box-shadow:0 0 18px rgba(209,59,178,.55);font-size:17px;border:0;cursor:pointer;flex:none}
 .wa .sendb:disabled{opacity:.5}

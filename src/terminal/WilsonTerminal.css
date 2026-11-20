@@ -14,7 +14,7 @@
   --send:linear-gradient(135deg,#6E21B0 0%,#A92FB8 55%,#E0628A 100%);
   --ok:#E8D6FF;--warn:#FCBC7E;--bad:#F5B24A;
   --kw:#F2A6E2;--str:#FCBC7E;--num:#8FD3EE;--fn2:#8FD3EE;--cm:rgba(199,176,255,.55);
-  position:fixed;inset:0;z-index:80;color:var(--text);
+  position:fixed;top:var(--vv-top,0px);left:0;right:0;height:var(--app-height,100dvh);width:100%;z-index:80;color:var(--text);
   font-family:Lexend,system-ui,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.45;
   display:flex;flex-direction:column;overflow:hidden;background:#07040D;
 }
@@ -180,7 +180,7 @@
 .wterm .locked p{color:var(--soft);font-size:13.5px;margin:10px 0 0;position:relative;z-index:1}
 
 .wterm .dock{position:relative;flex:none;z-index:5;
-  border-radius:22px 22px 0 0;padding:10px 16px max(14px, env(safe-area-inset-bottom));
+  border-radius:22px 22px 0 0;padding:10px 16px max(8px, calc(max(14px, env(safe-area-inset-bottom)) - var(--kb-inset, 0px)));
   background:linear-gradient(180deg,rgba(36,14,58,.92) 0%,rgba(16,6,28,.95) 100%);
   border:1px solid rgba(160,110,230,.28);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 -16px 32px rgba(0,0,0,.45);
@@ -628,7 +628,7 @@
 .wterm .sf-pylink button b{color:#E7D2FF;font-weight:500}
 .wterm .sf-back-fix{display:inline-flex;align-items:center;gap:6px;margin:0 0 8px;min-height:40px;padding:0 14px;border-radius:12px;cursor:pointer;
   font:500 13.5px Lexend,sans-serif;color:var(--text);background:rgba(40,16,64,.55);border:1px solid rgba(252,188,126,.45)}
-.wterm .sf-preview{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;background:#07040D}
+.wterm .sf-preview{position:fixed;top:var(--vv-top,0px);left:0;right:0;height:var(--app-height,100dvh);width:100%;z-index:200;display:flex;flex-direction:column;background:#07040D}
 .wterm .sf-preview-bar{display:flex;align-items:center;gap:10px;flex:none;padding:10px 12px;padding-top:max(10px,env(safe-area-inset-top));
   background:linear-gradient(180deg,rgba(40,16,64,.95),rgba(18,8,32,.95));border-bottom:1px solid rgba(252,188,126,.45)}
 .wterm .sf-back{min-height:48px;padding:0 18px;border-radius:14px;cursor:pointer;font:500 16px Lexend,sans-serif;color:#fff;border:0;
