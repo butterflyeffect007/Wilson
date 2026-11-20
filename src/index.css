@@ -374,7 +374,13 @@ em, i { font-style: normal; font-weight: 400; }
 .msg-wilson, .msg-user { font-size: 17px !important; line-height: 1.6 !important; }
 
 /* Interactive orb */
-.wilson-orb-shell[data-interactive] { cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.wilson-orb-shell[data-interactive], .wilson-orb-size-lg, .wl-call-orb { cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* Flick-spin wrapper + soft-light shimmer (opacity 0 at rest so the look is unchanged). */
+.wl-orb-sheen { position: absolute; inset: -6%; border-radius: 9999px; pointer-events: none; opacity: 0; mix-blend-mode: normal;
+  background: conic-gradient(from 0deg, rgba(56,178,218,.9), rgba(209,59,178,.9), rgba(252,188,126,.9), rgba(110,33,176,.9), rgba(56,178,218,.9)); }
+.wl-orb-caustic { position: absolute; inset: 4%; border-radius: 9999px; pointer-events: none; opacity: 0; mix-blend-mode: normal;
+  background: radial-gradient(40% 30% at 35% 30%, rgba(255,255,255,.9), transparent 70%); }
+@media (prefers-reduced-motion: reduce) { .wl-orb-sheen, .wl-orb-caustic { opacity: 0 !important; } }
 .wl-orb-highlight { position: absolute; top: 12%; left: 22%; width: 34%; height: 24%; border-radius: 50%; pointer-events: none;
   background: radial-gradient(ellipse, rgba(255,255,255,.75), rgba(255,255,255,0) 70%); filter: blur(2px); transition: transform 120ms ease-out; mix-blend-mode: screen; }
 .wilson-fluid { transition: transform 120ms ease-out; }
@@ -436,7 +442,7 @@ html.dark .glass, html.dark .glass-strong, html.dark .msg-wilson, html.dark .msg
 
 .wl-orb-img { background: var(--wl-orb-url) center / 100% 100% no-repeat !important; clip-path: none !important; box-shadow: none !important;
   mix-blend-mode: var(--wl-blend); animation: wl-orb-breathe 9s ease-in-out infinite !important; border-radius: 0 !important; overflow: visible !important; inset: -9% !important; }
-@keyframes wl-orb-breathe { 0%,100% { transform: scale(var(--wilson-amp-scale)) rotate(-2deg); } 50% { transform: scale(calc(var(--wilson-amp-scale) * 1.02)) rotate(2deg); } }
+@keyframes wl-orb-breathe { 0%,100% { transform: scale(var(--wilson-amp-scale)) rotate(calc(-2deg + var(--wl-spin, 0deg))); } 50% { transform: scale(calc(var(--wilson-amp-scale) * 1.02)) rotate(calc(2deg + var(--wl-spin, 0deg))); } }
 .wl-orb-highlight { top: 8%; left: 20%; width: 30%; height: 20%; opacity: .7; }
 html.dark .wl-orb-highlight { opacity: .35; }
 .wl-orb-ring { position: absolute; inset: -12%; border-radius: 9999px; pointer-events: none;
@@ -476,7 +482,7 @@ html:not(.dark) .wl-bgimg::after { content: ""; position: absolute; inset: 0; ba
 .wl-orb-img { filter: drop-shadow(0 0 calc(10px + var(--wilson-amp-glow) * 22px) var(--wl-mood, rgba(196,160,255,.55))) !important; }
 .wl-orb-ring { box-shadow: 0 0 14px var(--wl-mood, rgba(200,170,255,.35)) !important; }
 .wilson-orb-shell--thinking .wl-orb-img { animation: wl-orb-think 2.8s ease-in-out infinite !important; }
-@keyframes wl-orb-think { 0%,100% { transform: scale(1) rotate(-1deg); opacity: .96; } 50% { transform: scale(1.035) rotate(1.5deg); opacity: 1; } }
+@keyframes wl-orb-think { 0%,100% { transform: scale(1) rotate(calc(-1deg + var(--wl-spin, 0deg))); opacity: .96; } 50% { transform: scale(1.035) rotate(calc(1.5deg + var(--wl-spin, 0deg))); opacity: 1; } }
 .wilson-orb-shimmer { background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.35) 50%, transparent 80%) !important; border-radius: 9999px; mix-blend-mode: soft-light; }
 
 /* Echo audio requested, not playing yet: soft breathing halo ("getting ready to speak") */
@@ -933,7 +939,7 @@ html.dark .wl-call {
 }
 .wl-call-title { font-size: 15px; font-weight: 500; letter-spacing: .04em; color: #7e22ce; }
 html.dark .wl-call-title { color: #fcd38a; }
-.wl-call-orb { border-radius: 9999px; background: none; border: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+.wl-call-orb { border-radius: 9999px; background: none; border: 0; padding: 0; -webkit-tap-highlight-color: transparent; touch-action: none; }
 .wl-call-status { font-size: 24px; font-weight: 400; line-height: 1.3; color: #4c1d95; }
 html.dark .wl-call-status { color: #f5e1ff; text-shadow: 0 0 18px rgba(217,70,239,.45); }
 .wl-call-heard { margin-top: .75rem; font-size: 17px; line-height: 1.55; font-weight: 300; color: #5b21b6; overflow-wrap: anywhere; max-height: 9.5rem; overflow-y: auto; }
