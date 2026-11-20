@@ -45,7 +45,7 @@ export function MessageArchitect({ user, onClose, context }: { user: AcctUser | 
         </>}
         <label className="lbl" htmlFor="wa-mb">Message</label>
         <div className="field"><textarea id="wa-mb" value={body} onChange={(e) => setBody(e.target.value)} maxLength={2000} style={{ minHeight: 150 }} /></div>
-        {user && context && <div className="row small soft" style={{ marginTop: 12 }}><span style={{ transform: "scale(.8)", display: "inline-flex" }}><Toggle on={attach} onChange={setAttach} label="Attach the last few lines of my chat" /></span>Attach the last few lines of my chat for context</div>}
+        {user && context && <div className="row small soft" style={{ marginTop: 12, gap: 10, alignItems: "center" }}><Toggle on={attach} onChange={setAttach} label="Attach the last few lines of my chat for context" /></div>}
         {err && <div className="err" role="alert">{err}</div>}
         {sent && <div className="okmsg" role="status">Sent ✓ {user ? "Replies show up below and in your Wilson inbox." : "Jenny will reach out if you left a way to contact you."}</div>}
         <button type="submit" className="btn" disabled={busy}>{busy ? "Sending…" : "Send to the Architect ➤"}</button>
