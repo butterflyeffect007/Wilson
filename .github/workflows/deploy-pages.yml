@@ -31,7 +31,7 @@ jobs:
           ls -la src/assets/wilson-fluid.png
 
       - name: Install
-        run: npm install
+        run: npm install --onnxruntime-node-install-cuda=skip
 
       - name: Build
         run: npm run build
