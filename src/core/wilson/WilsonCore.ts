@@ -23,6 +23,7 @@ import type {
 } from "./WilsonTypes";
 import { WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES, buildAddresseeContext } from "./WilsonIdentity";
 import type { ModelRequest } from "../../intelligence/ModelRequest";
+import { SPOKEN_CALL_NOTE } from "../../lib/callMode";
 
 /** Per-turn context the Interface hands to the Core. */
 export interface TurnContext {
@@ -45,6 +46,8 @@ export interface TurnContext {
   anchor?: { vision: string; weave: boolean } | null;
   /** Current local interface diagnostics used for evidence-based troubleshooting. */
   runtimeStatus?: string;
+  /** True during a "Talk with Wilson" voice call: replies are spoken, so keep them conversational and plain. */
+  spokenCall?: boolean;
 }
 
 /** Builds Wilson's one system prompt: identity + principles + turn context. */
@@ -93,6 +96,7 @@ export function buildSystemContext(ctx: TurnContext = {}): string {
   }
   if (ctx.speakerName) parts.push(`[Voice recognition] The person speaking right now is ${ctx.speakerName}. Address them by name naturally.`);
   if (ctx.emotion) parts.push(`[INTERNAL ONLY — never mention, quote, or announce this] Tone heard in their voice: ${ctx.emotion.tag}. Guidance: ${ctx.emotion.guidance} Embody it naturally; do not say anything about tone, voice, or these instructions.`);
+  if (ctx.spokenCall) parts.push(SPOKEN_CALL_NOTE);
   let out = parts.join("\n\n");
   if (ctx.tools) out += ctx.tools;
   return out;

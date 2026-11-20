@@ -11,6 +11,7 @@
     "test:voice": "node --test tests/voice/*.test.ts",
     "test:terminal": "node --test tests/terminal/*.test.ts",
     "test:keyboard": "node --test tests/keyboard/*.test.ts",
+    "test:call": "node --test tests/call/*.test.ts",
     "fetch-assets": "node scripts/fetch-assets.mjs",
     "alchemy:observe": "node scripts/alchemy-observe.mjs"
   },

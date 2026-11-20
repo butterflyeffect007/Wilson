@@ -889,3 +889,64 @@ html.dark input::placeholder { color: rgba(232, 214, 255, .6); }
 button[class*="from-violet-500"][class*="via-fuchsia-500"][class*="to-cyan-500"] { background-image: linear-gradient(90deg, #6E21B0 0%, #A92FB8 55%, #C2367A 100%) !important; }
 /* Small rose text links (e.g. "Clear all") on light glass */
 html:not(.dark) button[class~="text-rose-500"] { color: #BE123C !important; }
+
+/* ---------- Talk with Wilson (hands-free call) ---------- */
+.wl-talk-btn {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+  min-height: 40px; padding: .5rem 1.15rem;
+  border-radius: 9999px;
+  font-family: Lexend, system-ui, sans-serif; font-size: 14px; font-weight: 500; letter-spacing: .01em;
+  color: #4c1d95;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.78), rgba(245,236,255,.66)) padding-box,
+    linear-gradient(100deg, #e879f9, #8b5cf6 52%, #fbbf6a) border-box;
+  border: 1.5px solid transparent;
+  box-shadow: 0 4px 18px -6px rgba(168,85,247,.45);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+.wl-talk-btn:active { transform: scale(.97); }
+.wl-talk-btn svg { color: #c026d3; }
+html.dark .wl-talk-btn {
+  color: #fcd38a;
+  background:
+    linear-gradient(180deg, rgba(58,20,92,.72), rgba(18,8,38,.78)) padding-box,
+    linear-gradient(100deg, #e879f9, #8b5cf6 52%, #fbbf6a) border-box;
+  box-shadow: 0 0 18px -4px rgba(217,70,239,.5), inset 0 1px 0 rgba(252,188,126,.18);
+}
+html.dark .wl-talk-btn svg { color: #f0abfc; }
+
+.wl-call {
+  font-family: Lexend, system-ui, sans-serif;
+  background:
+    radial-gradient(80% 55% at 50% 42%, rgba(217,70,239,.16), rgba(217,70,239,0) 70%),
+    linear-gradient(180deg, rgba(250,245,255,.94), rgba(240,230,255,.96));
+  -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px);
+  color: #3b0764;
+}
+html.dark .wl-call {
+  background:
+    radial-gradient(80% 55% at 50% 42%, rgba(168,85,247,.28), rgba(168,85,247,0) 70%),
+    linear-gradient(180deg, rgba(14,6,32,.95), rgba(6,2,16,.97));
+  color: #f3e8ff;
+}
+.wl-call-title { font-size: 15px; font-weight: 500; letter-spacing: .04em; color: #7e22ce; }
+html.dark .wl-call-title { color: #fcd38a; }
+.wl-call-orb { border-radius: 9999px; background: none; border: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+.wl-call-status { font-size: 24px; font-weight: 400; line-height: 1.3; color: #4c1d95; }
+html.dark .wl-call-status { color: #f5e1ff; text-shadow: 0 0 18px rgba(217,70,239,.45); }
+.wl-call-heard { margin-top: .75rem; font-size: 17px; line-height: 1.55; font-weight: 300; color: #5b21b6; overflow-wrap: anywhere; max-height: 9.5rem; overflow-y: auto; }
+html.dark .wl-call-heard { color: #e9d5ff; }
+.wl-call-hint { margin-top: .6rem; font-size: 13px; font-weight: 300; color: rgba(91,33,182,.75); }
+html.dark .wl-call-hint { color: rgba(233,213,255,.7); }
+.wl-call-end {
+  display: inline-flex; align-items: center; justify-content: center; gap: .65rem;
+  width: min(100%, 22rem); min-height: 64px; border-radius: 9999px; border: 0;
+  font-family: Lexend, system-ui, sans-serif; font-size: 20px; font-weight: 600; letter-spacing: .01em;
+  color: #3a0618;
+  background: linear-gradient(100deg, #fb7185, #f472b6 50%, #fcd38a);
+  box-shadow: 0 10px 30px -8px rgba(244,63,94,.6);
+  transition: transform .15s ease;
+}
+.wl-call-end:active { transform: scale(.97); }
