@@ -672,7 +672,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
               </button>
             </div>
           )}
-          <div className="msgs" id="wterm-msgs" data-testid="terminal-msgs">
+          <div className="msgs" id="wterm-msgs" data-testid="terminal-msgs" data-chat-scroller>
             {chat.map((m) => (
               <div className={`msg${m.role === "user" ? " me" : ""}`} key={m.id}>
                 {m.role === "wilson"

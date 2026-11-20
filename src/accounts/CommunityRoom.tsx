@@ -73,7 +73,7 @@ export function CommunityRoom({ user, onClose }: { user: AcctUser | null; onClos
 
   const msgs = d?.messages ?? [];
   return (
-    <div className="wrap wide" style={{ paddingBottom: 0 }}>
+    <div className="wrap wide" style={{ paddingBottom: 0 }} data-chat-root>
       <Top right={arch ? <span className="pill arch">🛡 Architect view</span> : undefined} onClose={onClose} />
       <div className="chathead">
         <div style={{ fontSize: 22 }}>💬</div>
@@ -126,7 +126,7 @@ export function CommunityRoom({ user, onClose }: { user: AcctUser | null; onClos
         );
       })}
       <div ref={endRef} />
-      {msgs.length < 5 && <div aria-hidden style={{ minHeight: "max(0px, calc(100dvh - 560px))" }} />}
+      {msgs.length < 5 && <div aria-hidden style={{ minHeight: "max(0px, calc(var(--app-height, 100dvh) - 560px))" }} />}
       {note && <div className="okmsg" role="status" style={{ textAlign: "center" }}>{note}</div>}
       {err && <div className="err" role="alert" style={{ textAlign: "center" }}>{err}</div>}
       {d?.me.blocked ? (

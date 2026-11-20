@@ -28,8 +28,8 @@ export default function Organizer({ tab, onTab, onClose }: { tab: OrgTab; onTab:
     <button type="button" onClick={() => onTab(t)} className={`flex-1 py-2 text-[14px] rounded-xl ${tab === t ? "bg-white/70 text-violet-900 shadow-sm" : "text-violet-600/70"}`}>{label}</button>
   );
   return (
-    <div className="fixed inset-0 z-[55] flex flex-col bg-violet-950/10" role="dialog" aria-modal="true" aria-label={tab === "notes" ? "Notes" : "Reminders"} onClick={onClose}>
-      <div className="mt-auto w-full max-w-lg mx-auto glass-strong rounded-t-3xl flex flex-col max-h-[88dvh] pb-[max(1rem,env(safe-area-inset-bottom))]" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed top-[var(--vv-top,0px)] left-0 right-0 h-[var(--app-height,100dvh)] w-full z-[55] flex flex-col bg-violet-950/10" role="dialog" aria-modal="true" aria-label={tab === "notes" ? "Notes" : "Reminders"} onClick={onClose}>
+      <div className="mt-auto w-full max-w-lg mx-auto glass-strong rounded-t-3xl flex flex-col max-h-[calc(var(--app-height,100dvh)*0.88)] pb-[max(0.5rem,calc(max(1rem,env(safe-area-inset-bottom))-var(--kb-inset,0px)))]" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-4">
           <button type="button" onClick={onClose} aria-label="Back to Wilson" data-testid="org-back" className="inline-flex items-center justify-center gap-1 min-h-11 min-w-11 px-3 rounded-full text-[14px] font-medium tracking-wide text-violet-950/90 touch-manipulation">
             <span aria-hidden="true">‹</span><span>Wilson</span>

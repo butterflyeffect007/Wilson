@@ -10,6 +10,7 @@
     "test:copy": "node --test tests/copy/*.test.ts",
     "test:voice": "node --test tests/voice/*.test.ts",
     "test:terminal": "node --test tests/terminal/*.test.ts",
+    "test:keyboard": "node --test tests/keyboard/*.test.ts",
     "fetch-assets": "node scripts/fetch-assets.mjs",
     "alchemy:observe": "node scripts/alchemy-observe.mjs"
   },

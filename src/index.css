@@ -10,6 +10,10 @@
   --wilson-amp-aberration: 0px;
   --wilson-parallax-x: 0px;
   --wilson-parallax-y: 0px;
+  /* Visual viewport: JS fills these; 100dvh is the pre-JS / desktop fallback. Never use 100vh on iOS. */
+  --app-height: 100dvh;
+  --vv-top: 0px;
+  --kb-inset: 0px;
 }
 
 * {
@@ -22,7 +26,7 @@ html {
 
 body {
   margin: 0;
-  min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
   font-family: "Lexend", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   background: linear-gradient(180deg, #f8f0ff 0%, #f3e8ff 35%, #e8f4ff 70%, #f0f9ff 100%);
@@ -31,7 +35,7 @@ body {
 }
 
 #root {
-  min-height: 100dvh;
+  min-height: var(--app-height, 100dvh);
 }
 
 /* Soft field particles — full-spectrum opalescent */
@@ -382,10 +386,19 @@ body.wl-scatter .wl-bfly-svg { animation: wl-scatter 1.5s ease-in-out; }
 @keyframes wl-scatter { 0%,100% { transform: translate(0,0) scale(1); } 40% { transform: translate(var(--wl-sx), var(--wl-sy)) scale(.85); } }
 @media (prefers-reduced-motion: reduce) { .wl-orb-pulse, body.wl-scatter .wl-bfly-svg { animation: none !important; } .wl-orb-highlight { transition: none; } }
 
-/* Native feel */
-html, body { overscroll-behavior: none; height: 100%; }
-body { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; position: fixed; inset: 0; overflow: hidden; }
-#root { height: 100dvh; }
+/* Native feel + iOS visual viewport (keyboard does not shrink 100vh / often not 100dvh in standalone Safari) */
+html, body { overscroll-behavior: none; width: 100%; height: 100%; overflow: hidden; }
+body { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; position: fixed; inset: 0; overflow: hidden; height: var(--app-height, 100dvh); width: 100%; }
+#root {
+  position: fixed;
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+  min-height: 0;
+}
 header, button, nav, aside, .wl-chrome, [role="button"] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .msg-wilson, .msg-user, textarea, input { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 header { padding-top: max(1.25rem, env(safe-area-inset-top)) !important; padding-left: max(1rem, env(safe-area-inset-left)) !important; padding-right: max(1rem, env(safe-area-inset-right)) !important; }
@@ -500,7 +513,7 @@ html.dark .user-avatar {
 }
 /* No browser feel on iPhone: no rubber-band, no tap flash */
 html, body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; }
-body { min-height: 100dvh; }
+body { min-height: var(--app-height, 100dvh); }
 
 /* Chat-view butterflies: small, faint, at the edges, behind content (transform/opacity only for perf) */
 .wl-bfly-mini { position: absolute; opacity: .32; will-change: transform; animation: wl-mini-drift 28s ease-in-out infinite alternate; filter: var(--wl-bfly-glow); }
