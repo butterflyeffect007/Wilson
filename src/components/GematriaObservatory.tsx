@@ -108,7 +108,7 @@ export default function GematriaObservatory({ onClose }: { onClose: () => void }
       setNotice("Looking up matching phrases from gematrix.org…");
       try {
         lastNetworkAt.current = Date.now();
-        const found = await fetchGematrixMatches(phrase, controller.signal, IMPORT_ENDPOINT);
+        const found = await fetchGematrixMatches(phrase, controller.signal, IMPORT_ENDPOINT, cipherId);
         if (controller.signal.aborted) return;
         cacheRef.current.set(key, found);
         const added = applyImported(found);
