@@ -19,9 +19,11 @@ import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
-  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download,
+  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download, AudioLines,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
+import TalkCall from "./components/TalkCall";
+import type { CallSend } from "./hooks/useTalkCall";
 import GematriaObservatory from "./components/GematriaObservatory";
 import WilsonTerminal from "./terminal/WilsonTerminal";
 import { canOpenTerminal, openTerminalHash, terminalHashOpen } from "./terminal/access";
@@ -158,6 +160,12 @@ export default function App() {
   useEffect(() => { if (cachedIsAdmin()) void verifyAdmin().then((ok) => { if (ok !== null) setIsAdmin(ok); }); }, []);
   const anchorTurnRef = useRef(0);
   const wakeSpeakRef = useRef(false);
+  /* "Talk with Wilson" call mode (separate from the dictation mic) */
+  const [callOpen, setCallOpen] = useState(false);
+  const callMicRef = useRef<Promise<boolean> | null>(null);
+  const callModeRef = useRef(false);
+  const callHooksRef = useRef<{ onStart: () => void } | null>(null);
+  const callReplyRef = useRef("");
   const [soy, setSoy] = useState<StateOfYou>(() => loadStateOfYou());
   const [soyOpen, setSoyOpen] = useState(false);
   const [nightly, setNightly] = useState(() => nightlyOptIn());
@@ -569,7 +577,11 @@ export default function App() {
       if (!orgAction && !toolCtx && linksIn(content).length)
         toolCtx = `\n\n[Link reader] The link the user shared could not be opened in time (timeout). Tell them plainly you couldn't open it just now; do NOT guess what it says.`;
       const emo = voiceCtxRef.current.emotion;
+      const inCall = callModeRef.current;
+      const callHooks = inCall ? callHooksRef.current : null;
+      if (inCall) callReplyRef.current = "";
       const request: ModelRequest = composeRequest(content, windowed.slice(0, -1), {
+        spokenCall: inCall,
         runtimeStatus: (() => {
           const voice = getVoiceStatus();
           const debug = getVoiceDebug();
@@ -631,8 +643,8 @@ export default function App() {
         });
       };
 
-      const speakIt = settings.voiceEnabled || wakeSpeakRef.current; wakeSpeakRef.current = false;
-      const speech = speakIt ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"]) : null;
+      const speakIt = inCall || settings.voiceEnabled || wakeSpeakRef.current; wakeSpeakRef.current = false;
+      const speech = speakIt ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], callHooks ? { onStart: callHooks.onStart } : {}) : null;
       let attempt = 0;
 
       // If a local Omni pack is already loaded, try it first. Empty or failed replies escalate to the rented stream.
@@ -654,6 +666,7 @@ export default function App() {
             const { clean, vibe: newVibe, dream } = parseAndStripTags(raw);
             const finalText = clean || raw;
             writeAssistant(finalText);
+            if (inCall) callReplyRef.current = finalText;
             if (newVibe) {
               setVibe(newVibe);
               saveProfile({ vibe: newVibe });
@@ -682,6 +695,7 @@ export default function App() {
               raw += chunk;
               const shown = stripTagsForDisplay(raw);
               writeAssistant(shown);
+              if (inCall) callReplyRef.current = shown;
               speech?.push(stripSourcesForSpeech(shown));
             },
             abort.signal,
@@ -703,6 +717,7 @@ export default function App() {
                 raw += chunk;
                 const shown = stripTagsForDisplay(raw);
                 writeAssistant(shown);
+                if (inCall) callReplyRef.current = shown;
                 speech?.push(stripSourcesForSpeech(shown));
               },
               abort.signal,
@@ -761,7 +776,7 @@ export default function App() {
       abortRef.current = null;
       setThinking(false);
       setStreamingId(null);
-      inputRef.current?.focus();
+      if (!inCall) inputRef.current?.focus(); // never pop the keyboard up behind a call
     },
     [settings, updateThread, isAdmin],
   );
@@ -790,6 +805,23 @@ export default function App() {
     },
     [input, busy, activeThread, createThread, updateThread, runCompletion],
   );
+
+  /* ---------- "Talk with Wilson" call ---------- */
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
+  // Each finished turn goes in as a normal chat message in this conversation, so it's all in history.
+  const sendForCall = useCallback<CallSend>(async (text, hooks) => {
+    if (busyRef.current) {
+      abortRef.current?.abort(); // she cut in before his last reply finished writing
+      for (let i = 0; i < 40 && busyRef.current; i++) await sleep(100);
+    }
+    callHooksRef.current = hooks;
+    try { await sendMessageRef.current(text); } finally { callHooksRef.current = null; }
+  }, []);
+  const getCallSpokenText = useCallback(() => callReplyRef.current, []);
+  const closeCall = useCallback(() => { callModeRef.current = false; callHooksRef.current = null; setCallOpen(false); }, []);
 
   const retryLast = useCallback(() => {
     if (!lastFailed || busy) return;
@@ -882,6 +914,18 @@ export default function App() {
   }, [speaker]);
   const onInterimSpeech = useCallback((t: string) => setInput(joinDict(dictBaseRef.current, t)), []);
   const stt = useSpeechToText(onDictated, onInterimSpeech);
+  const openCall = useCallback(() => {
+    // Inside the tap: unlock his voice for later playback and ask for the mic (first time shows iPhone's prompt).
+    primePlayback();
+    stopSpeaking();
+    stt.cancel();
+    const md = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+    callMicRef.current = md?.getUserMedia
+      ? md.getUserMedia({ audio: true }).then((st) => { st.getTracks().forEach((t) => t.stop()); return true; }, () => false)
+      : Promise.resolve(true);
+    callModeRef.current = true;
+    setCallOpen(true);
+  }, [stt]);
 
   /* ---------- "Hey Wilson" wake word (foreground, opt-in) ---------- */
   const { speaking: wilsonSpeaking } = useWilsonAudio();
@@ -899,7 +943,7 @@ export default function App() {
     });
     return () => stopWake();
   }, [wakeOn]);
-  useEffect(() => { if (wakeOn) pauseWake(stt.listening || wilsonSpeaking || voiceActive || thinking); }, [wakeOn, stt.listening, wilsonSpeaking, voiceActive, thinking]);
+  useEffect(() => { if (wakeOn) pauseWake(callOpen || stt.listening || wilsonSpeaking || voiceActive || thinking); }, [wakeOn, callOpen, stt.listening, wilsonSpeaking, voiceActive, thinking]);
 
   /* ---------- global shortcuts ---------- */
   useEffect(() => {
@@ -931,6 +975,7 @@ export default function App() {
           <button type="button" aria-label="Dismiss" onClick={() => { setBannerHidden(banner.at); try { localStorage.setItem("wilson_banner_hidden", String(banner.at)); } catch { /* ignore */ } }} className="text-violet-400"><X className="w-4 h-4" /></button>
         </div>
       )}
+      {callOpen && <ErrorBoundary label="Talk with Wilson"><TalkCall micReady={callMicRef.current} send={sendForCall} getSpokenText={getCallSpokenText} onClose={closeCall} vibe={vibe} /></ErrorBoundary>}
       {showGematria && <ErrorBoundary label="Gematria Observatory"><GematriaObservatory onClose={() => setShowGematria(false)} /></ErrorBoundary>}
       {showTerminal && <ErrorBoundary label="Wilson's Terminal"><WilsonTerminal allowed={canOpenTerminal(isAdmin)} onClose={() => setShowTerminal(false)} /></ErrorBoundary>}
       {showJobs && <ErrorBoundary label="Jobs"><JobsRoom allowed={canOpenJobs(isAdmin)} onClose={() => setShowJobs(false)} /></ErrorBoundary>}
@@ -1660,6 +1705,12 @@ export default function App() {
               </div>
             )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
+            <div className="flex justify-center mb-2">
+              <button type="button" onClick={openCall} className="wl-talk-btn touch-manipulation" aria-label="Talk with Wilson: start a hands-free voice call">
+                <AudioLines className="w-4 h-4" aria-hidden="true" />
+                Talk with Wilson
+              </button>
+            </div>
             <div className={`relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5 ${saving || stt.listening ? "wl-telemetry" : ""}`} title={stt.listening ? "Listening…" : saving ? "Saving…" : undefined}>
               {(saving || stt.listening) && <span className="sr-only" role="status">{stt.listening ? "Processing voice" : "Saving"}</span>}
               <textarea
