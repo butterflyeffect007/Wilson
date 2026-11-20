@@ -42,17 +42,36 @@ export default function OraclePanel() {
     if ((!q && !photo) || busy) return;
     setBusy(true);
     if (!text) setDraft("");
-    const architect = cachedIsAdmin() || isE2EArchitect();
-    const turn = await runOracle(q || "Look at this photo.", {
-      architect,
-      speakerId: "architect",
-      image: photo?.file || null,
-    });
-    setLog((rows) => [...rows, { q: q || `(photo: ${photo?.name || "image"})`, turn }]);
-    setPhoto(null);
-    setBusy(false);
-    if (turn.reply && !turn.stopped && (getPuckState() === "ready" || puckReady)) {
-      try { speakMessage(turn.reply); } catch { /* voice is optional */ }
+    try {
+      const architect = cachedIsAdmin() || isE2EArchitect();
+      const turn = await runOracle(q || "Look at this photo.", {
+        architect,
+        speakerId: "architect",
+        image: photo?.file || null,
+      });
+      setLog((rows) => [...rows, { q: q || `(photo: ${photo?.name || "image"})`, turn }]);
+      setPhoto(null);
+      if (turn.reply && !turn.stopped && (getPuckState() === "ready" || puckReady)) {
+        try { speakMessage(turn.reply); } catch { /* voice is optional */ }
+      }
+    } catch {
+      setLog((rows) => [...rows, {
+        q: q || `(photo: ${photo?.name || "image"})`,
+        turn: {
+          reply: "That question didn't finish, so Wilson will keep using his usual cloud brain. Try again in a moment.",
+          brain: "stopped",
+          modelId: "",
+          escalated: false,
+          stopped: true,
+          planner: "none",
+          worker: [],
+          oracle: [],
+          sources: [],
+          used: [],
+        },
+      }]);
+    } finally {
+      setBusy(false);
     }
   };
 

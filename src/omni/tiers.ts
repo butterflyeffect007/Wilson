@@ -111,9 +111,45 @@ export function harvestInterruptedLoad(): OmniTierId | null {
  * No WebGPU → rented. Otherwise phone/tablet → Qwen, unless that tier previously
  * crashed, then the floor, then rented. Capable desktop-class devices get E2B.
  */
+export function isPhoneLike(caps: Pick<OmniCaps, "mobile" | "ios" | "deviceMemoryGB">): boolean {
+  return !!(caps.mobile || caps.ios || (caps.deviceMemoryGB != null && caps.deviceMemoryGB <= 4));
+}
+
+/** The 2.5 GB Gemma pack can get an iPhone tab killed. Never start it on a phone. */
+export function canStartTier(id: OmniTierId, caps: OmniCaps): boolean {
+  if (id === "e2b" && isPhoneLike(caps)) return false;
+  if (id !== "rented" && !caps.webgpu) return false;
+  return true;
+}
+
+export function skipTierMessage(id: OmniTierId, caps: OmniCaps): string {
+  if (id === "e2b" && isPhoneLike(caps)) {
+    return "This pack is too large for this phone, so it wasn't started. Wilson can use the smaller on-device pack, or his usual cloud brain — both still work.";
+  }
+  if (id !== "rented" && !caps.webgpu) {
+    return "This pack needs WebGPU, which this browser doesn't have. Wilson will keep using his usual cloud brain.";
+  }
+  return "This pack can't run on this device. Wilson will keep using his usual cloud brain.";
+}
+
+/** Soften mid-load tab-kill wording, especially after Gemma 4 on an iPhone. */
+export function calmTierError(id: OmniTierId, caps: OmniCaps | null, raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  if (id === "e2b" && caps && isPhoneLike(caps)) return skipTierMessage(id, caps);
+  if (/tab closed or was killed/i.test(raw) || /memory limit/i.test(raw)) {
+    return "The last download didn't finish on this phone, so Wilson skipped it. His usual cloud brain still works.";
+  }
+  return raw;
+}
+
+export function isSoftTierNote(blocked: boolean, note: string | null): boolean {
+  if (blocked || !note) return true;
+  return /usual cloud brain|wasn't started|didn't finish on this phone/i.test(note);
+}
+
 export function autoPickTier(caps: OmniCaps, crashes: CrashMap = readCrashMap()): OmniTierId {
   const skip = (id: OmniTierId) => !!crashes[id];
-  const phoneLike = caps.mobile || caps.ios || (caps.deviceMemoryGB != null && caps.deviceMemoryGB <= 4);
+  const phoneLike = isPhoneLike(caps);
   if (!caps.webgpu) return "rented";
   if (phoneLike) {
     if (!skip("phone")) return "phone";
@@ -128,7 +164,7 @@ export function autoPickTier(caps: OmniCaps, crashes: CrashMap = readCrashMap())
 
 export function pickReason(tier: OmniTierId, caps: OmniCaps, crashes: CrashMap): string {
   if (tier === "rented" && !caps.webgpu) return "No WebGPU on this browser, so the rented brain is the one that can actually answer.";
-  if (tier === "phone" && (caps.mobile || caps.ios)) return "This looks like a phone. The large Gemma pack can get an iPhone (and many Android browsers) killed for memory, so Wilson starts with the small Qwen pack.";
+  if (tier === "phone" && (caps.mobile || caps.ios)) return "This looks like a phone. The large Gemma pack is too big for iPhone, so Wilson starts with the small Qwen pack.";
   if (tier === "e2b") return "This looks like a capable device with WebGPU, so the Gemma 4 E2B pack is the auto-pick. You can still test the smaller packs.";
   if (tier === "floor") return crashes.phone
     ? "The phone pack did not finish last time, so the floor model is the auto-pick."

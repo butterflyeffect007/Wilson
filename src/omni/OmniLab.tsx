@@ -4,10 +4,14 @@ import { describeCaps, probeOmniCaps, type OmniCaps } from "./caps";
 import { followUpChat, loadedPack, PERSONA_TEST_PROMPT, runTierTest, type OmniTestResult, type TestProgress } from "./engine";
 import {
   autoPickTier,
+  calmTierError,
+  canStartTier,
   harvestInterruptedLoad,
   OMNI_TIERS,
   pickReason,
   readCrashMap,
+  isSoftTierNote,
+  skipTierMessage,
   type CrashMap,
   type OmniTierId,
 } from "./tiers";
@@ -48,6 +52,21 @@ export default function OmniLab({ allowed, onClose }: Props) {
     try {
       const res = await runTierTest(tier, caps, setProgress);
       setResults((s) => ({ ...s, [id]: res }));
+      setCrashes(readCrashMap());
+    } catch {
+      setResults((s) => ({
+        ...s,
+        [id]: {
+          ok: false,
+          tierId: id,
+          modelId: "",
+          loadMs: null,
+          tokensPerSec: null,
+          completionTokens: null,
+          reply: "",
+          error: "That test didn't finish, so Wilson will keep using his usual cloud brain.",
+        },
+      }));
       setCrashes(readCrashMap());
     } finally {
       setBusyId(null);
@@ -112,7 +131,10 @@ export default function OmniLab({ allowed, onClose }: Props) {
             const crashed = crashes[tier.id];
             const isPick = picked === tier.id;
             const busy = busyId === tier.id;
-            const status = busy ? "running" : res ? (res.ok ? "ok" : "failed") : crashed ? "failed" : "idle";
+            const blocked = caps ? !canStartTier(tier.id, caps) : false;
+            const status = busy ? "running" : res ? (res.ok ? "ok" : "failed") : blocked ? "idle" : crashed ? "failed" : "idle";
+            const note = calmTierError(tier.id, caps, res?.error || (!res && !blocked ? crashed : null))
+              || (blocked && caps ? skipTierMessage(tier.id, caps) : null);
             return (
               <article className={`card${isPick ? " is-pick" : ""}`} key={tier.id} data-testid={`omni-tier-${tier.id}`} data-pick={isPick ? "1" : "0"}>
                 <div className="pills">
@@ -137,14 +159,15 @@ export default function OmniLab({ allowed, onClose }: Props) {
                 )}
                 {busy && progress && <p className="meta">{progress.text}</p>}
                 {res?.reply && <div className="reply" data-testid={`omni-reply-${tier.id}`}>{res.reply}</div>}
-                {(res?.error || (!res && crashed)) && <p className="fail">{res?.error || crashed}</p>}
+                {note && <p className={isSoftTierNote(blocked, note) ? "meta" : "fail"} data-testid={`omni-tier-note-${tier.id}`}>{note}</p>}
                 <button
                   type="button"
                   className="btn go"
-                  disabled={!!busyId}
+                  data-testid={`omni-tier-btn-${tier.id}`}
+                  disabled={!!busyId || blocked || (!caps && tier.kind !== "rented")}
                   onClick={() => void run(tier.id)}
                 >
-                  {busy ? "Testing…" : tier.kind === "rented" ? "Test rented brain" : "Download & test"}
+                  {busy ? "Testing…" : blocked ? (tier.id === "e2b" ? "Not for this phone" : "Unavailable here") : tier.kind === "rented" ? "Test rented brain" : "Download & test"}
                 </button>
               </article>
             );

@@ -7,7 +7,7 @@ import { buildSystemContext } from "../core/wilson/WilsonCore";
 import { OpenRouterAdapter } from "../intelligence/OpenRouterAdapter";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "../core/wilson/WilsonPolicy";
 import type { OmniCaps } from "./caps";
-import { beginLoadWatch, clearTierCrash, endLoadWatch, markTierCrash, type OmniTier, type OmniTierId } from "./tiers";
+import { beginLoadWatch, canStartTier, clearTierCrash, endLoadWatch, markTierCrash, skipTierMessage, type OmniTier, type OmniTierId } from "./tiers";
 
 export const WILSON_BRAIN_PROMPT = buildSystemContext({ isArchitect: true, personName: "Jenny" });
 export const PERSONA_TEST_PROMPT = "In one or two sentences, who are you?";
@@ -132,8 +132,22 @@ export async function runTierTest(
   const fail = (error: string, extra: Partial<OmniTestResult> = {}): OmniTestResult => {
     endLoadWatch();
     markTierCrash(tier.id, error);
+    if (loadedEngine?.tierId === tier.id) void unloadCurrent();
     return { ok: false, tierId: tier.id, modelId: extra.modelId || "", loadMs: extra.loadMs ?? null, tokensPerSec: null, completionTokens: null, reply: "", error };
   };
+
+  if (tier.kind !== "rented" && !canStartTier(tier.id, caps)) {
+    return {
+      ok: false,
+      tierId: tier.id,
+      modelId: "",
+      loadMs: null,
+      tokensPerSec: null,
+      completionTokens: null,
+      reply: "",
+      error: skipTierMessage(tier.id, caps),
+    };
+  }
 
   if (tier.kind === "rented") {
     onProgress({ text: "Talking to the rented Wilson brain…", progress: 0.2 });
