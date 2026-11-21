@@ -111,6 +111,8 @@ function getThreadGreeting(displayName: string, isReturning: boolean): string {
 
 function friendlyError(err: unknown): { text: string; retryable: boolean } {
   const status = err instanceof OpenRouterError ? err.status : 0;
+  // Daily usage cap from the worker: say it plainly, and don't offer an instant retry that would just bounce.
+  if (err instanceof OpenRouterError && err.code === "wilson_cap") return { text: `*${err.friendly || "We've talked a lot today, so I'm taking a short breather. Try me again in a little while."}*`, retryable: false };
   if (status === 429) return { text: "*Whew, lots of people talking at once. Give me a second and ask again.*", retryable: true };
   return { text: "*My brain's a little busy right now. Try again in a moment.*", retryable: true };
 }
