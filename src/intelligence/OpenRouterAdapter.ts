@@ -13,10 +13,16 @@ type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
 
 export class OpenRouterError extends Error {
   readonly status: number;
-  constructor(message: string, status: number) {
+  /** Set by the Wilson worker, e.g. "wilson_cap" when this visitor hit the daily usage cap. */
+  readonly code?: string;
+  /** The worker's own friendly sentence, when it sent one. */
+  readonly friendly?: string;
+  constructor(message: string, status: number, code?: string, friendly?: string) {
     super(message);
     this.name = "OpenRouterError";
     this.status = status;
+    this.code = code;
+    this.friendly = friendly;
   }
 }
 
@@ -80,16 +86,19 @@ export class OpenRouterAdapter implements ModelAdapter {
   }
 
   private async fail(response: Response): Promise<never> {
-    let detail = "";
+    let detail = "", code: string | undefined;
     try {
       const data = await response.json();
       detail = data?.error?.message ?? "";
+      code = typeof data?.error?.code === "string" ? data.error.code : undefined;
     } catch {
       /* ignore */
     }
     throw new OpenRouterError(
       `OpenRouter ${response.status}${detail ? ` — ${detail}` : ""}`,
       response.status,
+      code,
+      code === "wilson_cap" ? detail : undefined,
     );
   }
 
