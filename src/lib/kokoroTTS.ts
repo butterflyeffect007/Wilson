@@ -580,7 +580,7 @@ const PIECE_MAX = 300;
 const CONCURRENCY = 3; // pieces being voiced at once while one plays
 
 export type SpeechStream = { push: (textSoFar: string) => void; finish: (finalText: string) => void };
-export type StreamHooks = { onStart?: () => void; onEnd?: () => void };
+export type StreamHooks = { onStart?: () => void; onEnd?: () => void; beforeStart?: () => Promise<void> | void };
 let endCurrent: (() => void) | null = null;
 
 /**
@@ -605,6 +605,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     stopped: () => my !== generation,
     synth: (t, i) => synthPiece(voice, t, i, my, speed, () => gaveUp),
     play: (b) => playBlob(b, my),
+    beforeFirstPlay: hooks.beforeStart,
     onFirstPlay: () => {
       setPending(false);
       hooks.onStart?.();
