@@ -1,5 +1,5 @@
 /**
- * Wilson's voice — ONE locked voice per session (Settings → "Wilson's voice"; default Edge Andrew).
+ * Wilson's voice — ONE locked voice per session (Settings → "Wilson's voice"; default Edge Brian, Jenny's pick 2026-11-21).
  *
  *  - The locked voice speaks every piece of every reply. There is NO per-piece fallback to another voice:
  *    switching engines mid-reply is what made Wilson sound like several different people.
@@ -12,7 +12,10 @@
  *    is "On-device Puck".
  *
  * Voices (all male):
- *   edge-andrew  Edge Andrew (en-US-AndrewMultilingualNeural) via the Wilson worker /tts/edge — free, no daily cap
+ *   edge-brian   Edge Brian (en-US-BrianMultilingualNeural) via the Wilson worker /tts/edge — free, no daily cap (default)
+ *   edge-andrew  Edge Andrew (en-US-AndrewMultilingualNeural) via the same route — free, no daily cap. Also Brian's
+ *                reliable backup: if Brian can't voice the FIRST piece of a reply, that whole reply is spoken by
+ *                Andrew instead (decided before any audio plays, so a reply is still one voice start to finish).
  *   gemini       Gemini Fenrir via worker /tts/gemini-puck — free tier, daily limit
  *   aura-orion   Deepgram Aura-2 Orion via worker /tts — free tier, daily limit
  *   puck-device  On-device Kokoro (am_michael) — free/unlimited after a one-time ~92 MB download
@@ -30,16 +33,30 @@ import { ensurePuck, getPuckProgress, getPuckState, puckBlockedReason, puckCance
 import { createOrderedSpeaker, FatalVoiceError, firstSuccess, splitAtPauses, splitToLimit, takeChunks, withRetry } from "./voiceQueue";
 
 /* ---- the locked voice (one per session; changed only from Settings) ---- */
-export type VoiceId = "edge-andrew" | "gemini" | "aura-orion" | "puck-device";
+export type VoiceId = "edge-brian" | "edge-andrew" | "gemini" | "aura-orion" | "puck-device";
 export const VOICE_OPTIONS: { id: VoiceId; label: string; note: string }[] = [
-  { id: "edge-andrew", label: "Andrew", note: "Soft, warm male voice · free, no daily limit (default)" },
+  { id: "edge-brian", label: "Brian", note: "Relaxed, warm male voice · free, no daily limit (default)" },
+  { id: "edge-andrew", label: "Andrew", note: "Soft, warm male voice · free, no daily limit (Brian's backup)" },
   { id: "gemini", label: "Fenrir", note: "Google Gemini male voice · free daily limit" },
   { id: "aura-orion", label: "Orion", note: "Deepgram male voice · free daily limit" },
   { id: "puck-device", label: "Puck (on this phone)", note: "Runs on your phone · one-time ~92 MB download, can be slow on older phones" },
 ];
 const LOCK_KEY = "wilson-voice-lock";
 const isVoiceId = (v: unknown): v is VoiceId => VOICE_OPTIONS.some((o) => o.id === v);
-let lockedVoice: VoiceId = (() => { try { const v = localStorage.getItem(LOCK_KEY); return isVoiceId(v) ? v : "edge-andrew"; } catch { return "edge-andrew"; } })();
+const DEFAULT_VOICE: VoiceId = "edge-brian";
+/** One-time move of the old default (Andrew) to the new default (Brian). Runs once per device; picking
+ *  Andrew again in Settings afterwards sticks. */
+const DEFAULT_V2_KEY = "wilson-voice-default-v2";
+let lockedVoice: VoiceId = (() => {
+  try {
+    let v = localStorage.getItem(LOCK_KEY);
+    if (localStorage.getItem(DEFAULT_V2_KEY) !== "1") {
+      if (v === "edge-andrew") { v = DEFAULT_VOICE; localStorage.setItem(LOCK_KEY, v); }
+      localStorage.setItem(DEFAULT_V2_KEY, "1");
+    }
+    return isVoiceId(v) ? v : DEFAULT_VOICE;
+  } catch { return DEFAULT_VOICE; }
+})();
 const lockListeners = new Set<(v: VoiceId) => void>();
 export function getLockedVoice(): VoiceId { return lockedVoice; }
 export function voiceLabel(v: VoiceId = lockedVoice): string { return VOICE_OPTIONS.find((o) => o.id === v)?.label ?? v; }
@@ -78,8 +95,13 @@ const PROXY = (((import.meta as any).env?.VITE_WILSON_PROXY_URL as string | unde
 const SERVER_TTS_URL = PROXY + "/tts";
 const GEMINI_TTS_URL = PROXY + "/tts/gemini-puck";
 const EDGE_TTS_URL = PROXY + "/tts/edge";
-/** The comforting soft male voice Jenny likes (Microsoft's Copilot-style voice). */
-const EDGE_VOICE = "en-US-AndrewMultilingualNeural";
+/** Microsoft Edge neural voices (natural, no pitch changes). Brian is Jenny's pick; Andrew is the backup. */
+const EDGE_VOICES = { "edge-brian": "en-US-BrianMultilingualNeural", "edge-andrew": "en-US-AndrewMultilingualNeural" } as const;
+type EdgeVoiceId = keyof typeof EDGE_VOICES;
+const isEdge = (v: VoiceId): v is EdgeVoiceId => v === "edge-brian" || v === "edge-andrew";
+/** If Brian couldn't start a reply, go straight to Andrew for a few minutes instead of waiting on Brian again. */
+let brianDownUntil = 0;
+const BRIAN_REST_MS = 10 * 60 * 1000;
 const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/84TAAAAAAAAAAAAASW5mbwAAAA8AAAAFAAACoABtbW1tbW1tbW1tbW1tbW1tbW1tkpKSkpKSkpKSkpKSkpKSkpKSkpK2tra2tra2tra2tra2tra2tra2ttvb29vb29vb29vb29vb29vb29vb//////////////////////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJARQAAAAAAAAAqC9P8vrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80TEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEUwAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEpgAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=";
 let generation = 0;
 let unlocked = false;
@@ -452,15 +474,18 @@ type Engine = { id: VoiceId; type: string; timeoutMs: number; timeoutFor?: (text
 async function post(url: string, body: unknown, signal: AbortSignal) {
   return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
 }
-const ENGINES: Record<Exclude<VoiceId, "puck-device">, Engine> = {
-  "edge-andrew": {
-    // Microsoft's free endpoint currently synthesizes at roughly real time per stream (the worker splits and
-    // parallelizes), so a long piece needs a length-scaled timeout instead of a flat 14 s that killed it.
-    id: "edge-andrew", type: "audio/mpeg", timeoutMs: 14000, timeoutFor: (t) => Math.min(60000, 15000 + t.length * 70),
+/** Microsoft's free endpoint currently synthesizes at roughly real time per stream (the worker splits and
+ *  parallelizes), so a long piece needs a length-scaled timeout instead of a flat 14 s that killed it. */
+function edgeEngine(id: EdgeVoiceId, name: string): Engine {
+  return {
+    id, type: "audio/mpeg", timeoutMs: 14000, timeoutFor: (t) => Math.min(60000, 15000 + t.length * 70),
     async once(text, signal) {
-      const res = await post(EDGE_TTS_URL, { text, voice: EDGE_VOICE }, signal);
-      if (res.status === 404) throw new FatalVoiceError("Andrew isn't on the voice server (404)", "missing");
+      const res = await post(EDGE_TTS_URL, { text, voice: EDGE_VOICES[id] }, signal);
+      if (res.status === 404) throw new FatalVoiceError(`${name} isn't on the voice server (404)`, "missing");
       if (!res.ok) throw new Error("edge tts http " + res.status);
+      // The server falls back to its default voice for names it doesn't know: never accept a different voice.
+      const got = res.headers.get("X-Voice");
+      if (got && got !== EDGE_VOICES[id]) throw new FatalVoiceError(`the voice server answered with ${got}, not ${name}`, "missing");
       const blob = await res.blob();
       if (blob.size < 500) throw new Error("edge tts empty audio");
       const out = new Blob([blob], { type: "audio/mpeg" });
@@ -468,7 +493,11 @@ const ENGINES: Record<Exclude<VoiceId, "puck-device">, Engine> = {
       if (d > 0 && isFinite(d)) knownDur.set(out, d);
       return out;
     },
-  },
+  };
+}
+const ENGINES: Record<Exclude<VoiceId, "puck-device">, Engine> = {
+  "edge-brian": edgeEngine("edge-brian", "Brian"),
+  "edge-andrew": edgeEngine("edge-andrew", "Andrew"),
   gemini: {
     id: "gemini", type: "audio/wav", timeoutMs: 15000,
     async once(text, signal) {
@@ -520,9 +549,11 @@ async function requestOnce(e: Engine, text: string, my: number): Promise<Blob> {
 
 /** Retry policy: same voice, short backoff, bounded overall so a dead voice is reported instead of hanging. */
 const RETRY = { attempts: 4, backoffMs: [350, 1000, 2200], deadlineMs: 75000 };
+/** Brian's first piece gets a shorter budget so a Brian outage hands the reply to Andrew quickly. */
+const BRIAN_FIRST_TRY = { attempts: 2, backoffMs: [400], deadlineMs: 20000 };
 
 /** Voice one piece with the locked voice. Throws only after the same voice failed every retry. */
-async function synthPiece(voice: VoiceId, text: string, index: number, my: number, speed: number, gaveUp: () => boolean): Promise<Blob> {
+async function synthPiece(voice: VoiceId, text: string, index: number, my: number, speed: number, gaveUp: () => boolean, retry: typeof RETRY = RETRY): Promise<Blob> {
   const stopped = () => my !== generation || gaveUp();
   if (voice === "puck-device") {
     return withRetry(async () => {
@@ -536,14 +567,14 @@ async function synthPiece(voice: VoiceId, text: string, index: number, my: numbe
     }, { attempts: 3, backoffMs: [300, 1000], stopped, onRetry: (a, e) => dbg(`Puck retry ${a}`, e) });
   }
   const e = ENGINES[voice];
-  const keyP = clipKey(`${voice}|${voice === "edge-andrew" ? EDGE_VOICE : ""}|${text}`).catch(() => "");
+  const keyP = clipKey(`${voice}|${isEdge(voice) ? EDGE_VOICES[voice] : ""}|${text}`).catch(() => "");
   const request = (attempt: number) => {
     // Edge is uncapped: hedge the first piece and every retry with two identical requests (first back wins),
     // which cuts both the long first-byte waits and the intermittent "closed without audio" failures.
-    if (voice === "edge-andrew" && (index === 0 || attempt > 0)) return firstSuccess([requestOnce(e, text, my), requestOnce(e, text, my)]);
+    if (isEdge(voice) && (index === 0 || attempt > 0)) return firstSuccess([requestOnce(e, text, my), requestOnce(e, text, my)]);
     return requestOnce(e, text, my);
   };
-  const net = () => withRetry(request, { ...RETRY, stopped, onRetry: (a, err) => dbg(`${voiceLabel(voice)} retry ${a} for piece ${index + 1}`, err) });
+  const net = () => withRetry(request, { ...retry, stopped, onRetry: (a, err) => dbg(`${voiceLabel(voice)} retry ${a} for piece ${index + 1}`, err) });
 
   // First piece: start the TTS request immediately. A cache lookup must never delay the first words
   // (IndexedDB can take up to 350 ms on a miss). A cache hit can still win if it comes back first.
@@ -590,8 +621,29 @@ let endCurrent: (() => void) | null = null;
 export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}): SpeechStream {
   stopSpeaking();
   const my = generation;
-  const voice = lockedVoice;          // locked for this whole reply
-  const label = voiceLabel(voice);
+  const picked = lockedVoice;
+  // One voice for this whole reply. Brian starts it; if Brian can't voice the first piece, the whole reply
+  // switches to Andrew BEFORE any audio plays (later pieces wait for that decision), so voices never mix.
+  let voice: VoiceId = picked === "edge-brian" && Date.now() < brianDownUntil ? "edge-andrew" : picked;
+  let label = voiceLabel(voice);
+  let decide: (v: VoiceId) => void = () => {};
+  const decided: Promise<VoiceId> = voice === "edge-brian" ? new Promise((r) => { decide = r; }) : Promise.resolve(voice);
+  const synthFor = async (t: string, i: number): Promise<Blob> => {
+    if (voice !== "edge-brian") return synthPiece(voice, t, i, my, speed, () => gaveUp);
+    if (i > 0) { const v = await decided; return synthPiece(v, t, i, my, speed, () => gaveUp); }
+    try {
+      const b = await synthPiece("edge-brian", t, 0, my, speed, () => gaveUp, BRIAN_FIRST_TRY);
+      decide("edge-brian");
+      return b;
+    } catch (err) {
+      if (my !== generation || String((err as Error)?.message) === "stopped") { decide("edge-brian"); throw err; }
+      brianDownUntil = Date.now() + BRIAN_REST_MS;
+      dbg("Brian couldn't start this reply; Andrew speaks the whole reply instead", err);
+      voice = "edge-andrew"; label = voiceLabel(voice);
+      decide("edge-andrew");
+      return synthPiece("edge-andrew", t, 0, my, speed, () => gaveUp);
+    }
+  };
   let ended = false;
   const end = () => { if (!ended) { ended = true; if (endCurrent === end) { endCurrent = null; setActive(false); } setPending(false); if (playingVoice.now) setPlayingVoice(""); hooks.onEnd?.(); } };
   endCurrent = end;
@@ -603,7 +655,7 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     concurrency: CONCURRENCY,
     lookahead: 5,
     stopped: () => my !== generation,
-    synth: (t, i) => synthPiece(voice, t, i, my, speed, () => gaveUp),
+    synth: synthFor,
     play: (b) => playBlob(b, my),
     beforeFirstPlay: hooks.beforeStart,
     onFirstPlay: () => {

@@ -1691,7 +1691,7 @@ export default function App() {
             )}
             {showInstallHint && <InstallCard onClose={dismissInstallHint} />}
             {voiceStatus.state === "resting" && (
-              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting (daily free limit){voiceStatus.reason ? `: ${voiceStatus.reason}` : ""}. Pick Andrew in Settings for a voice with no daily limit.</p>
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting (daily free limit){voiceStatus.reason ? `: ${voiceStatus.reason}` : ""}. Pick Brian or Andrew in Settings for a voice with no daily limit.</p>
             )}
             {voiceStatus.state === "preparing" && (
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Getting Wilson's voice ready…{voiceStatus.progress > 0 && voiceStatus.progress < 100 ? ` ${voiceStatus.progress}%` : ""} (one-time download, Wi-Fi is best)</p>
