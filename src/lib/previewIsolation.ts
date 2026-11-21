@@ -4,7 +4,18 @@
  * localStorage with the live app. Here we give the preview its own copy: on first open it copies the
  * live values (read-only), and from then on every read/write goes to "wilson_preview_<id>:" keys.
  * The live app's data is never changed by a preview. Live builds skip all of this.
+ *
+ * Sign-ins are NEVER copied: account session tokens, the Architect key/flag, the GitHub token, the push id,
+ * and anything else that looks like a credential stay with the live app only, so a preview starts signed
+ * out (sign in inside the preview if you need to). Previews seeded by an older build get those copies
+ * removed on their next open. (Same-origin previews can still technically reach live storage; the full fix
+ * is serving previews from a separate address. See docs/preview-isolation.md.)
  */
+/** Keys a preview must never receive from the live app. */
+export const NEVER_COPY = new Set(["wilson_acct_token", "wilson_acct_user", "wilson_architect_key", "wilson_is_admin", "wilson_github_token", "wilson_push_id"]);
+const SECRETISH = /(token|secret|passw|session|sess_|apikey|api_key|_key$|architect|admin|credential|auth)/i;
+export const isSecretKey = (k: string): boolean => NEVER_COPY.has(k) || SECRETISH.test(k);
+const SEED_VERSION = "2";
 export const PREVIEW_ID: string = ((typeof import.meta.env === "object" ? (import.meta.env.VITE_PREVIEW_ID as string | undefined) : "") || "").trim();
 
 export function installPreviewStorage(id: string, store: Storage, proto: Storage = Storage.prototype): void {
@@ -17,14 +28,19 @@ export function installPreviewStorage(id: string, store: Storage, proto: Storage
     for (let i = 0; i < rawLen(s); i++) { const k = key.call(s, i); if (k != null) out.push(k); }
     return out;
   };
-  if (get.call(store, P + "__seeded") == null) {
+  const seeded = get.call(store, P + "__seeded");
+  if (seeded == null) {
     for (const k of rawKeys(store)) {
-      if (k.startsWith("wilson_preview_")) continue;
+      if (k.startsWith("wilson_preview_") || isSecretKey(k)) continue;
       const v = get.call(store, k);
       if (v == null || v.length > 50_000) continue; // skip big blobs (chat logs) to stay under the quota
       try { set.call(store, P + k, v); } catch { /* quota: preview just starts with less */ }
     }
-    try { set.call(store, P + "__seeded", "1"); } catch { /* ignore */ }
+    try { set.call(store, P + "__seeded", SEED_VERSION); } catch { /* ignore */ }
+  } else if (seeded !== SEED_VERSION) {
+    // Seeded by an older build that copied sign-ins: drop those copies once (the live originals stay put).
+    for (const k of rawKeys(store)) if (k.startsWith(P) && k !== P + "__seeded" && isSecretKey(k.slice(P.length))) rem.call(store, k);
+    try { set.call(store, P + "__seeded", SEED_VERSION); } catch { /* ignore */ }
   }
   const mine = (s: Storage) => s === store;
   const ownKeys = (s: Storage) => rawKeys(s).filter((k) => k.startsWith(P) && k !== P + "__seeded").map((k) => k.slice(P.length));
