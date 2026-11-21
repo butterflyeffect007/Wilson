@@ -9,20 +9,23 @@ interface Props {
   micReady: Promise<boolean> | null;
   send: CallSend;
   getSpokenText: () => string;
+  cancelReply?: () => void;
   onClose: () => void;
   vibe: WilsonVibe;
 }
 
 /** Full-screen "Talk with Wilson" call: his orb, a status line, what he heard, and a big End call button. */
-export default function TalkCall({ micReady, send, getSpokenText, onClose, vibe }: Props) {
-  const { state, tapOrb, end, voiceBargeIn } = useTalkCall({ micReady, send, getSpokenText, onClosed: onClose });
+export default function TalkCall({ micReady, send, getSpokenText, cancelReply, onClose, vibe }: Props) {
+  const { state, tapOrb, end, voiceBargeIn } = useTalkCall({ micReady, send, getSpokenText, cancelReply, onClosed: onClose });
   useOverlayHistory(end, "talk-call");
   const p = state.phase;
   const hint =
-    p === "speaking" || p === "thinking"
+    p === "thinking"
+      ? "Still talking? Just keep going, he'll wait"
+      : p === "speaking"
       ? voiceBargeIn ? "Start talking or tap the orb to cut in" : "Tap the orb to cut in"
       : p === "listening"
-      ? state.heard ? "Pause when you're done, or tap the orb to send" : "Talk whenever you're ready"
+      ? state.heard ? "Take your time. Tap the orb when you're done, or just stop talking" : state.nudge ? "No rush. I'm right here" : "Talk whenever you're ready"
       : "";
 
   return (

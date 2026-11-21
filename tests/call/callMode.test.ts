@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { callReducer, initialCallState, statusText, endpointDelay, END_OF_TURN_MS, MID_THOUGHT_MS, isLikelyEcho, shouldBargeIn, type CallEvent, type CallState } from "../../src/lib/callMode.ts";
+import { callReducer, initialCallState, statusText, endpointDelay, END_OF_TURN_MS, MID_THOUGHT_MS, isLikelyEcho, shouldBargeIn, hasRealSpeech, type CallEvent, type CallState } from "../../src/lib/callMode.ts";
 
 const run = (events: CallEvent[], s: CallState = initialCallState) => events.reduce(callReducer, s);
 
@@ -72,13 +72,35 @@ test("mic denied shows the help text", () => {
   assert.equal(statusText(s), "Allow the mic");
 });
 
-test("end of turn: ~1.4 s normally, longer when she trails off mid-thought", () => {
-  assert.ok(END_OF_TURN_MS >= 1200 && END_OF_TURN_MS <= 1600);
+test("end of turn: an unhurried ~2.2 s normally, much longer when she trails off mid-thought", () => {
+  assert.ok(END_OF_TURN_MS >= 2000 && END_OF_TURN_MS <= 2500);
   assert.equal(endpointDelay("what's the weather like today"), END_OF_TURN_MS);
   assert.equal(endpointDelay("I was thinking about it."), END_OF_TURN_MS);
   for (const t of ["I went to the store and", "so um", "I want to talk about", "hmm,", "well I was thinking that", "because…"])
     assert.equal(endpointDelay(t), MID_THOUGHT_MS, t);
   assert.ok(MID_THOUGHT_MS > END_OF_TURN_MS);
+  for (const t of ["and it was like", "I don't know, you know", "honestly I think", "so I was gonna"])
+    assert.equal(endpointDelay(t), MID_THOUGHT_MS, t);
+  assert.equal(endpointDelay("I love that idea", undefined, undefined, 1000), END_OF_TURN_MS + 1000); // learned patience
+});
+
+test("she picks her thought back up while he's thinking: her turn continues with everything she said", () => {
+  const thinking = run([{ type: "MIC_READY" }, { type: "TURN_END", text: "so I was thinking" }]);
+  const s = callReducer(thinking, { type: "CONTINUE", text: "so I was thinking we could build it" });
+  assert.equal(s.phase, "listening");
+  assert.equal(s.heard, "so I was thinking we could build it");
+  // can't "continue" once he's already talking (that's an interrupt) or while just listening
+  const talking = callReducer(thinking, { type: "REPLY_STARTED" });
+  assert.equal(callReducer(talking, { type: "CONTINUE", text: "x" }), talking);
+  assert.ok(hasRealSpeech("um") && !hasRealSpeech("a") && !hasRealSpeech("  "));
+});
+
+test("long silence never hangs up: gentle nudge, still listening", () => {
+  let s = run([{ type: "MIC_READY" }, { type: "NUDGE" }]);
+  assert.equal(s.phase, "listening");
+  assert.match(statusText(s), /Still here/);
+  s = callReducer(s, { type: "HEARD", text: "hey" });
+  assert.equal(statusText(s), "Listening…");
 });
 
 test("echo filter: his own words through the speaker don't interrupt him", () => {
