@@ -140,7 +140,7 @@ for (const theme of ["dark", "light"]) {
   await p.screenshot({ path: `${SHOTS}/talk-call-heard.png` });
   await waitPhase(p, /Thinking/, 4000);
   results.endOfTurnAfterLastWordMs = Math.round(await p.evaluate(() => window.__thinkingAt - window.__lastWordAt));
-  check("end of turn ≈1.4 s after her last word", results.endOfTurnAfterLastWordMs >= 1200 && results.endOfTurnAfterLastWordMs <= 1700, results.endOfTurnAfterLastWordMs);
+  check("end of turn ≈2.2 s after her last word", results.endOfTurnAfterLastWordMs >= 2000 && results.endOfTurnAfterLastWordMs <= 2600, results.endOfTurnAfterLastWordMs);
   await p.screenshot({ path: `${SHOTS}/talk-call-thinking.png` });
   await waitPhase(p, /Wilson is talking/);
   check("iPhone: mic is off while he talks (no audio-session fight)", (await p.evaluate(() => window.__listening())) === 0);
@@ -167,6 +167,20 @@ for (const theme of ["dark", "light"]) {
   const stillPlaying = (await p.locator('button[aria-label="Stop Wilson\'s voice"]').count()) > 0;
   check("tap the orb while he talks stops his voice and listens", !stillPlaying);
 
+  // Turn 4: a normal breath-length pause (1.8 s, no trailing word) doesn't end her turn
+  await p.evaluate(() => window.__say("I had an idea for the app"));
+  await p.waitForTimeout(1800);
+  check("a 1.8 s breath doesn't end her turn", /Listening/.test(await phase(p)), await phase(p));
+  await p.evaluate(() => window.__say("where the orb glows when you laugh"));
+  await waitPhase(p, /Thinking/, 6000);
+  // ...and she keeps going while he's still thinking: his half-made reply is dropped, her turn carries on
+  const resumed = await p.evaluate(() => window.__say("and it hums a little", 80));
+  await waitPhase(p, /Listening/, 1500).catch(() => {});
+  check("picking the thought back up while he thinks continues her turn", resumed && /hums a little/.test(await p.locator(".wl-call-heard").innerText().catch(() => "")));
+  await waitPhase(p, /Thinking/, 8000);
+  await waitPhase(p, /Wilson is talking/);
+  await waitPhase(p, /Listening/, 30000);
+
   // History
   await p.locator("button.wl-call-end").tap();
   await p.waitForTimeout(800);
@@ -178,6 +192,8 @@ for (const theme of ["dark", "light"]) {
   check("each turn landed in chat history", userBubbles.some((t) => /how are you doing/.test(t)) && userBubbles.some((t) => /rough and work was just a lot/.test(t)) && userBubbles.some((t) => /long story/.test(t)), JSON.stringify(userBubbles));
   const heard2 = results.sentTurns[1];
   check("mid-thought pause kept as one message", heard2 === "today was kind of rough and work was just a lot", heard2);
+  const last = results.sentTurns[results.sentTurns.length - 1];
+  check("continued turn sent as one whole thought", last === "I had an idea for the app where the orb glows when you laugh and it hums a little", last);
   check("brain asked for spoken-call replies", log.chat.filter((c) => c.stream).every((c) => c.spokenCallNote));
   const voices = [...new Set(log.tts.map((t) => t.voice))];
   results.ttsVoices = voices; results.ttsRequests = log.tts.length;

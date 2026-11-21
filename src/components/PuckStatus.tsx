@@ -16,7 +16,7 @@ export default function PuckStatus() {
   const time = (t: number) => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const gRest = geminiRestingUntil();
   const p = getPuckState();
-  const health = locked === "edge-andrew" ? "free, no daily limit"
+  const health = locked === "edge-brian" ? "free, no daily limit · Andrew backs him up" : locked === "edge-andrew" ? "free, no daily limit"
     : locked === "gemini" ? (gRest ? `resting until ${hm(gRest)} (daily free limit)` : "free daily limit")
     : locked === "aura-orion" ? (isVoiceResting() ? "daily free limit reached" : "free daily limit")
     : p === "ready" ? "ready on this phone" : p === "loading" ? `getting ready… ${getPuckProgress()}%` : p === "failed" ? "couldn't start on this phone" : "starts on the next reply";

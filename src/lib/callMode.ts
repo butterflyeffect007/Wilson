@@ -14,6 +14,8 @@ export interface CallState {
   heard: string;
   /** Completed back-and-forth turns this call. */
   turns: number;
+  /** She's been quiet a long while: show a gentle "still here" note (the call stays open and listening). */
+  nudge?: boolean;
   error?: string;
 }
 
@@ -25,6 +27,8 @@ export type CallEvent =
   | { type: "REPLY_STARTED" }
   | { type: "REPLY_DONE" }
   | { type: "INTERRUPT" }
+  | { type: "CONTINUE"; text: string }
+  | { type: "NUDGE" }
   | { type: "IDLE_TIMEOUT" }
   | { type: "RESUME" }
   | { type: "END" };
@@ -40,9 +44,15 @@ export function callReducer(s: CallState, e: CallEvent): CallState {
     case "MIC_DENIED":
       return { ...s, phase: "error", heard: "", error: e.message };
     case "HEARD":
-      return s.phase === "listening" ? { ...s, heard: e.text } : s;
+      return s.phase === "listening" ? { ...s, heard: e.text, nudge: false } : s;
+    case "NUDGE":
+      return s.phase === "listening" && !s.heard ? { ...s, nudge: true } : s;
+    case "CONTINUE":
+      // She wasn't done: she picked her thought back up while he was still thinking (before his voice started).
+      // His half-made reply is dropped and her turn carries on from what she'd already said.
+      return s.phase === "thinking" ? { ...s, phase: "listening", heard: e.text, nudge: false } : s;
     case "TURN_END":
-      return s.phase === "listening" && e.text.trim() ? { ...s, phase: "thinking", heard: e.text.trim() } : s;
+      return s.phase === "listening" && e.text.trim() ? { ...s, phase: "thinking", heard: e.text.trim(), nudge: false } : s;
     case "REPLY_STARTED":
       return s.phase === "thinking" ? { ...s, phase: "speaking" } : s;
     case "REPLY_DONE":
@@ -61,7 +71,7 @@ export function callReducer(s: CallState, e: CallEvent): CallState {
 export function statusText(s: CallState): string {
   switch (s.phase) {
     case "connecting": return "Connecting…";
-    case "listening": return "Listening…";
+    case "listening": return s.nudge && !s.heard ? "Still here. Take your time" : "Listening…";
     case "thinking": return "Thinking…";
     case "speaking": return "Wilson is talking";
     case "paused": return "Paused. Tap the orb to talk";
@@ -72,26 +82,44 @@ export function statusText(s: CallState): string {
 
 /* ---------------- end of turn ---------------- */
 
-/** Base pause that ends her turn. 1.4 s sits in the 1.2–1.6 s window: long enough for a breath, short enough to feel live. */
-export const END_OF_TURN_MS = 1400;
-/** When her words trail off mid-thought ("and…", "so um…", a comma) we wait longer before answering. */
-export const MID_THOUGHT_MS = 2300;
+/**
+ * Base pause that ends her turn. People pause mid-thought for a breath, to find a word, or for rhythm, so this
+ * is deliberately unhurried (2.2 s); a faster turn is always one tap on the orb away.
+ */
+export const END_OF_TURN_MS = 2200;
+/** When her words trail off mid-thought ("and…", "so um…", "like", a comma) we wait much longer. */
+export const MID_THOUGHT_MS = 3800;
+/** Each time she picks a thought back up after he almost answered, wait this much longer for the rest of the call. */
+export const PATIENCE_STEP_MS = 500;
+export const PATIENCE_MAX_MS = 1500;
 
 const TRAILING = new Set([
-  "and", "but", "or", "so", "because", "cause", "um", "uh", "umm", "uhh", "hmm", "like", "the", "a", "an", "to", "of",
-  "with", "if", "that", "then", "my", "your", "i", "i'm", "is", "was", "for", "about", "maybe", "well", "also", "just",
-  "when", "what", "which", "who", "how", "where", "you", "we", "it's", "are", "in", "on", "at", "kind", "sort",
+  "and", "but", "or", "so", "because", "cause", "cuz", "um", "uh", "umm", "uhh", "uhm", "erm", "er", "ah", "mm", "hm", "hmm",
+  "like", "the", "a", "an", "to", "of", "with", "if", "that", "then", "my", "your", "i", "i'm", "is", "was", "for", "about",
+  "maybe", "well", "also", "just", "when", "what", "which", "who", "how", "where", "you", "we", "it's", "are", "in", "on", "at",
+  "kind", "sort", "basically", "literally", "actually", "honestly", "not", "from", "into", "by", "as", "than", "since", "until",
+  "while", "though", "although", "he", "she", "they", "this", "these", "those", "his", "her", "their", "our", "very", "really",
+  "gonna", "wanna", "gotta", "need", "want", "think", "mean", "be", "been", "were", "do", "did", "have", "had", "can", "could",
+  "would", "should", "will", "like,", "plus", "even", "still", "some", "every", "any", "no",
 ]);
+/** Two-word trail-offs ("you know", "I mean", "and then") — she's usually still going. */
+const TRAILING_PAIRS = new Set(["you know", "i mean", "and then", "so then", "or like", "and like", "kind of", "sort of", "i think", "i guess", "i feel"]);
 
-/** How long to wait after the last recognized word before treating her turn as finished. */
-export function endpointDelay(text: string, base = END_OF_TURN_MS, mid = MID_THOUGHT_MS): number {
+/** How long to wait after the last recognized word before treating her turn as finished. `extra` = learned patience. */
+export function endpointDelay(text: string, base = END_OF_TURN_MS, mid = MID_THOUGHT_MS, extra = 0): number {
   const t = text.trim();
-  if (!t) return base;
-  if (/[,;:—–-]$/.test(t) || /\.\.\.$|…$/.test(t)) return mid;
+  if (!t) return base + extra;
+  if (/[,;:—–-]$/.test(t) || /\.\.\.$|…$/.test(t)) return mid + extra;
   const words = t.toLowerCase().replace(/[^\p{L}\p{N}'\s]/gu, " ").split(/\s+/).filter(Boolean);
   const last = words[words.length - 1] ?? "";
-  if (TRAILING.has(last)) return mid;
-  return base;
+  if (TRAILING.has(last)) return mid + extra;
+  if (words.length >= 2 && TRAILING_PAIRS.has(words.slice(-2).join(" "))) return mid + extra;
+  return base + extra;
+}
+
+/** True when the mic picked up real words (not an empty result or a stray one-letter blip). */
+export function hasRealSpeech(text: string): boolean {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}'\s]/gu, " ").split(/\s+/).some((w) => w.length > 1);
 }
 
 /* ---------------- barge-in ---------------- */

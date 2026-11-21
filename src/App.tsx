@@ -164,7 +164,7 @@ export default function App() {
   const [callOpen, setCallOpen] = useState(false);
   const callMicRef = useRef<Promise<boolean> | null>(null);
   const callModeRef = useRef(false);
-  const callHooksRef = useRef<{ onStart: () => void } | null>(null);
+  const callHooksRef = useRef<{ onStart: () => void; beforeStart?: () => Promise<void> | void } | null>(null);
   const callReplyRef = useRef("");
   const [soy, setSoy] = useState<StateOfYou>(() => loadStateOfYou());
   const [soyOpen, setSoyOpen] = useState(false);
@@ -644,7 +644,7 @@ export default function App() {
       };
 
       const speakIt = inCall || settings.voiceEnabled || wakeSpeakRef.current; wakeSpeakRef.current = false;
-      const speech = speakIt ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], callHooks ? { onStart: callHooks.onStart } : {}) : null;
+      const speech = speakIt ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], callHooks ? { onStart: callHooks.onStart, beforeStart: callHooks.beforeStart } : {}) : null;
       let attempt = 0;
 
       // If a local Omni pack is already loaded, try it first. Empty or failed replies escalate to the rented stream.
@@ -821,6 +821,8 @@ export default function App() {
     try { await sendMessageRef.current(text); } finally { callHooksRef.current = null; }
   }, []);
   const getCallSpokenText = useCallback(() => callReplyRef.current, []);
+  // She picked her thought back up before his voice started: drop the half-made reply.
+  const cancelCallReply = useCallback(() => { abortRef.current?.abort(); }, []);
   const closeCall = useCallback(() => { callModeRef.current = false; callHooksRef.current = null; setCallOpen(false); }, []);
 
   const retryLast = useCallback(() => {
@@ -975,7 +977,7 @@ export default function App() {
           <button type="button" aria-label="Dismiss" onClick={() => { setBannerHidden(banner.at); try { localStorage.setItem("wilson_banner_hidden", String(banner.at)); } catch { /* ignore */ } }} className="text-violet-400"><X className="w-4 h-4" /></button>
         </div>
       )}
-      {callOpen && <ErrorBoundary label="Talk with Wilson"><TalkCall micReady={callMicRef.current} send={sendForCall} getSpokenText={getCallSpokenText} onClose={closeCall} vibe={vibe} /></ErrorBoundary>}
+      {callOpen && <ErrorBoundary label="Talk with Wilson"><TalkCall micReady={callMicRef.current} send={sendForCall} getSpokenText={getCallSpokenText} cancelReply={cancelCallReply} onClose={closeCall} vibe={vibe} /></ErrorBoundary>}
       {showGematria && <ErrorBoundary label="Gematria Observatory"><GematriaObservatory onClose={() => setShowGematria(false)} /></ErrorBoundary>}
       {showTerminal && <ErrorBoundary label="Wilson's Terminal"><WilsonTerminal allowed={canOpenTerminal(isAdmin)} onClose={() => setShowTerminal(false)} /></ErrorBoundary>}
       {showJobs && <ErrorBoundary label="Jobs"><JobsRoom allowed={canOpenJobs(isAdmin)} onClose={() => setShowJobs(false)} /></ErrorBoundary>}
@@ -1689,7 +1691,7 @@ export default function App() {
             )}
             {showInstallHint && <InstallCard onClose={dismissInstallHint} />}
             {voiceStatus.state === "resting" && (
-              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting (daily free limit){voiceStatus.reason ? `: ${voiceStatus.reason}` : ""}. Pick Andrew in Settings for a voice with no daily limit.</p>
+              <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Wilson's voice is resting (daily free limit){voiceStatus.reason ? `: ${voiceStatus.reason}` : ""}. Pick Brian or Andrew in Settings for a voice with no daily limit.</p>
             )}
             {voiceStatus.state === "preparing" && (
               <p className="mb-1.5 px-2 text-[12px] text-violet-600/70">Getting Wilson's voice ready…{voiceStatus.progress > 0 && voiceStatus.progress < 100 ? ` ${voiceStatus.progress}%` : ""} (one-time download, Wi-Fi is best)</p>
