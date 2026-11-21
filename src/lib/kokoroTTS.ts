@@ -482,6 +482,12 @@ function edgeEngine(id: EdgeVoiceId, name: string): Engine {
     async once(text, signal) {
       const res = await post(EDGE_TTS_URL, { text, voice: EDGE_VOICES[id] }, signal);
       if (res.status === 404) throw new FatalVoiceError(`${name} isn't on the voice server (404)`, "missing");
+      if (res.status === 429) {
+        // The worker's per-visitor voice cap: rest quietly (text keeps flowing) instead of hammering retries.
+        let j: { code?: string; error?: string } = {}; try { j = await res.json(); } catch { /* ignore */ }
+        if (j.code === "wilson_cap") throw new FatalVoiceError(j.error || "Wilson's voice is resting for a bit", "limit");
+        throw new Error("edge tts busy (429)");
+      }
       if (!res.ok) throw new Error("edge tts http " + res.status);
       // The server falls back to its default voice for names it doesn't know: never accept a different voice.
       const got = res.headers.get("X-Voice");
