@@ -3,6 +3,7 @@
  * the server keeps a copy so chats come back on any device. Signed-out chats never leave the device.
  */
 import type { StoredThread, StoredMessage } from "../memory/LocalMemory";
+import { pickMergedTitle } from "../lib/autoTitle";
 import { api } from "./api";
 import { getToken, getUser } from "./store";
 
@@ -27,7 +28,7 @@ function mergeThread(a: StoredThread, b: StoredThread): StoredThread {
   for (const m of b.messages) if (!byId.has(m.id) || (byId.get(m.id)!.content.length < m.content.length)) byId.set(m.id, m);
   const messages = [...byId.values()].sort((x, y) => (Date.parse(x.timestamp) || 0) - (Date.parse(y.timestamp) || 0));
   const newer = updatedAt(b) > updatedAt(a) ? b : a;
-  return { ...newer, messages };
+  return { ...newer, messages, ...pickMergedTitle(a, b, newer) };
 }
 
 /** Pure: fold remote changes into the current local list (used inside setThreads). */

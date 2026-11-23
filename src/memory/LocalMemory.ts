@@ -17,6 +17,10 @@ export interface StoredThread {
   title: string;
   createdAt: string;
   messages: StoredMessage[];
+  /** Set after Wilson writes a topic title. Generation runs once. */
+  autoTitled?: boolean;
+  /** Set when the user renames the thread. Auto-title must not overwrite it. */
+  titleLocked?: boolean;
 }
 
 export interface RelationshipSeed {
