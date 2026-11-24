@@ -162,6 +162,8 @@ export type SpeakerDeps<B> = {
   lookahead?: number;
   stopped: () => boolean;
   onFirstPlay?: () => void;
+  /** Awaited once, right before the very first clip plays (call mode closes the mic here on iPhone). */
+  beforeFirstPlay?: () => Promise<void> | void;
   onPlay?: (index: number) => void;
   /** A piece couldn't be voiced (after retries) or played (after a replay): the rest of this reply stays text-only. */
   onDown?: (index: number, err: unknown) => void;
@@ -199,6 +201,7 @@ export function createOrderedSpeaker<B>(d: SpeakerDeps<B>) {
         let clip: B;
         try { clip = await p; } catch (e) { if (!d.stopped()) { down = true; d.onDown?.(playIdx, e); } break; }
         if (d.stopped()) break;
+        if (played === 0 && d.beforeFirstPlay) { try { await d.beforeFirstPlay(); } catch { /* ignore */ } if (d.stopped()) break; }
         if (played === 0) d.onFirstPlay?.();
         d.onPlay?.(playIdx);
         let ok = await d.play(clip, playIdx);
