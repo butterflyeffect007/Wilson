@@ -30,6 +30,22 @@ export interface StreamResult {
   text: string;
   finishReason?: string;
   model: string;
+  /** Worker set X-Wilson-Degraded when a backup brain answered. */
+  degraded?: string | null;
+}
+
+
+function rememberWilsonHeaders(response: Response): string | null {
+  let degraded: string | null = null;
+  try {
+    const m = response.headers.get("X-Wilson-Model");
+    if (m) localStorage.setItem("wilson_last_model", m);
+    const d = response.headers.get("X-Wilson-Degraded");
+    if (d) localStorage.setItem("wilson_last_degraded", d);
+    else localStorage.removeItem("wilson_last_degraded");
+    degraded = d;
+  } catch { /* ignore */ }
+  return degraded;
 }
 
 export class OpenRouterAdapter implements ModelAdapter {
@@ -109,6 +125,7 @@ export class OpenRouterAdapter implements ModelAdapter {
       body: JSON.stringify(this.buildBody(request, false)),
     });
     if (!response.ok) await this.fail(response);
+    rememberWilsonHeaders(response);
     const data = await response.json();
     const choice = data.choices?.[0];
     return {
@@ -137,6 +154,7 @@ export class OpenRouterAdapter implements ModelAdapter {
     let text = "";
     let finishReason: string | undefined;
     let model = this.defaultModel;
+    let degraded: string | null = null;
 
     const handleLine = (raw: string): boolean => {
       const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
@@ -171,7 +189,7 @@ export class OpenRouterAdapter implements ModelAdapter {
         signal,
       });
       if (!response.ok) await this.fail(response);
-      try { const m = response.headers.get("X-Wilson-Model"); if (m) localStorage.setItem("wilson_last_model", m); } catch { /* ignore */ }
+      degraded = rememberWilsonHeaders(response);
       if (!response.body) throw new OpenRouterError("Empty response body", 502);
 
       const reader = response.body.getReader();
@@ -194,10 +212,10 @@ export class OpenRouterAdapter implements ModelAdapter {
       }
       if (!done && buffer.trim()) handleLine(buffer);
     } catch (e) {
-      if ((e as Error).name === "AbortError") return { text, finishReason: "aborted", model };
+      if ((e as Error).name === "AbortError") return { text, finishReason: "aborted", model, degraded };
       throw e;
     }
-    return { text, finishReason, model };
+    return { text, finishReason, model, degraded };
   }
 
   getCapabilities(): ModelCapabilities {

@@ -10,6 +10,8 @@ export interface StoredMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: string; // ISO
+  /** Set when the worker answered on a backup brain. */
+  degraded?: boolean;
 }
 
 export interface StoredThread {

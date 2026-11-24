@@ -649,18 +649,26 @@ export default function App() {
       const abort = new AbortController();
       abortRef.current = abort;
 
-      const writeAssistant = (text: string) => {
+      const writeAssistant = (text: string, extra?: { degraded?: boolean }) => {
         updateThread(threadId, (t) => {
           const exists = t.messages.some((m) => m.id === msgId);
+          const patch = (m?: StoredMessage): StoredMessage => ({
+            id: m?.id ?? msgId,
+            role: "assistant",
+            content: text,
+            timestamp: m?.timestamp ?? new Date().toISOString(),
+            degraded: extra?.degraded || m?.degraded,
+          });
           return {
             ...t,
             messages: exists
-              ? t.messages.map((m) => (m.id === msgId ? { ...m, content: text } : m))
-              : [...t.messages, { id: msgId, role: "assistant", content: text, timestamp: new Date().toISOString() }],
+              ? t.messages.map((m) => (m.id === msgId ? patch(m) : m))
+              : [...t.messages, patch()],
           };
         });
       };
 
+      let usedBackup = false;
       const speakIt = inCall || settings.voiceEnabled || wakeSpeakRef.current; wakeSpeakRef.current = false;
       const speech = speakIt ? startSpeechStream(EMOTION_TTS_SPEED[voiceCtxRef.current.emotion ?? "neutral"], callHooks ? { onStart: callHooks.onStart, beforeStart: callHooks.beforeStart } : {}) : null;
       let attempt = 0;
@@ -722,6 +730,7 @@ export default function App() {
             },
             abort.signal,
           );
+          if (result.degraded) usedBackup = true;
           // Auto-continue once if the model hit its length cap mid-thought
           if (result.finishReason === "length" && raw && !abort.signal.aborted) {
             const contReq: ModelRequest = {
@@ -766,7 +775,7 @@ export default function App() {
           } else if (result.finishReason === "content_filter" || result.finishReason === "SAFETY") {
             finalText += "\n\n*...okay okay, the safety net just yanked me back. Try rephrasing, or ask me something adjacent and I'll get you what you need.*";
           }
-          writeAssistant(finalText);
+          writeAssistant(finalText, { degraded: usedBackup });
 
           if (newVibe) {
             setVibe(newVibe);
@@ -1654,6 +1663,9 @@ export default function App() {
                         <span className="inline-block w-1.5 h-4 align-middle bg-violet-400/70 animate-pulse ml-0.5" />
                       )}
                     </div>
+                    {msg.role === "assistant" && msg.degraded && streamingId !== msg.id && (
+                      <p className="msg-degraded">Backup brain for this reply — I may be a little less sharp than usual.</p>
+                    )}
                     <div className="flex items-center gap-3 mt-2 text-[10px] text-violet-400/60">
                       <span>
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
