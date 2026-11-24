@@ -1,12 +1,13 @@
 /**
  * On-demand thread recaps, saved on the thread and shown in the chat.
- * Uses the same Wilson-proxy generate() path as auto-titles (metadata.task
- * marks a background call; the proxy strips it and adds no extra context).
+ * Uses the same Wilson-proxy Groq private-brain path as auto-titles
+ * (metadata.task = "summary"). A Google/Gemini reply is treated as a failure.
  * Failures leave the previous summary and title untouched.
  */
 import type { OpenRouterAdapter } from "../intelligence/OpenRouterAdapter";
 import type { StoredMessage, StoredThread } from "../memory/LocalMemory";
 import { normalizeThreadTitle } from "./autoTitle.ts";
+import { isPrivateBrainResponse } from "./privateBrain.ts";
 
 export const SUMMARY_SYSTEM =
   "You are Wilson, companion of The Only One. Imagination becomes intelligence.\n\n" +
@@ -155,6 +156,7 @@ async function complete(
       generation: { temperature: 0.2, maxTokens },
       metadata: { task: "summary" },
     });
+    if (!isPrivateBrainResponse(r)) return null;
     const text = (r.text || "").trim();
     return text || null;
   } catch {

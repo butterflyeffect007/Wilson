@@ -6,6 +6,7 @@ import {
   shouldRefreshTitle,
   pickMergedTitle,
   TITLE_REFRESH_EVERY,
+  generateThreadTitle,
 } from "../../src/lib/autoTitle.ts";
 import type { StoredThread, StoredMessage } from "../../src/memory/LocalMemory.ts";
 
@@ -70,4 +71,42 @@ test("shouldRefreshTitle waits ~10 messages and respects the rename lock", () =>
   assert.equal(shouldRefreshTitle(drifted), true);
   assert.equal(shouldRefreshTitle({ ...drifted, titleLocked: true }), false);
   assert.equal(shouldRefreshTitle({ ...drifted, autoTitled: false }), false);
+});
+
+test("generateThreadTitle ignores a Gemini reply and returns null", async () => {
+  const ad = {
+    generate: async () => ({
+      text: "Should Not Become Title",
+      model: "gemini-3.5-flash-lite",
+      provider: "openrouter",
+      metadata: { wilsonModel: "gemini-3.5-flash-lite", wilsonRoute: "background" },
+    }),
+  } as any;
+  const twoExchanges = [
+    { id: "0", role: "assistant", content: "Hey", timestamp: new Date(1_700_000_000_000).toISOString() },
+    { id: "1", role: "user", content: "Hi", timestamp: new Date(1_700_000_001_000).toISOString() },
+    { id: "2", role: "assistant", content: "Hello", timestamp: new Date(1_700_000_002_000).toISOString() },
+    { id: "3", role: "user", content: "Name meaning?", timestamp: new Date(1_700_000_003_000).toISOString() },
+    { id: "4", role: "assistant", content: "Let's look", timestamp: new Date(1_700_000_004_000).toISOString() },
+  ];
+  assert.equal(await generateThreadTitle(ad, thread({ messages: twoExchanges as any })), null);
+});
+
+test("generateThreadTitle accepts a Groq private-brain reply", async () => {
+  const ad = {
+    generate: async () => ({
+      text: "Gematria Of My Name",
+      model: "groq/openai/gpt-oss-120b",
+      provider: "groq",
+      metadata: { wilsonModel: "groq/openai/gpt-oss-120b", wilsonRoute: "private" },
+    }),
+  } as any;
+  const twoExchanges = [
+    { id: "0", role: "assistant", content: "Hey", timestamp: new Date(1_700_000_000_000).toISOString() },
+    { id: "1", role: "user", content: "Hi", timestamp: new Date(1_700_000_001_000).toISOString() },
+    { id: "2", role: "assistant", content: "Hello", timestamp: new Date(1_700_000_002_000).toISOString() },
+    { id: "3", role: "user", content: "Name meaning?", timestamp: new Date(1_700_000_003_000).toISOString() },
+    { id: "4", role: "assistant", content: "Let's look", timestamp: new Date(1_700_000_004_000).toISOString() },
+  ];
+  assert.equal(await generateThreadTitle(ad, thread({ messages: twoExchanges as any })), "Gematria Of My Name");
 });

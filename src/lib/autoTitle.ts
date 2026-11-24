@@ -1,9 +1,10 @@
 /**
  * One-shot auto-generated thread titles for the left thread list.
- * Uses the existing chat backend with a tiny prompt. Failures keep the old title.
+ * Uses Wilson-proxy Groq private brain (wilson_task=title). Failures keep the old title.
  */
 import type { OpenRouterAdapter } from "../intelligence/OpenRouterAdapter";
 import type { StoredThread } from "../memory/LocalMemory";
+import { isPrivateBrainResponse } from "./privateBrain.ts";
 
 export const TITLE_SYSTEM =
   "Write a short topic title for this chat. Rules: 2 to 6 words, Title Case, no quotation marks, no emoji, no trailing punctuation, no preamble. Reply with the title alone.";
@@ -77,6 +78,7 @@ export async function generateThreadTitle(
       generation: { temperature: 0.2, maxTokens: 20 },
       metadata: { task: "title" },
     });
+    if (!isPrivateBrainResponse(r)) return null;
     return normalizeThreadTitle(r.text || "");
   } catch {
     return null;

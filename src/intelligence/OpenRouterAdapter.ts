@@ -102,10 +102,12 @@ export class OpenRouterAdapter implements ModelAdapter {
     if (!response.ok) await this.fail(response);
     const data = await response.json();
     const choice = data.choices?.[0];
+    const wilsonModel = response.headers.get("X-Wilson-Model") || data.model || this.defaultModel;
+    const wilsonRoute = response.headers.get("X-Wilson-Route") || undefined;
     return {
       text: choice?.message?.content ?? "",
       toolCalls: Array.isArray(choice?.message?.tool_calls) ? choice.message.tool_calls : undefined,
-      model: data.model ?? this.defaultModel,
+      model: wilsonModel,
       provider: "openrouter",
       finishReason: choice?.finish_reason,
       usage: data.usage
@@ -115,7 +117,7 @@ export class OpenRouterAdapter implements ModelAdapter {
             totalTokens: data.usage.total_tokens,
           }
         : undefined,
-      metadata: { id: data.id, created: data.created },
+      metadata: { id: data.id, created: data.created, wilsonModel, wilsonRoute },
     };
   }
 

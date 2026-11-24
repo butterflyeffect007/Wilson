@@ -15,6 +15,7 @@ import {
   MAX_CHUNKS,
 } from "../../src/lib/threadSummary.ts";
 import type { OpenRouterAdapter } from "../../src/intelligence/OpenRouterAdapter.ts";
+import { isPrivateBrainModel, isPrivateBrainResponse, PRIVATE_BRAIN_MODEL } from "../../src/lib/privateBrain.ts";
 
 function msg(role: StoredMessage["role"], content: string, i: number): StoredMessage {
   return { id: String(i), role, content, timestamp: new Date(1_700_000_000_000 + i * 1000).toISOString() };
@@ -32,7 +33,7 @@ function adapter(replies: Array<string | Error>) {
       const next = replies.shift();
       if (next instanceof Error) throw next;
       if (next === undefined) throw new Error("unexpected generate() call");
-      return { text: next, model: "test", provider: "openrouter" };
+      return { text: next, model: PRIVATE_BRAIN_MODEL, provider: "groq", metadata: { wilsonModel: PRIVATE_BRAIN_MODEL, wilsonRoute: "private" } };
     },
   };
   return { adapter: impl as unknown as OpenRouterAdapter, calls, replies };
@@ -194,7 +195,7 @@ test("requestThreadSummary reports busy when a call is already in flight", async
   const impl = {
     generate: async () => {
       await gate;
-      return { text: "- Hello there\nTITLE: Friendly Hello", model: "test", provider: "openrouter" };
+      return { text: "- Hello there\nTITLE: Friendly Hello", model: PRIVATE_BRAIN_MODEL, provider: "groq", metadata: { wilsonModel: PRIVATE_BRAIN_MODEL, wilsonRoute: "private" } };
     },
   } as unknown as OpenRouterAdapter;
   const t = thread({ messages: [msg("user", "Hi", 0), msg("assistant", "Hello", 1)] });
@@ -203,4 +204,29 @@ test("requestThreadSummary reports busy when a call is already in flight", async
   assert.equal(second, "busy");
   release();
   assert.equal(await first, "ok");
+});
+
+test("isPrivateBrainModel accepts Groq ids and rejects Google/Gemini/Gemma", () => {
+  assert.equal(isPrivateBrainModel(PRIVATE_BRAIN_MODEL), true);
+  assert.equal(isPrivateBrainModel("openai/gpt-oss-120b"), true);
+  assert.equal(isPrivateBrainModel("google/gemma-4-31b-it:free"), false);
+  assert.equal(isPrivateBrainModel("gemini-3.5-flash-lite"), false);
+  assert.equal(isPrivateBrainModel("google/gemini-2.5-flash"), false);
+  assert.equal(isPrivateBrainModel("@cf/google/gemma-4-26b-a4b-it"), false);
+  assert.equal(isPrivateBrainModel(""), false);
+});
+
+test("generateThreadSummary refuses a Google-model reply and keeps nothing", async () => {
+  const { adapter: ad, calls } = adapter(["- A recap that must be ignored\nTITLE: Must Not Apply"]);
+  // Override the one reply to look like the old Gemini path.
+  const prev = (ad as any).generate;
+  (ad as any).generate = async (req: any) => {
+    const r = await prev(req);
+    return { ...r, model: "gemini-3.5-flash-lite", metadata: { wilsonModel: "gemini-3.5-flash-lite" } };
+  };
+  const th = thread({
+    messages: [msg("user", "How is the grid?", 0), msg("assistant", "Peak was 54,118 MW.", 1)],
+  });
+  assert.equal(await generateThreadSummary(ad, th), null);
+  assert.equal(calls.length, 1);
 });
