@@ -109,6 +109,17 @@ export function calculateAll(input: string): CipherResult[] {
   return CIPHERS.map(({ id }) => calculateCipher(input, id));
 }
 
+export function calculateCipherMap(input: string): Partial<Record<CipherId, number>> {
+  const results = calculateAll(input);
+  const map: Partial<Record<CipherId, number>> = {};
+  for (const r of results) {
+    if (r.total !== null) {
+      map[r.cipherId] = r.total;
+    }
+  }
+  return map;
+}
+
 export function digitalRoot(value: number): number | null {
   if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) return null;
   if (value === 0) return 0;
