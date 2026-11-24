@@ -205,6 +205,18 @@ export function saveSettings(s: WilsonSettings): void {
 const VIBE_RE = /\[VIBE:\s*(excited|calm|tired|dreaming|neutral)\s*\]/i;
 const DREAM_RE = /\[DREAM_UPDATE:\s*(.+?)\]/i;
 
+/** Shown when a reply is still empty after tags/thoughts are stripped and one retry. */
+export const EMPTY_REPLY_FALLBACK =
+  "I didn't get an answer through just now. Mind trying again?";
+
+/** Remove <thought> blocks, including an unclosed one at the end of a stream. */
+export function stripThoughtBlocks(text: string): string {
+  return text
+    .replace(/<thought\b[^>]*>[\s\S]*?<\/thought>/gi, "")
+    .replace(/<\/?thought\b[^>]*>[\s\S]*$/i, "")
+    .replace(/<\/?thought\b[^>]*$/i, "");
+}
+
 export function parseAndStripTags(text: string): {
   clean: string;
   vibe?: WilsonVibe;
@@ -212,9 +224,11 @@ export function parseAndStripTags(text: string): {
 } {
   const vibeMatch = text.match(VIBE_RE);
   const dreamMatch = text.match(DREAM_RE);
-  const clean = text
+  const clean = stripThoughtBlocks(text)
     .replace(/\[VIBE:[^\]]*\]?/gi, "")
     .replace(/\[DREAM_UPDATE:[^\]]*\]?/gi, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
   const dream = dreamMatch ? dreamMatch[1].trim() : undefined;
   return {
@@ -224,9 +238,14 @@ export function parseAndStripTags(text: string): {
   };
 }
 
+/** True when nothing visible remains after VIBE / DREAM / <thought> stripping. */
+export function isBlankAfterTags(text: string): boolean {
+  return !parseAndStripTags(text).clean;
+}
+
 /** Hide tags (including half-streamed ones) while a reply is streaming. */
 export function stripTagsForDisplay(text: string): string {
-  return text
+  return stripThoughtBlocks(text)
     .replace(/\[(VIBE|DREAM_UPDATE):[^\]]*\]?/gi, "")
     .replace(/\[[A-Z_]{0,12}$/i, "")
     .trimEnd();
