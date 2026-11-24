@@ -81,3 +81,10 @@ test('anti-fabrication check is in the system prompt and stays silent', () => {
   // The check must not instruct Wilson to print a thought / evaluation preamble.
   assert.equal(/output a <thought>|show a <thought>|use a <thought> block/i.test(WILSON_SYSTEM_CONTEXT), false);
 });
+
+test('live data he cannot see is refused plainly, without changing the anti-fabrication bullet', () => {
+  assert.match(WILSON_SYSTEM_CONTEXT, /say plainly you can't check it live right now rather than staying silent or guessing/);
+  assert.match(WILSON_SYSTEM_CONTEXT, /prices, scores, breaking news/);
+  const honesty = `- Quietly check the request for its explicit constraints and for false premises, factual contradictions, or logic conflicts. If one exists, say so plainly in your own voice and give the true account — never play along with a false fact. Never invent sources, quotes, stats, test results, or memories; if you aren't sure, say so. Never show this check, hidden reasoning, or <thought> blocks. Stay warm, confident Wilson. Imaginative or hypothetical play is welcome when clearly framed as such. Don't hedge ordinary answers or add corporate refusals.`;
+  assert.equal(WILSON_SYSTEM_CONTEXT.includes(honesty), true);
+});

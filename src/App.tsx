@@ -57,7 +57,7 @@ import { IntelligenceRouter } from "./intelligence/IntelligenceRouter";
 import {
   loadThreads, saveThreads, loadActiveThreadId, saveActiveThreadId,
   loadProfile, saveProfile, loadSettings, saveSettings,
-  buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
+  buildMemoryContext, parseAndStripTags, stripTagsForDisplay, EMPTY_REPLY_FALLBACK, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
 import { maybeApplyAutoTitle } from "./lib/autoTitle";
@@ -676,31 +676,35 @@ export default function App() {
             allowEscalate: false,
             maxTokens: 400,
           });
+          // A vibe-only or <thought>-only local reply is empty — escalate to the rented stream.
           if (gen.reply) {
-            usedLocal = true;
-            raw = gen.reply;
-            setThinking(false);
-            setStreamingId(msgId);
-            const { clean, vibe: newVibe, dream } = parseAndStripTags(raw);
-            const finalText = clean || raw;
-            writeAssistant(finalText);
-            if (inCall) callReplyRef.current = finalText;
-            if (newVibe) {
-              setVibe(newVibe);
-              saveProfile({ vibe: newVibe });
-              if (settings.longMemory) recordVibe(newVibe);
+            const { clean, vibe: newVibe, dream } = parseAndStripTags(gen.reply);
+            if (clean) {
+              usedLocal = true;
+              raw = gen.reply;
+              setThinking(false);
+              setStreamingId(msgId);
+              const finalText = clean;
+              writeAssistant(finalText);
+              if (inCall) callReplyRef.current = finalText;
+              if (newVibe) {
+                setVibe(newVibe);
+                saveProfile({ vibe: newVibe });
+                if (settings.longMemory) recordVibe(newVibe);
+              }
+              if (dream) saveProfile({ dream });
+              if (clean && settings.longMemory) {
+                void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
+                const recentMsgs: StoredMessage[] = [...history, { id: "u", role: "user", content, timestamp: "" }, { id: "a", role: "assistant", content: clean, timestamp: "" }];
+                setTimeout(() => void maybeRefreshStateOfYou(adapter, recentMsgs), 1500);
+              }
+              if (clean && speech) speech.finish(stripSourcesForSpeech(clean));
             }
-            if (dream) saveProfile({ dream });
-            if (clean && settings.longMemory) {
-              void upsertMemory(summarizeExchange(content, clean, voiceCtxRef.current.name), voiceCtxRef.current.id, voiceCtxRef.current.emotion).catch((e) => console.warn("[memory]", e));
-              const recentMsgs: StoredMessage[] = [...history, { id: "u", role: "user", content, timestamp: "" }, { id: "a", role: "assistant", content: clean, timestamp: "" }];
-              setTimeout(() => void maybeRefreshStateOfYou(adapter, recentMsgs), 1500);
-            }
-            if (clean && speech) speech.finish(stripSourcesForSpeech(clean));
           }
         } catch (e) { console.warn("[omni-local]", e); }
       }
 
+      let emptyRetry = false;
       if (!usedLocal) for (;;) {
         try {
           let result = await adapter.generateStream(
@@ -747,7 +751,16 @@ export default function App() {
           if (result.finishReason === "aborted") {
             finalText = clean ? `${clean}\n\n*...stopped.*` : "*Stopped.*";
           } else if (!clean) {
-            finalText = "Eh, the void handed me silence. Give it a few seconds and try again — I don't want to give you something half-baked.";
+            // Successful but empty after tags/thoughts: retry the same request once, then speak plainly.
+            if (!emptyRetry && !abort.signal.aborted) {
+              emptyRetry = true;
+              raw = "";
+              setThinking(true);
+              setStreamingId(null);
+              continue;
+            }
+            finalText = EMPTY_REPLY_FALLBACK;
+            if (speech) speech.finish(finalText);
           } else if (result.finishReason === "length") {
             finalText += "\n\n*...whew, hit my length ceiling. Ask me to continue and I'll pick up where I left off.*";
           } else if (result.finishReason === "content_filter" || result.finishReason === "SAFETY") {
