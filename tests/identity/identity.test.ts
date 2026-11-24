@@ -70,3 +70,14 @@ test('extractFacts no longer defaults the subject to Jenny', () => {
   const named = extractFacts("I'm working on a garden mural.", 'Maya');
   assert.ok(named.some((f) => f.includes('Maya is working on')));
 });
+
+test('anti-fabrication check is in the system prompt and stays silent', () => {
+  assert.match(WILSON_SYSTEM_CONTEXT, /Quietly check the request for its explicit constraints/);
+  assert.match(WILSON_SYSTEM_CONTEXT, /false premises, factual contradictions, or logic conflicts/);
+  assert.match(WILSON_SYSTEM_CONTEXT, /Never invent sources, quotes, stats, test results, or memories/);
+  assert.match(WILSON_SYSTEM_CONTEXT, /Never show this check, hidden reasoning, or <thought> blocks/);
+  assert.match(WILSON_SYSTEM_CONTEXT, /Imaginative or hypothetical play is welcome when clearly framed/);
+  assert.match(WILSON_SYSTEM_CONTEXT, /Don't hedge ordinary answers or add corporate refusals/);
+  // The check must not instruct Wilson to print a thought / evaluation preamble.
+  assert.equal(/output a <thought>|show a <thought>|use a <thought> block/i.test(WILSON_SYSTEM_CONTEXT), false);
+});
