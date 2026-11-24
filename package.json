@@ -14,7 +14,8 @@
     "test:call": "node --test tests/call/*.test.ts",
     "fetch-assets": "node scripts/fetch-assets.mjs",
     "alchemy:observe": "node scripts/alchemy-observe.mjs",
-    "test:orb": "node --test tests/orb/*.test.ts"
+    "test:orb": "node --test tests/orb/*.test.ts",
+    "test:title": "node --test tests/title/*.test.ts"
   },
   "dependencies": {
     "@fontsource/lexend": "^5.3.0",

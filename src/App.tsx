@@ -19,7 +19,7 @@ import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
-  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download, AudioLines,
+  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download, AudioLines, Pencil,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import TalkCall from "./components/TalkCall";
@@ -60,6 +60,7 @@ import {
   buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
+import { maybeApplyAutoTitle } from "./lib/autoTitle";
 import PuckStatus from "./components/PuckStatus";
 import VoicePicker from "./components/VoicePicker";
 import { getPuckState, getPuckFail, getPuckStage, getPuckDevice } from "./lib/puckVoice";
@@ -317,6 +318,9 @@ export default function App() {
     return n;
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const skipRenameBlur = useRef(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [lastFailed, setLastFailed] = useState<{ threadId: string; content: string } | null>(null);
 
@@ -493,7 +497,11 @@ export default function App() {
 
   /* ---------- thread helpers ---------- */
   const updateThread = useCallback((id: string, fn: (t: StoredThread) => StoredThread) => {
-    setThreads((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
+    setThreads((prev) => {
+      const next = prev.map((t) => (t.id === id ? fn(t) : t));
+      threadsRef.current = next;
+      return next;
+    });
   }, []);
 
   const createThread = useCallback((): StoredThread => {
@@ -516,7 +524,15 @@ export default function App() {
     noteDeleted(id);
     setThreads((prev) => prev.filter((t) => t.id !== id));
     setActiveId((cur) => (cur === id ? null : cur));
+    setRenamingId((cur) => (cur === id ? null : cur));
   }, []);
+
+  const commitRename = useCallback((id: string, raw: string) => {
+    const next = raw.replace(/\s+/g, " ").trim().slice(0, 60);
+    setRenamingId(null);
+    if (!next) return;
+    updateThread(id, (t) => ({ ...t, title: next, titleLocked: true }));
+  }, [updateThread]);
 
   /* ---------- core completion (streaming) ---------- */
   const runCompletion = useCallback(
@@ -779,6 +795,12 @@ export default function App() {
       setThinking(false);
       setStreamingId(null);
       if (!inCall) inputRef.current?.focus(); // never pop the keyboard up behind a call
+      const latest = threadsRef.current.find((x) => x.id === threadId);
+      if (latest) {
+        void maybeApplyAutoTitle(adapter, latest, (id, title) => {
+          updateThread(id, (t) => (t.autoTitled || t.titleLocked ? t : { ...t, title, autoTitled: true }));
+        });
+      }
     },
     [settings, updateThread, isAdmin],
   );
@@ -1123,7 +1145,34 @@ export default function App() {
                       t.id === activeId ? "bg-white/70" : "hover:bg-white/50"
                     }`}
                   >
-                    <span className="flex-1 truncate">{t.title}</span>
+                    {renamingId === t.id ? (
+                      <input
+                        value={renameDraft}
+                        autoFocus
+                        aria-label="Thread title"
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onBlur={() => {
+                          if (skipRenameBlur.current) { skipRenameBlur.current = false; return; }
+                          commitRename(t.id, renameDraft);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); skipRenameBlur.current = true; commitRename(t.id, renameDraft); }
+                          if (e.key === "Escape") { e.preventDefault(); skipRenameBlur.current = true; setRenamingId(null); }
+                        }}
+                        className="flex-1 min-w-0 bg-transparent outline-none text-[13px] text-violet-950 border-b border-violet-400/70 pb-0.5"
+                      />
+                    ) : (
+                      <span className="flex-1 truncate">{t.title}</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setRenamingId(t.id); setRenameDraft(t.title === "New Thread" ? "" : t.title); }}
+                      className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 rounded text-violet-400 hover:text-violet-700"
+                      aria-label="Rename thread"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); deleteThread(t.id); }}
