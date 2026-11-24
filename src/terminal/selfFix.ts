@@ -158,7 +158,7 @@ export async function submitForReview(p: SelfFixProposal): Promise<SelfFixPropos
     }),
   }) as SelfFixProposal;
   // Keep our local copy of the file contents (the worker doesn't echo them back).
-  return { ...p, ...data, files: p.files, status: "review" };
+  return { ...p, ...data, id: data.id || p.id, files: p.files, status: "review" };
 }
 
 export async function approveSelfFix(p: SelfFixProposal): Promise<SelfFixProposal> {
