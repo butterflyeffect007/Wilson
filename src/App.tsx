@@ -19,7 +19,7 @@ import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
-  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download, AudioLines, Pencil,
+  Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download, AudioLines, Pencil, ListTree,
 } from "lucide-react";
 import WilsonOrb from "./components/WilsonOrb";
 import TalkCall from "./components/TalkCall";
@@ -60,7 +60,8 @@ import {
   buildMemoryContext, parseAndStripTags, stripTagsForDisplay, makeTitle, newId,
   type StoredThread, type StoredMessage, type WilsonVibe, type WilsonSettings,
 } from "./memory/LocalMemory";
-import { maybeApplyAutoTitle } from "./lib/autoTitle";
+import { maybeApplyAutoTitle, maybeRefreshTitle } from "./lib/autoTitle";
+import { applySummaryResult, requestThreadSummary, shouldSummarize } from "./lib/threadSummary";
 import PuckStatus from "./components/PuckStatus";
 import VoicePicker from "./components/VoicePicker";
 import { getPuckState, getPuckFail, getPuckStage, getPuckDevice } from "./lib/puckVoice";
@@ -321,6 +322,7 @@ export default function App() {
   const skipRenameBlur = useRef(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [lastFailed, setLastFailed] = useState<{ threadId: string; content: string } | null>(null);
+  const [summarizingId, setSummarizingId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -531,6 +533,26 @@ export default function App() {
     if (!next) return;
     updateThread(id, (t) => ({ ...t, title: next, titleLocked: true }));
   }, [updateThread]);
+
+  const runSummarize = useCallback(async (threadId: string) => {
+    const thread = threadsRef.current.find((x) => x.id === threadId);
+    if (!thread || summarizingId === threadId) return;
+    if (!shouldSummarize(thread)) {
+      setGlobalWarn("Need a little more conversation before Wilson can recap it.");
+      setTimeout(() => setGlobalWarn(null), 5000);
+      return;
+    }
+    setSummarizingId(threadId);
+    const adapter = new OpenRouterAdapter("", getPreferredEngine(DEFAULT_WILSON_POLICY).model, WILSON_PROXY_URL);
+    const status = await requestThreadSummary(adapter, thread, (id, result) => {
+      updateThread(id, (t) => applySummaryResult(t, result));
+    });
+    setSummarizingId((cur) => (cur === threadId ? null : cur));
+    if (status === "fail") {
+      setGlobalWarn("Wilson couldn't summarize this chat just now. Your title and earlier summary are unchanged.");
+      setTimeout(() => setGlobalWarn(null), 6000);
+    }
+  }, [updateThread, summarizingId]);
 
   /* ---------- core completion (streaming) ---------- */
   const runCompletion = useCallback(
@@ -796,7 +818,10 @@ export default function App() {
       const latest = threadsRef.current.find((x) => x.id === threadId);
       if (latest) {
         void maybeApplyAutoTitle(adapter, latest, (id, title) => {
-          updateThread(id, (t) => (t.autoTitled || t.titleLocked ? t : { ...t, title, autoTitled: true }));
+          updateThread(id, (t) => (t.autoTitled || t.titleLocked ? t : { ...t, title, autoTitled: true, titleAtCount: t.messages.length }));
+        });
+        void maybeRefreshTitle(adapter, latest, (id, title) => {
+          updateThread(id, (t) => (t.titleLocked ? t : { ...t, title, autoTitled: true, titleAtCount: t.messages.length }));
         });
       }
     },
@@ -1171,6 +1196,16 @@ export default function App() {
                     </button>
                     <button
                       type="button"
+                      disabled={summarizingId === t.id}
+                      onClick={(e) => { e.stopPropagation(); setActiveId(t.id); setSidebarOpen(false); void runSummarize(t.id); }}
+                      className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 rounded text-violet-400 hover:text-violet-700 disabled:opacity-40"
+                      aria-label="Summarize thread"
+                      title="Summarize"
+                    >
+                      {summarizingId === t.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ListTree className="w-3.5 h-3.5" />}
+                    </button>
+                    <button
+                      type="button"
                       onClick={(e) => { e.stopPropagation(); deleteThread(t.id); }}
                       className="opacity-60 sm:opacity-0 group-hover:opacity-100 p-1 rounded text-violet-400 hover:text-rose-500"
                       aria-label="Delete thread"
@@ -1216,6 +1251,18 @@ export default function App() {
             {activeThread && activeThread.messages.length > 1 && (
               <button type="button" onClick={() => { setFindOpen((o) => !o); }} className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Search this chat" title="Search this chat">
                 <SearchIcon className="w-[18px] h-[18px]" />
+              </button>
+            )}
+            {activeThread && activeThread.messages.some((m) => m.role === "user") && (
+              <button
+                type="button"
+                disabled={summarizingId === activeThread.id}
+                onClick={() => void runSummarize(activeThread.id)}
+                className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation disabled:opacity-50"
+                aria-label="Summarize this chat"
+                title="Summarize"
+              >
+                {summarizingId === activeThread.id ? <Loader2 className="w-[18px] h-[18px] animate-spin" /> : <ListTree className="w-[18px] h-[18px]" />}
               </button>
             )}
             {activeThread && activeThread.messages.some((m) => m.role === "user") && (
@@ -1613,6 +1660,30 @@ export default function App() {
                   </div>
                 )}
               </div>
+              {(activeThread?.summary || summarizingId === activeId) && (
+                <div className="rounded-2xl glass px-4 py-3" aria-live="polite">
+                  <div className="flex items-center gap-2">
+                    <ListTree className="w-4 h-4 text-violet-400 shrink-0" />
+                    <span className="flex-1 text-[13px] text-violet-900/90">Wilson's recap</span>
+                    {activeThread?.summaryAt && (
+                      <span className="text-[10px] text-violet-400/70 whitespace-nowrap">
+                        {new Date(activeThread.summaryAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
+                  </div>
+                  {summarizingId === activeId && (
+                    <div className="mt-2 flex items-center gap-2 text-[13px] text-violet-700/70">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Updating recap…
+                    </div>
+                  )}
+                  {activeThread?.summary && (
+                    <div className="mt-2 text-[15px] leading-[1.55] text-violet-950/90 break-words">
+                      <ErrorBoundary label="this recap" compact><Markdown text={activeThread.summary} /></ErrorBoundary>
+                    </div>
+                  )}
+                </div>
+              )}
               {messages.map((msg) => (
                 <motion.div
                   key={msg.id}

@@ -41,15 +41,23 @@ export function pickMergedTitle(
   a: StoredThread,
   b: StoredThread,
   newer: StoredThread,
-): Pick<StoredThread, "title" | "titleLocked" | "autoTitled"> {
-  if (a.titleLocked && !b.titleLocked) return { title: a.title, titleLocked: true, autoTitled: a.autoTitled };
-  if (b.titleLocked && !a.titleLocked) return { title: b.title, titleLocked: true, autoTitled: b.autoTitled };
+): Pick<StoredThread, "title" | "titleLocked" | "autoTitled" | "titleAtCount"> {
+  if (a.titleLocked && !b.titleLocked) return { title: a.title, titleLocked: true, autoTitled: a.autoTitled, titleAtCount: a.titleAtCount };
+  if (b.titleLocked && !a.titleLocked) return { title: b.title, titleLocked: true, autoTitled: b.autoTitled, titleAtCount: b.titleAtCount };
   if (a.titleLocked && b.titleLocked) {
-    return { title: newer.title, titleLocked: true, autoTitled: newer.autoTitled };
+    return { title: newer.title, titleLocked: true, autoTitled: newer.autoTitled, titleAtCount: newer.titleAtCount };
   }
-  if (a.autoTitled && !b.autoTitled) return { title: a.title, titleLocked: false, autoTitled: true };
-  if (b.autoTitled && !a.autoTitled) return { title: b.title, titleLocked: false, autoTitled: true };
-  return { title: newer.title, titleLocked: false, autoTitled: !!(a.autoTitled || b.autoTitled) };
+  if (a.autoTitled && !b.autoTitled) return { title: a.title, titleLocked: false, autoTitled: true, titleAtCount: a.titleAtCount };
+  if (b.autoTitled && !a.autoTitled) return { title: b.title, titleLocked: false, autoTitled: true, titleAtCount: b.titleAtCount };
+  return { title: newer.title, titleLocked: false, autoTitled: !!(a.autoTitled || b.autoTitled), titleAtCount: newer.titleAtCount };
+}
+
+/** Refresh an auto title about every 10 messages as the topic drifts. Locked titles stay put. */
+export const TITLE_REFRESH_EVERY = 10;
+
+export function shouldRefreshTitle(thread: StoredThread, every = TITLE_REFRESH_EVERY): boolean {
+  if (thread.titleLocked || !thread.autoTitled) return false;
+  return thread.messages.length >= (thread.titleAtCount ?? 0) + every;
 }
 
 export async function generateThreadTitle(
@@ -84,6 +92,22 @@ export async function maybeApplyAutoTitle(
   apply: (id: string, title: string) => void,
 ): Promise<void> {
   if (!shouldAutoTitle(thread) || inFlight.has(thread.id)) return;
+  inFlight.add(thread.id);
+  try {
+    const title = await generateThreadTitle(adapter, thread);
+    if (title) apply(thread.id, title);
+  } finally {
+    inFlight.delete(thread.id);
+  }
+}
+
+/** Cheap, failure-safe retitle after the topic has drifted. A failed call keeps the old name. */
+export async function maybeRefreshTitle(
+  adapter: OpenRouterAdapter,
+  thread: StoredThread,
+  apply: (id: string, title: string) => void,
+): Promise<void> {
+  if (!shouldRefreshTitle(thread) || inFlight.has(thread.id)) return;
   inFlight.add(thread.id);
   try {
     const title = await generateThreadTitle(adapter, thread);

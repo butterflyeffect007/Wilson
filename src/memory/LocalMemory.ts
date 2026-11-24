@@ -21,6 +21,12 @@ export interface StoredThread {
   autoTitled?: boolean;
   /** Set when the user renames the thread. Auto-title must not overwrite it. */
   titleLocked?: boolean;
+  /** Message count when the current auto title was written. Used to refresh as the topic drifts. */
+  titleAtCount?: number;
+  /** Short recap of the conversation (main points, decisions, next steps). */
+  summary?: string;
+  /** ISO time the current summary was saved. */
+  summaryAt?: string;
 }
 
 export interface RelationshipSeed {

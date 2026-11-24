@@ -4,6 +4,7 @@
  */
 import type { StoredThread, StoredMessage } from "../memory/LocalMemory";
 import { pickMergedTitle } from "../lib/autoTitle";
+import { pickMergedSummary } from "../lib/threadSummary";
 import { api } from "./api";
 import { getToken, getUser } from "./store";
 
@@ -18,7 +19,7 @@ function loadMeta(uid: string): Meta {
 function saveMeta(m: Meta) { try { localStorage.setItem(KEY, JSON.stringify(m)); } catch { /* full */ } }
 
 const last = (t: StoredThread) => t.messages[t.messages.length - 1];
-export const sig = (t: StoredThread) => { const l = last(t); return `${t.title}|${t.messages.length}|${l?.id ?? ""}|${l?.content.length ?? 0}`; };
+export const sig = (t: StoredThread) => { const l = last(t); return `${t.title}|${t.summary ?? ""}|${t.summaryAt ?? ""}|${t.messages.length}|${l?.id ?? ""}|${l?.content.length ?? 0}`; };
 export const updatedAt = (t: StoredThread) => Date.parse(last(t)?.timestamp || t.createdAt) || 0;
 const worthSyncing = (t: StoredThread) => t.messages.some((m) => m.role === "user");
 
@@ -28,7 +29,7 @@ function mergeThread(a: StoredThread, b: StoredThread): StoredThread {
   for (const m of b.messages) if (!byId.has(m.id) || (byId.get(m.id)!.content.length < m.content.length)) byId.set(m.id, m);
   const messages = [...byId.values()].sort((x, y) => (Date.parse(x.timestamp) || 0) - (Date.parse(y.timestamp) || 0));
   const newer = updatedAt(b) > updatedAt(a) ? b : a;
-  return { ...newer, messages, ...pickMergedTitle(a, b, newer) };
+  return { ...newer, messages, ...pickMergedTitle(a, b, newer), ...pickMergedSummary(a, b) };
 }
 
 /** Pure: fold remote changes into the current local list (used inside setThreads). */

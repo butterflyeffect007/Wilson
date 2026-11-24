@@ -3,7 +3,9 @@ import test from "node:test";
 import {
   normalizeThreadTitle,
   shouldAutoTitle,
+  shouldRefreshTitle,
   pickMergedTitle,
+  TITLE_REFRESH_EVERY,
 } from "../../src/lib/autoTitle.ts";
 import type { StoredThread, StoredMessage } from "../../src/memory/LocalMemory.ts";
 
@@ -40,6 +42,7 @@ test("pickMergedTitle never overwrites a user-renamed title", () => {
     title: "My Custom Name",
     titleLocked: true,
     autoTitled: undefined,
+    titleAtCount: undefined,
   });
   assert.deepEqual(pickMergedTitle(local, remote, local).title, "My Custom Name");
 });
@@ -51,5 +54,20 @@ test("pickMergedTitle prefers an auto title over a first-message stub", () => {
     title: "Gematria Of My Name",
     titleLocked: false,
     autoTitled: true,
+    titleAtCount: undefined,
   });
+});
+
+test("shouldRefreshTitle waits ~10 messages and respects the rename lock", () => {
+  const msgs = Array.from({ length: 5 }, (_, i) => msg(i % 2 ? "assistant" : "user", "hi", i));
+  const titled = thread({ messages: msgs, autoTitled: true, titleAtCount: 5 });
+  assert.equal(shouldRefreshTitle(titled), false);
+  const drifted = thread({
+    messages: Array.from({ length: 5 + TITLE_REFRESH_EVERY }, (_, i) => msg(i % 2 ? "assistant" : "user", "hi", i)),
+    autoTitled: true,
+    titleAtCount: 5,
+  });
+  assert.equal(shouldRefreshTitle(drifted), true);
+  assert.equal(shouldRefreshTitle({ ...drifted, titleLocked: true }), false);
+  assert.equal(shouldRefreshTitle({ ...drifted, autoTitled: false }), false);
 });
