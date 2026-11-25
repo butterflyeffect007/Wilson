@@ -168,6 +168,9 @@ export class OpenRouterAdapter implements ModelAdapter {
         return false; // partial JSON — ignore
       }
       if (parsed?.error) {
+        // Mid-stream upstream error (e.g. Gemini UNAVAILABLE): keep the words we have
+        // and mark the reply truncated so the app can auto-continue.
+        if (text) { finishReason = finishReason || "length"; return true; }
         throw new OpenRouterError(parsed.error.message ?? "Stream error", Number(parsed.error.code) || 500);
       }
       if (parsed?.model) model = parsed.model;
@@ -198,7 +201,10 @@ export class OpenRouterAdapter implements ModelAdapter {
       let done = false;
       while (!done) {
         const { done: rDone, value } = await reader.read();
-        if (rDone) break;
+        if (rDone) {
+          buffer += decoder.decode();
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
         let nl: number;
         while ((nl = buffer.indexOf("\n")) !== -1) {

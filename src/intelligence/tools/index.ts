@@ -201,9 +201,12 @@ export function detectTools(message: string): ToolCall[] {
 
 const CURRENT = /\b(latest|current|currently|right now|today|tonight|this week|recent|recently|breaking|who won|score|price of|just happened|news)\b/i;
 
+/** Turns that might need a live tool. Used so casual / analytical chat is not stalled by a planner call. */
+export const LIVE_TOOL_HINT = /\b(latest|current|now|today|tonight|right now|news|recent|look up|search|real[- ]time|live|flights?|airport|planes?|population|capital|currency|exchange|convert|book|author|novel|where is|address|map|located|how (many|big|far)|area of)\b/i;
+
 /** Ask the model for a JSON tool request when keywords miss but the turn sounds factual/current. */
 export async function planWithModel(adapter: ModelAdapter, message: string): Promise<ToolCall[]> {
-  if (!/\b(latest|current|now|today|tonight|right now|news|recent|look up|search|real[- ]time|live|flights?|airport|planes?|population|capital|currency|exchange|convert|book|author|novel|where is|address|map|located|how (many|big|far)|area of)\b/i.test(message)) return [];
+  if (!LIVE_TOOL_HINT.test(message)) return [];
   const list = Object.entries(TOOL_DESCRIPTIONS).map(([k, v]) => `- ${k}: ${v}`).join("\n");
   try {
     const r = await adapter.generate({

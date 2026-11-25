@@ -7,7 +7,7 @@
 import { OpenRouterAdapter } from "../intelligence/OpenRouterAdapter";
 import type { ModelAdapter } from "../intelligence/ModelAdapter";
 import type { ModelRequest, ModelResponse } from "../intelligence";
-import { detectTools, planWithModel, runTool, toolContext, TOOL_DESCRIPTIONS, type ToolCall, type ToolName, type ToolResult, type ToolSource } from "../intelligence/tools";
+import { detectTools, runTool, toolContext, TOOL_DESCRIPTIONS, LIVE_TOOL_HINT, type ToolCall, type ToolName, type ToolResult, type ToolSource } from "../intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "../core/wilson/WilsonPolicy";
 import { isE2EOmni } from "./access";
 import { generateWithActiveBrain, loadedPack, WILSON_BRAIN_PROMPT, type ActiveBrain } from "./engine";
@@ -140,22 +140,13 @@ export async function collectOracleCalls(
   let planner: OracleTurn["planner"] = worker.length || oracle.length ? "regex" : "none";
   const already = new Set<string>([...worker.map((c) => c.name), ...oracle.map((c) => c.name)]);
   const room = MAX_TOOLS_PER_TURN - already.size;
-  if (room > 0 && opts.adapter) {
-    // Regex is the floor. JSON planning may add more, and also runs when regex missed.
+  // Only spend a planner model call when regex missed AND the turn actually sounds like it needs live data.
+  // (A planner call on every message added a long pause before the real reply started.)
+  if (room > 0 && !worker.length && !oracle.length && opts.adapter && LIVE_TOOL_HINT.test(message)) {
     const extra = await planExtra(opts.adapter, message, opts.architect, already, room);
-    if (extra.worker.length || extra.oracle.length) planner = planner === "none" ? "regex+json" : "regex+json";
+    if (extra.worker.length || extra.oracle.length) planner = "regex+json";
     worker.push(...extra.worker);
     oracle.push(...extra.oracle);
-  } else if (room > 0 && !oracle.length && !worker.length && opts.adapter) {
-    // Fall back to the existing worker-only planner when we have no local adapter wrapper yet.
-    const planned = await planWithModel(opts.adapter, message);
-    for (const c of planned) {
-      if (already.has(c.name)) continue;
-      worker.push(c);
-      already.add(c.name);
-      if (worker.length + oracle.length >= MAX_TOOLS_PER_TURN) break;
-    }
-    if (planned.length) planner = "regex+json";
   }
   return {
     worker: capCalls(worker, MAX_TOOLS_PER_TURN),
