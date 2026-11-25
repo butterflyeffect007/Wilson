@@ -2,8 +2,9 @@
  * Pure (DOM-free) pieces of Wilson's speech pipeline, kept separate so they can be tested in Node:
  *  - takeChunks: sentence-first chunker for streamed text
  *  - withRetry: retry ONE voice with a short backoff (never a different voice)
- *  - createOrderedSpeaker: synthesizes pieces in parallel (bounded), plays them strictly in order,
- *    never drops a piece; if a piece truly can't be voiced it stops the reply and reports "down".
+ *  - createOrderedSpeaker: synthesizes pieces in parallel (bounded), plays them strictly in order.
+ *    A piece that still fails after retries is skipped (so later sentences are still spoken).
+ *    A FatalVoiceError (daily limit / missing endpoint) stops the rest of the reply.
  */
 
 /* ---------------- chunking ---------------- */
@@ -165,7 +166,9 @@ export type SpeakerDeps<B> = {
   /** Awaited once, right before the very first clip plays (call mode closes the mic here on iPhone). */
   beforeFirstPlay?: () => Promise<void> | void;
   onPlay?: (index: number) => void;
-  /** A piece couldn't be voiced (after retries) or played (after a replay): the rest of this reply stays text-only. */
+  /** One piece couldn't be voiced or played after retries; later pieces are still spoken. */
+  onSkip?: (index: number, err: unknown) => void;
+  /** The locked voice is down for this reply (daily limit / missing endpoint): the rest stays text-only. */
   onDown?: (index: number, err: unknown) => void;
   /** Everything queued has been played (or the reply went down / was stopped) and finish() was called. */
   onEnd?: (r: { played: number; total: number; down: boolean }) => void;
@@ -199,15 +202,28 @@ export function createOrderedSpeaker<B>(d: SpeakerDeps<B>) {
         const p = results[playIdx];
         if (!p) { await new Promise((r) => setTimeout(r, 0)); continue; } // not started yet (lookahead) — pump next tick
         let clip: B;
-        try { clip = await p; } catch (e) { if (!d.stopped()) { down = true; d.onDown?.(playIdx, e); } break; }
+        try { clip = await p; } catch (e) {
+          if (d.stopped()) break;
+          if (e instanceof FatalVoiceError) { down = true; d.onDown?.(playIdx, e); break; }
+          // Keep later sentences: skip only this piece (already retried inside synth).
+          d.onSkip?.(playIdx, e);
+          results[playIdx] = null;
+          playIdx++;
+          continue;
+        }
         if (d.stopped()) break;
         if (played === 0 && d.beforeFirstPlay) { try { await d.beforeFirstPlay(); } catch { /* ignore */ } if (d.stopped()) break; }
         if (played === 0) d.onFirstPlay?.();
         d.onPlay?.(playIdx);
-        let ok = await d.play(clip, playIdx);
-        if (!ok && !d.stopped()) ok = await d.play(clip, playIdx); // one replay of the SAME clip before giving up
+        let ok = false;
+        for (let replay = 0; replay < 3 && !ok && !d.stopped(); replay++) ok = await d.play(clip, playIdx);
         if (d.stopped()) break;
-        if (!ok) { down = true; d.onDown?.(playIdx, new Error("playback failed")); break; }
+        if (!ok) {
+          d.onSkip?.(playIdx, new Error("playback failed"));
+          results[playIdx] = null;
+          playIdx++;
+          continue;
+        }
         played++;
         results[playIdx] = null; // free memory
         playIdx++;

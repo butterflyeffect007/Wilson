@@ -81,18 +81,35 @@ test('speaker: prefetches the next pieces while one is playing (parallel synth)'
   assert.equal(maxInflight, 3);
 });
 
-test('speaker: a failed piece stops the reply (no skipping ahead) and reports down', async () => {
-  const played: number[] = []; let down: number | null = null; let ended: any = null;
+test('speaker: a failed middle piece is skipped and later sentences are still spoken', async () => {
+  const played: number[] = []; const skipped: number[] = []; let ended: any = null;
   const sp = createOrderedSpeaker<number>({
     concurrency: 2, stopped: () => false,
     synth: async (_t, i) => { await sleep(2); if (i === 2) throw new Error('voice down'); return i; },
+    play: async (c) => { played.push(c); return true; },
+    onSkip: (i) => { skipped.push(i); }, onEnd: (r) => { ended = r; },
+  });
+  for (let i = 0; i < 5; i++) sp.push('p' + i);
+  sp.finish();
+  while (!ended) await sleep(5);
+  assert.deepEqual(played, [0, 1, 3, 4]);
+  assert.deepEqual(skipped, [2]);
+  assert.equal(ended.down, false);
+  assert.equal(ended.played, 4);
+});
+
+test('speaker: a fatal voice error (daily limit) still stops the rest of the reply', async () => {
+  const played: number[] = []; let down: number | null = null; let ended: any = null;
+  const sp = createOrderedSpeaker<number>({
+    concurrency: 2, stopped: () => false,
+    synth: async (_t, i) => { await sleep(2); if (i === 2) throw new FatalVoiceError('limit', 'limit'); return i; },
     play: async (c) => { played.push(c); return true; },
     onDown: (i) => { down = i; }, onEnd: (r) => { ended = r; },
   });
   for (let i = 0; i < 5; i++) sp.push('p' + i);
   sp.finish();
   while (!ended) await sleep(5);
-  assert.deepEqual(played, [0, 1]); // never jumps to piece 3/4 after piece 2 failed
+  assert.deepEqual(played, [0, 1]);
   assert.equal(down, 2); assert.equal(ended.down, true);
 });
 

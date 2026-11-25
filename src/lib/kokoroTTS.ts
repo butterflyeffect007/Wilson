@@ -58,6 +58,8 @@ let lockedVoice: VoiceId = (() => {
   } catch { return DEFAULT_VOICE; }
 })();
 const lockListeners = new Set<(v: VoiceId) => void>();
+/** If Brian couldn't start a reply, stay on Andrew for the rest of this session (until Settings change). */
+let sessionVoice: VoiceId | null = null;
 export function getLockedVoice(): VoiceId { return lockedVoice; }
 export function voiceLabel(v: VoiceId = lockedVoice): string { return VOICE_OPTIONS.find((o) => o.id === v)?.label ?? v; }
 export function subscribeLockedVoice(l: (v: VoiceId) => void) { lockListeners.add(l); return () => { lockListeners.delete(l); }; }
@@ -68,6 +70,8 @@ export function subscribeLockedVoice(l: (v: VoiceId) => void) { lockListeners.ad
 export function setLockedVoice(v: VoiceId): void {
   if (!isVoiceId(v)) return;
   lockedVoice = v;
+  sessionVoice = null;
+  brianDownUntil = 0;
   try { localStorage.setItem(LOCK_KEY, v); } catch { /* private mode */ }
   dbg(`voice locked to ${voiceLabel(v)}`);
   if (status.state !== "idle") setStatus({ state: "ready", reason: undefined });
@@ -99,7 +103,7 @@ const EDGE_TTS_URL = PROXY + "/tts/edge";
 const EDGE_VOICES = { "edge-brian": "en-US-BrianMultilingualNeural", "edge-andrew": "en-US-AndrewMultilingualNeural" } as const;
 type EdgeVoiceId = keyof typeof EDGE_VOICES;
 const isEdge = (v: VoiceId): v is EdgeVoiceId => v === "edge-brian" || v === "edge-andrew";
-/** If Brian couldn't start a reply, go straight to Andrew for a few minutes instead of waiting on Brian again. */
+/** Legacy timestamp (no longer flips back mid-conversation; sessionVoice holds the backup). */
 let brianDownUntil = 0;
 const BRIAN_REST_MS = 10 * 60 * 1000;
 const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/84TAAAAAAAAAAAAASW5mbwAAAA8AAAAFAAACoABtbW1tbW1tbW1tbW1tbW1tbW1tkpKSkpKSkpKSkpKSkpKSkpKSkpK2tra2tra2tra2tra2tra2tra2ttvb29vb29vb29vb29vb29vb29vb//////////////////////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJARQAAAAAAAAAqC9P8vrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80TEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEUwAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEpgAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=";
@@ -112,6 +116,20 @@ const els: HTMLAudioElement[] = [];
 const urlOf = new WeakMap<HTMLAudioElement, string>();
 let playTurn = 0;
 let finishCurrentClip: (() => void) | null = null;
+/** iOS Safari pauses clips when the screen sleeps or the app is backgrounded. Kick the current clip to resume. */
+let resumePlayback: (() => void) | null = null;
+function watchForeground(): void {
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+  const kick = () => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    void unlockAudioContext();
+    resumePlayback?.();
+  };
+  document.addEventListener("visibilitychange", kick);
+  window.addEventListener("pageshow", kick);
+  window.addEventListener("focus", kick);
+}
+watchForeground();
 /** In-flight voice requests of the current reply (aborted on stop so they don't hog connections). */
 const inflightCtrls = new Set<AbortController>();
 
@@ -303,6 +321,7 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
         })();
         return;
       }
+      if (resumePlayback) resumePlayback = null;
       resolve(ok);
     };
     const done = () => settle(true);
@@ -315,12 +334,16 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       const p = a.play();
       if (p && typeof p.then === "function") p.catch((e) => dbg("canplay play() rejected", e));
     };
+    const screenHidden = () => typeof document !== "undefined" && document.hidden;
     const resumeAfterPause = () => {
       if (settled || my !== generation || a.ended || !a.paused || ignorePause) return;
-      if (resumeAttempts >= 6) { fail("kept getting interrupted (resume retries exhausted)"); return; }
-      const delay = Math.min(2000, 250 * (2 ** resumeAttempts++));
+      // Don't treat a screen-lock / background pause as a failed sentence.
+      if (resumeAttempts >= 20 && !screenHidden()) { fail("kept getting interrupted (resume retries exhausted)"); return; }
+      const delay = screenHidden() ? 800 : Math.min(2000, 250 * (2 ** Math.min(resumeAttempts, 5)));
+      resumeAttempts++;
       setTimeout(() => {
         if (settled || my !== generation || a.ended || !a.paused || ignorePause) return;
+        void unlockAudioContext();
         a.play().catch((e) => { dbg("resume play() rejected", e); resumeAfterPause(); });
       }, delay);
     };
@@ -330,7 +353,7 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       const playedFor = Math.max(a.currentTime || 0, maxTime);
       // iOS Safari + Edge MP3: "ended" often fires after only a fraction of the clip. Don't move
       // on — retry the SAME words (optionally remuxed to WAV) so the rest of the script is spoken.
-      if (attempt < 2 && playedFor + 0.35 < est * (exact ? 0.9 : 0.8)) {
+      if (attempt < 3 && playedFor + 0.35 < est * (exact ? 0.9 : 0.8)) {
         dbg(`clip ended early (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
         settle("early");
         return;
@@ -344,8 +367,20 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       const secs = exact ? est : reported && Math.abs(reported - est) / est < 0.5 ? Math.max(reported, est) : Math.max(est, reported);
       stall = setTimeout(() => {
         const playedFor = Math.max(a.currentTime || 0, maxTime);
-        if (playedFor + 0.35 < Math.max(est, secs) * 0.8 && attempt < 2) {
+        if (settled || my !== generation) return;
+        // iOS often pauses (screen lock, control center, call mode) without ending the clip.
+        // Wait and resume instead of cutting the sentence short.
+        if ((a.paused && !a.ended) || screenHidden()) {
+          dbg("clip paused or screen asleep, waiting to resume");
+          resumeAfterPause();
+          armStall();
+          return;
+        }
+        if (playedFor + 0.35 < Math.max(est, secs) * 0.8 && attempt < 3) {
           dbg(`clip stalled (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
+          settle("early");
+        } else if (playedFor + 0.35 < Math.max(est, secs) * 0.8) {
+          dbg(`clip still short (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
           settle("early");
         } else {
           dbg("clip never fired 'ended', moving on");
@@ -354,6 +389,10 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       }, secs * 1000 + (exact ? 4000 : 8000));
     };
     finishCurrentClip = done;
+    resumePlayback = () => {
+      if (settled || my !== generation || a.ended || ignorePause) return;
+      if (a.paused) { void unlockAudioContext(); a.play().catch((e) => { dbg("foreground play() rejected", e); resumeAfterPause(); }); }
+    };
     ignorePause = true;
     resetEl(a);
     assignSrc(a, blob);
@@ -478,7 +517,7 @@ async function post(url: string, body: unknown, signal: AbortSignal) {
  *  parallelizes), so a long piece needs a length-scaled timeout instead of a flat 14 s that killed it. */
 function edgeEngine(id: EdgeVoiceId, name: string): Engine {
   return {
-    id, type: "audio/mpeg", timeoutMs: 14000, timeoutFor: (t) => Math.min(60000, 15000 + t.length * 70),
+    id, type: "audio/mpeg", timeoutMs: 25000, timeoutFor: (t) => Math.min(120000, 25000 + t.length * 120),
     async once(text, signal) {
       const res = await post(EDGE_TTS_URL, { text, voice: EDGE_VOICES[id] }, signal);
       if (res.status === 404) throw new FatalVoiceError(`${name} isn't on the voice server (404)`, "missing");
@@ -554,9 +593,9 @@ async function requestOnce(e: Engine, text: string, my: number): Promise<Blob> {
 }
 
 /** Retry policy: same voice, short backoff, bounded overall so a dead voice is reported instead of hanging. */
-const RETRY = { attempts: 4, backoffMs: [350, 1000, 2200], deadlineMs: 75000 };
+const RETRY = { attempts: 6, backoffMs: [400, 1000, 2000, 3500, 5000], deadlineMs: 120000 };
 /** Brian's first piece gets a shorter budget so a Brian outage hands the reply to Andrew quickly. */
-const BRIAN_FIRST_TRY = { attempts: 2, backoffMs: [400], deadlineMs: 20000 };
+const BRIAN_FIRST_TRY = { attempts: 2, backoffMs: [500], deadlineMs: 25000 };
 
 /** Voice one piece with the locked voice. Throws only after the same voice failed every retry. */
 async function synthPiece(voice: VoiceId, text: string, index: number, my: number, speed: number, gaveUp: () => boolean, retry: typeof RETRY = RETRY): Promise<Blob> {
@@ -628,9 +667,10 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   stopSpeaking();
   const my = generation;
   const picked = lockedVoice;
-  // One voice for this whole reply. Brian starts it; if Brian can't voice the first piece, the whole reply
-  // switches to Andrew BEFORE any audio plays (later pieces wait for that decision), so voices never mix.
-  let voice: VoiceId = picked === "edge-brian" && Date.now() < brianDownUntil ? "edge-andrew" : picked;
+  // One voice for this whole reply, and for the rest of the conversation if we had to use Andrew.
+  // If Brian can't voice the first piece, Andrew speaks the WHOLE reply (decided before any audio
+  // plays) and stays locked for later replies until she changes Settings.
+  let voice: VoiceId = sessionVoice ?? (picked === "edge-brian" && Date.now() < brianDownUntil ? "edge-andrew" : picked);
   let label = voiceLabel(voice);
   let decide: (v: VoiceId) => void = () => {};
   const decided: Promise<VoiceId> = voice === "edge-brian" ? new Promise((r) => { decide = r; }) : Promise.resolve(voice);
@@ -643,8 +683,9 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       return b;
     } catch (err) {
       if (my !== generation || String((err as Error)?.message) === "stopped") { decide("edge-brian"); throw err; }
+      sessionVoice = "edge-andrew";
       brianDownUntil = Date.now() + BRIAN_REST_MS;
-      dbg("Brian couldn't start this reply; Andrew speaks the whole reply instead", err);
+      dbg("Brian couldn't start this reply; Andrew speaks this reply and the rest of the conversation", err);
       voice = "edge-andrew"; label = voiceLabel(voice);
       decide("edge-andrew");
       return synthPiece("edge-andrew", t, 0, my, speed, () => gaveUp);
@@ -670,8 +711,11 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       if (status.state !== "preparing" || voice !== "puck-device") setStatus({ state: "ready", reason: undefined });
     },
     onPlay: () => { setPlayingVoice(label); maybeFlush(); },
+    onSkip: (i, err) => {
+      dbg(`${label} skipped piece ${i + 1} of ${speaker.queued} and will keep going`, err);
+    },
     onDown: (i, err) => {
-      gaveUp = true; // stop retrying the pieces after this one; they won't be played
+      gaveUp = true; // daily limit / missing endpoint: stop the rest of this reply
       const msg = String((err as Error)?.message || err);
       const resting = err instanceof FatalVoiceError && err.kind === "limit";
       dbg(`${label} is down at piece ${i + 1} of ${speaker.queued}; rest of this reply stays text`, err);
