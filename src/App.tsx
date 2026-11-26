@@ -40,7 +40,7 @@ import { generateWithActiveBrain, loadedPack } from "./omni/engine";
 import { linksIn } from "./intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
-import { shouldContinue, MAX_CONTINUES } from "./lib/continueReply";
+import { shouldContinue, trimContinuationOverlap, continueAddedNothing, MAX_CONTINUES, CONTINUE_HOLD_CHARS } from "./lib/continueReply";
 import { isArchitectReservedName, resolveCompanionName } from "./core/wilson/WilsonIdentity";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
@@ -741,22 +741,30 @@ export default function App() {
               conversation: [...(request.conversation ?? []), { role: "user", content: request.userInput }, { role: "assistant", content: raw }],
               userInput: "Continue exactly where you left off. Do not repeat anything or add a preamble.",
             };
-            const needsSpace = !/\s$/.test(raw);
-            let first = true;
+            const before = raw;
+            let incoming = "";
+            let released = false;
+            const applyCont = (force: boolean) => {
+              if (!incoming) return;
+              if (!released && !force && incoming.length < CONTINUE_HOLD_CHARS && !/[.!?]\s/.test(incoming)) return;
+              const trimmed = trimContinuationOverlap(before, incoming);
+              released = true;
+              if (continueAddedNothing(incoming, trimmed)) return;
+              const gap = trimmed && !/\s$/.test(before) && !/^\s/.test(trimmed) ? " " : "";
+              raw = before + gap + trimmed;
+              const shown = stripTagsForDisplay(raw);
+              writeAssistant(shown);
+              if (inCall) callReplyRef.current = shown;
+              speech?.push(stripSourcesForSpeech(shown));
+            };
             result = await adapter.generateStream(
               contReq,
-              (chunk) => {
-                if (first && needsSpace && !/^\s/.test(chunk)) chunk = " " + chunk;
-                first = false;
-                raw += chunk;
-                const shown = stripTagsForDisplay(raw);
-                writeAssistant(shown);
-                if (inCall) callReplyRef.current = shown;
-                speech?.push(stripSourcesForSpeech(shown));
-              },
+              (chunk) => { incoming += chunk; applyCont(false); },
               abort.signal,
             );
+            applyCont(true);
             if (result.degraded) usedBackup = true;
+            if (continueAddedNothing(incoming, trimContinuationOverlap(before, incoming))) break;
           }
 
           const { clean, vibe: newVibe, dream } = parseAndStripTags(raw);

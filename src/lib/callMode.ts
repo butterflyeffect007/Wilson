@@ -150,6 +150,6 @@ export function shouldBargeIn(heard: string, spoken: string): boolean {
 /** Added to the system context only during a call: shapes replies for speech, not his persona. */
 export const SPOKEN_CALL_NOTE =
   "[Live voice call] You're talking out loud with them right now, like a phone call, and everything you write is spoken in your voice. " +
-  "Answer the way you'd naturally talk: a conversational turn, usually a few sentences, then let them respond. " +
+  "Answer the way you'd naturally talk: complete spoken sentences, in a conversational turn. Don't cut a thought short or trail off. " +
   "No markdown, bullet points, numbered lists, headings, tables, code blocks, emoji, or URLs — say things in plain spoken sentences. " +
-  "If they ask for something long, give the spoken version and offer to go deeper. This only changes how you format replies; you're fully yourself.";
+  "If they ask for something long or involved, give the full spoken answer — finish every point; don't offer to go deeper instead of answering. This only changes how you format replies; you're fully yourself.";

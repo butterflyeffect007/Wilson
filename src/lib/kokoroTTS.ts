@@ -31,6 +31,7 @@ import { attachAudio, detachAudio, getAudioContext, setSpeakingFlag, unlockAudio
 import { primeScreenAwake } from "./screenAwake";
 import { ensurePuck, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
 import { createOrderedSpeaker, FatalVoiceError, firstSuccess, splitAtPauses, splitToLimit, takeChunks, withRetry } from "./voiceQueue";
+import { trimContinuationOverlap } from "./continueReply";
 
 /* ---- the locked voice (one per session; changed only from Settings) ---- */
 export type VoiceId = "edge-brian" | "edge-andrew" | "gemini" | "aura-orion" | "puck-device";
@@ -278,7 +279,7 @@ export function stopSpeaking(): void {
 }
 
 /** Play one audio blob on a primed element; resolves true when it has actually finished, false if playback itself failed. */
-function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
+function playBlob(blob: Blob, my: number, attempt = 0, startAt = 0): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     if (my !== generation) return resolve(true);
     const a = audioEls()[playTurn % EL_COUNT];
@@ -300,10 +301,11 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       a.removeEventListener("playing", onPlaying);
       a.removeEventListener("timeupdate", onTime);
       a.removeEventListener("canplay", onCanPlay);
+      a.removeEventListener("loadedmetadata", onMetaSeek);
       a.removeEventListener("loadedmetadata", armStall);
       if (stall) clearTimeout(stall);
     };
-    const settle = (ok: boolean | "early") => {
+    const settle = (ok: boolean | "early", resumeFrom = 0) => {
       if (settled) return; settled = true;
       cleanup();
       if (finishCurrentClip === done) finishCurrentClip = null;
@@ -311,13 +313,19 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
         void (async () => {
           if (my !== generation) return resolve(true);
           // Headerless Edge MP3s often "end" after a fraction of a second on iOS. Decode to WAV
-          // (correct duration) and replay on the other primed element, same voice, same words.
+          // (correct duration). If she already heard a stretch, resume from there — never replay
+          // the same words from the top (that's the "he's repeating himself" voice bug).
           let next = blob;
-          if (attempt === 0 && !(blob.type || "").toLowerCase().includes("wav")) {
+          let nextStart = resumeFrom;
+          if (!(blob.type || "").toLowerCase().includes("wav")) {
             const wav = await decodeToWav(blob);
-            if (wav) { dbg(`replaying as wav (${(wav.size / 1024).toFixed(0)} KB)`); if (knownDur.has(blob)) knownDur.set(wav, knownDur.get(blob)!); next = wav; }
+            if (wav) { dbg(`continuing as wav (${(wav.size / 1024).toFixed(0)} KB) at ${nextStart.toFixed(2)}s`); if (knownDur.has(blob)) knownDur.set(wav, knownDur.get(blob)!); next = wav; }
+            else if (nextStart > 0.4) {
+              dbg("already heard this piece and could not remux; not replaying from the start");
+              return resolve(true);
+            }
           }
-          resolve(await playBlob(next, my, attempt + 1));
+          resolve(await playBlob(next, my, attempt + 1, nextStart));
         })();
         return;
       }
@@ -331,6 +339,8 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
     const onPlaying = () => { started = true; ignorePause = false; };
     const onCanPlay = () => {
       if (settled || my !== generation || started) return;
+      if (startAt > 0.05 && !(isFinite(a.duration) && a.duration > startAt)) return;
+      seekIfNeeded();
       const p = a.play();
       if (p && typeof p.then === "function") p.catch((e) => dbg("canplay play() rejected", e));
     };
@@ -351,11 +361,14 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
     const onEnded = () => {
       if (settled || my !== generation) return;
       const playedFor = Math.max(a.currentTime || 0, maxTime);
-      // iOS Safari + Edge MP3: "ended" often fires after only a fraction of the clip. Don't move
-      // on — retry the SAME words (optionally remuxed to WAV) so the rest of the script is spoken.
-      if (attempt < 3 && playedFor + 0.35 < est * (exact ? 0.9 : 0.8)) {
-        dbg(`clip ended early (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
-        settle("early");
+      // iOS Safari + Edge MP3: "ended" often fires after only a fraction of the clip. Remux/resume
+      // so the rest is spoken, but do not restart a clip she already heard.
+      const thresh = exact ? 0.9 : 0.8;
+      if (attempt < 3 && playedFor + 0.35 < est * thresh) {
+        const barely = playedFor < 0.45 || playedFor < est * 0.2;
+        const resume = barely ? startAt : Math.max(startAt, playedFor - 0.15);
+        dbg(`clip ended early (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), ${barely ? "retrying" : "resuming at " + resume.toFixed(2) + "s"}`);
+        settle("early", resume);
         return;
       }
       done();
@@ -377,22 +390,27 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
           return;
         }
         if (playedFor + 0.35 < Math.max(est, secs) * 0.8 && attempt < 3) {
-          dbg(`clip stalled (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
-          settle("early");
-        } else if (playedFor + 0.35 < Math.max(est, secs) * 0.8) {
-          dbg(`clip still short (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
-          settle("early");
+          const barely = playedFor < 0.45 || playedFor < est * 0.2;
+          const resume = barely ? startAt : Math.max(startAt, playedFor - 0.15);
+          dbg(`clip stalled (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), ${barely ? "retrying" : "resuming at " + resume.toFixed(2) + "s"}`);
+          settle("early", resume);
         } else {
           dbg("clip never fired 'ended', moving on");
           done();
         }
-      }, secs * 1000 + (exact ? 4000 : 8000));
+      }, Math.max(0.5, secs - startAt) * 1000 + (exact ? 4000 : 8000));
     };
     finishCurrentClip = done;
     resumePlayback = () => {
       if (settled || my !== generation || a.ended || ignorePause) return;
       if (a.paused) { void unlockAudioContext(); a.play().catch((e) => { dbg("foreground play() rejected", e); resumeAfterPause(); }); }
     };
+    const seekIfNeeded = () => {
+      if (startAt > 0.05 && isFinite(a.duration) && a.duration > startAt) {
+        try { if (Math.abs((a.currentTime || 0) - startAt) > 0.05) a.currentTime = startAt; } catch { /* seek is best-effort */ }
+      }
+    };
+    const onMetaSeek = () => { seekIfNeeded(); if (startAt > 0.05 && !started && !settled) tryPlay(); };
     ignorePause = true;
     resetEl(a);
     assignSrc(a, blob);
@@ -402,12 +420,16 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
     a.addEventListener("playing", onPlaying);
     a.addEventListener("timeupdate", onTime);
     a.addEventListener("canplay", onCanPlay);
+    a.addEventListener("loadedmetadata", onMetaSeek);
     a.addEventListener("loadedmetadata", armStall);
     attachAudio(a);
     armStall();
     const tryPlay = () => {
       if (settled || my !== generation) return;
+      // Don't start from 0 when we meant to resume mid-clip — wait for duration, then seek.
+      if (startAt > 0.05 && !(isFinite(a.duration) && a.duration > startAt)) return;
       playAttempts++;
+      seekIfNeeded();
       const p = a.play();
       if (p && typeof p.then === "function") p.then(() => { started = true; ignorePause = false; dbg(`playing ${(blob.size / 1024).toFixed(0)} KB`); }, (e) => {
         dbg("play() rejected", e);
@@ -724,13 +746,18 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     onEnd: () => end(),
   });
 
+  let spoken = "";
   const dispatch = (text: string) => {
     const t = toSpeakable(text);
     if (!t) return;
     // On-device Puck is faster on short pieces; cloud voices get whole sentences (fewer requests, natural prosody)
     // but are capped (~480 chars) so one slow request can't hold up the rest of the reply.
     const pieces = voice === "puck-device" ? splitAtPauses(t, dispatched === 0) : splitToLimit(t);
-    for (const p of pieces) { speaker.push(p); dispatched++; }
+    for (const p of pieces) {
+      speaker.push(p);
+      dispatched++;
+      spoken = spoken ? spoken + " " + p : p;
+    }
   };
   /* Gather sentences into bigger pieces, but never let the speaker run dry: when nothing is queued behind
      the piece now playing, send what we have (at least ~40 chars). */
@@ -759,10 +786,20 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     push: (t) => { fullText = t; feed(t, false); },
     finish: (t) => {
       if (my !== generation || done) return;
-      // Final text may differ from streamed text (tags stripped). If what we've already consumed isn't a prefix
-      // of the final text, resume from the longest common prefix so nothing is skipped.
-      if (!t.startsWith(fullText.slice(0, offset))) { let k = 0; while (k < offset && k < t.length && t[k] === fullText[k]) k++; offset = k; }
-      fullText = t; done = true; feed(t, true);
+      done = true;
+      // Final text may differ from streamed text (tags stripped). Never rewind into words already
+      // handed to the speaker — that made him say the same sentences twice. Speak only the new tail.
+      const consumed = fullText.slice(0, offset);
+      if (t.startsWith(consumed)) {
+        fullText = t;
+        feed(t, true);
+      } else {
+        const already = [spoken, buffer].filter(Boolean).join(" ");
+        buffer = "";
+        const rest = trimContinuationOverlap(already, toSpeakable(t));
+        if (rest) dispatch(rest);
+        fullText = t;
+      }
       speaker.finish();
     },
   };
