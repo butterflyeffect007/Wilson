@@ -8,7 +8,8 @@ import { makeTerminalAdapter, runAgentLoop, MAX_PASSES } from "./agentLoop";
 import { loadChat, saveChat, clearChatStore, historyForModel, type ChatMsg } from "./chatStore";
 import { typeCode } from "./pythonFence";
 import { closeTerminalHash, isE2EArchitect, isE2ESelfFix } from "./access";
-import { cachedIsAdmin } from "../lib/admin";
+import { cachedIsAdmin, verifyAdmin } from "../lib/admin";
+import { isSelfFixIntent, takeSelfFixRequest, SELF_FIX_ROUTED } from "./selfFixIntent";
 import { ProposalCard, ReviewScreen, LiveScreen, selfFixBadge } from "./SelfFixViews";
 import {
   FIXTURE, canUseSelfFix, loadSelfFix, saveSelfFix,
@@ -110,6 +111,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
   const buildAbort = useRef<AbortController | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const realFix = canUseSelfFix() && cachedIsAdmin() && !e2eFix;
+  const [serverOk, setServerOk] = useState<boolean>(allowed);
   const setMode = (m: TermMode) => { setModeState(m); try { localStorage.setItem(MODE_KEY, m); } catch { /* ignore */ } };
   const clientRef = useRef<PyodideClient | null>(null);
   const loopAbort = useRef<AbortController | null>(null);
@@ -119,6 +121,19 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
   const close = () => { closeTerminalHash(); onClose?.(); };
+
+  // Client lock is backed by a server check. 401 closes the room. Jenny stays in if she
+  // already verified and we're only offline.
+  useEffect(() => {
+    if (!allowed || isE2EArchitect() || e2eFix) { setServerOk(true); return; }
+    let stop = false;
+    void verifyAdmin().then((ok) => {
+      if (stop) return;
+      if (ok === false) setServerOk(false);
+      if (ok === true) setServerOk(true);
+    });
+    return () => { stop = true; };
+  }, [allowed, e2eFix]);
 
   useEffect(() => { saveDraft(code, filename); }, [code, filename]);
   useEffect(() => { saveChat(chat); }, [chat]);
@@ -132,6 +147,18 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     try { setHistory(await fetchPushes()); } catch { /* offline: keep what we have */ }
   }, [realFix]);
   useEffect(() => { void refreshHistory(); }, [refreshHistory]);
+
+  const startedPending = useRef(false);
+  useEffect(() => {
+    if (!realFix || startedPending.current) return;
+    const pending = takeSelfFixRequest();
+    if (!pending) return;
+    startedPending.current = true;
+    setMode("fix");
+    void runSelfFix(pending, { routedFrom: "chat" });
+  }, [realFix]);
+
+  const previewTold = useRef<string | null>(null);
 
   // Follow the current push for real: PR state, build check, then the GitHub Pages publish.
   const pushId = proposal?.id && proposal.status !== "draft" && !proposal.id.startsWith("draft-") ? proposal.id : "";
@@ -152,6 +179,10 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
           saveSelfFix(next);
           return next;
         });
+        if (st.preview?.state === "ready" && st.preview.url && previewTold.current !== st.id) {
+          previewTold.current = st.id || "ready";
+          pushChat("wilson", "The preview is ready. Tap Preview it on the card to try the change. Nothing goes live until you Approve.");
+        }
         const settled = st.status === "declined" || ((st.status === "live" || st.status === "undone") && (st.publish?.state === "live" || st.publish?.state === "failed"));
         if (settled) { void refreshHistory(); return; }
       } catch { /* try again next tick */ }
@@ -297,7 +328,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     });
   };
 
-  const runSelfFix = async (text: string) => {
+  const runSelfFix = async (text: string, opts?: { routedFrom?: "fix" | "python" | "chat" }) => {
     if (proposal && proposal.status === "review") {
       pushChat("user", text);
       pushChat("wilson", "I already have a change waiting for you. Approve it or Decline it on the card first, then I'll start the next one.");
@@ -314,7 +345,11 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     setFixErr("");
     setBuilding(["Starting…"]);
     pushChat("user", text);
-    pushChat("wilson", "On it. I'm reading my own code now.");
+    if (opts?.routedFrom === "python") pushChat("wilson", SELF_FIX_ROUTED);
+    if (opts?.routedFrom === "chat") {
+      pushChat("wilson", "That's a change to my app, so I'm doing it as a real self-fix from the main chat. You'll get a preview — nothing goes live until you Approve.");
+    }
+    pushChat("wilson", "On it. I'm reading my own code now. I'll show you a preview — nothing goes live until you Approve.");
     try {
       const next = await buildSelfFixProposal(text, {
         signal: abort.signal,
@@ -328,7 +363,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
         const sent = await submitForReview(next);
         setProposal(sent); saveSelfFix(sent);
         void refreshHistory();
-        pushChat("wilson", `Here's my change: "${sent.title}". The safety check and preview are getting ready. Then tap Preview it, or Approve & go live.`, true);
+        pushChat("wilson", `Here's my change for "${sent.request || text}": ${sent.summary || sent.title}. The safety check and preview are getting ready. Then tap Preview it, or Approve & go live.`, true);
       } catch (err) {
         setFixErr(err instanceof Error ? err.message : "Couldn't send it.");
         pushChat("wilson", `I made the change but couldn't send it for its safety check. Tap Try again on the card.`, true);
@@ -351,7 +386,13 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     const text = draftMsg.trim();
     if (!text || looping) return;
     setDraftMsg("");
-    if (mode === "fix" && !e2eFix) { await runSelfFix(text); return; }
+    const wasPython = mode === "python";
+    const wantsFix = !e2eFix && (mode === "fix" || (canUseSelfFix() && isSelfFixIntent(text, { mode })));
+    if (wantsFix) {
+      if (wasPython) setMode("fix");
+      await runSelfFix(text, { routedFrom: wasPython ? "python" : "fix" });
+      return;
+    }
     const abort = new AbortController();
     loopAbort.current = abort;
     setLooping(true);
@@ -475,7 +516,8 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     hlRef.current.scrollLeft = taRef.current.scrollLeft;
   };
 
-  if (!allowed) {
+  const admitted = allowed && serverOk;
+  if (!admitted) {
     return (
       <div className="wterm" role="dialog" aria-modal="true" aria-label="Wilson's Terminal">
         <div className="bg"><div className="orb o1" /><div className="orb o2" /></div>
@@ -487,7 +529,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
           </div>
           <section className="stack" style={{ margin: "24px 16px" }}>
             <div className="win locked">
-              <p>This room is only for the Architect. Sign in on Jenny's account to write and run code with Wilson.</p>
+              <p>This room is only for the Architect. It needs the Architect key on this phone, checked with Wilson's server.</p>
             </div>
           </section>
         </div>
@@ -545,7 +587,7 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
             </section>
           )}
           {fixView === "live" && <div className="footnote">Imagination becomes intelligence</div>}
-          {fixView !== "review" && fixView !== "live" && mode === "fix" && canUseSelfFix() && (
+          {fixView !== "review" && fixView !== "live" && canUseSelfFix() && (mode === "fix" || !!proposal || !!building) && (
             <>
               <ChangeCard
                 proposal={proposal}

@@ -138,3 +138,35 @@ test("simple status uses plain words: no PR / diff / merge / deploy / build chec
   assert.equal(simpleStatus("live", "building").settled, false);
   assert.equal(simpleStatus("review").step, 1);
 });
+
+import { relevanceProblems } from "../../src/terminal/selfFixPipeline.ts";
+
+test("relevance accepts a shimmer change for a shimmer request", () => {
+  const problems = relevanceProblems("add a subtle shimmer effect to the chat title", {
+    title: "Add a subtle shimmer effect to the chat title",
+    summary: "Adds a subtle shimmer animation to the chat title.",
+    files: [{ path: "src/App.tsx", status: "edited" }, { path: "src/styles.css", status: "edited" }],
+    diff: [
+      { kind: "file", text: "src/App.tsx" },
+      { kind: "del", text: '      <span className="wl-title">' },
+      { kind: "add", text: '      <span className="wl-title wl-title-shimmer">' },
+    ],
+  });
+  assert.deepEqual(problems, []);
+});
+
+test("relevance rejects an unrelated cleanup when she asked for a shimmer", () => {
+  const problems = relevanceProblems("add a subtle shimmer effect to the chat title", {
+    title: "What have you been wanting to change?",
+    summary: "Removes an unused helper in the terminal.",
+    files: [{ path: "src/terminal/WilsonTerminal.tsx", status: "edited" }],
+    diff: [
+      { kind: "file", text: "src/terminal/WilsonTerminal.tsx" },
+      { kind: "del", text: "  const collectOutput = (before: Line[]) => {" },
+      { kind: "del", text: "    void before;" },
+      { kind: "del", text: "  };" },
+    ],
+  });
+  assert.ok(problems.length, "should refuse an unrelated deletion");
+  assert.match(problems.join(" "), /shimmer|match|only removes/i);
+});

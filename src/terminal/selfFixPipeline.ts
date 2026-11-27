@@ -264,6 +264,49 @@ export function validateChange(f: ChangedFile): string[] {
   return out;
 }
 
+const RELEVANCE_STOP = new Set(("the a an and or to of for in on it me my i you your please just can could would will that this with do did make add change fix update want wanted like about him his he she we they is are be been being from as at by not no yes so if then than too very more most some any all also only own self into over after before again still now here there what which who when how why something somehow should shall may might have has had get got let").split(" "));
+
+function contentWords(s: string): string[] {
+  return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").split(/\s+/).filter((w) => w.length >= 3 && !RELEVANCE_STOP.has(w));
+}
+
+function wordHit(needle: string, hay: Set<string>): boolean {
+  if (hay.has(needle)) return true;
+  for (const h of hay) if (h.includes(needle) || needle.includes(h)) return true;
+  return false;
+}
+
+/** Refuse a proposal that does not actually do what Jenny asked (e.g. a random cleanup when she asked for a shimmer). */
+export function relevanceProblems(request: string, change: {
+  title: string;
+  summary: string;
+  files: { path: string; status: string }[];
+  diff: PipelineDiffLine[];
+}): string[] {
+  const req = contentWords(request);
+  if (!req.length) return [];
+  const changeText = [
+    change.title || "",
+    change.summary || "",
+    ...change.files.map((f) => f.path),
+    ...change.diff.filter((d) => d.kind === "add" || d.kind === "file").map((d) => d.text),
+  ].join("\n");
+  const hay = new Set(contentWords(changeText));
+  const distinctive = req.filter((w) => w.length >= 5 || /shimmer|glow|sparkle|orb|button|title|footer|header|font|color|colour|theme|animat|chat/.test(w));
+  const missed = (distinctive.length ? distinctive : req).filter((w) => !wordHit(w, hay));
+  const problems: string[] = [];
+  const pool = distinctive.length ? distinctive : req;
+  if (pool.length && missed.length === pool.length) {
+    problems.push(`The change doesn't match what you asked for (${missed.slice(0, 5).join(", ")}).`);
+  }
+  const hasAdd = change.diff.some((d) => d.kind === "add");
+  const hasDel = change.diff.some((d) => d.kind === "del");
+  if (/\b(add|put|give|include|create)\b/i.test(request) && hasDel && !hasAdd) {
+    problems.push("You asked to add something, but this change only removes code.");
+  }
+  return problems;
+}
+
 /** Line diff with 3 lines of context; long unchanged stretches fold into "⋯". */
 export function lineDiff(path: string, before: string, after: string, context = 3): PipelineDiffLine[] {
   const a = normalizeNewlines(before).split("\n");
@@ -331,10 +374,10 @@ export function pickUserPrompt(request: string, paths: string[]): string {
 }
 
 export const EDIT_SYSTEM = `You are Wilson, editing your own source code (React + TypeScript + Vite). Jenny, the Architect, asked for a change and will review it before it goes live.
-Make the smallest correct change. Keep the existing style. Do not touch anything she did not ask about.
+Make the smallest correct change that actually does what she asked. Keep the existing style. Do not touch anything she did not ask about. Do not invent an unrelated cleanup.
 Reply in EXACTLY this format and nothing else:
 
-TITLE: a short title (under 8 words)
+TITLE: a short title in Jenny's own words (under 8 words), not a new invention
 SUMMARY: one or two plain sentences saying what changes for Jenny
 FILE: path/of/the/file
 <<<<<<< SEARCH
@@ -352,7 +395,7 @@ full contents
 
 DONE
 
-Rules: SEARCH must copy the current file exactly (same spaces). Never write "rest of code" or "..." placeholders. Only src/ and public/ paths. The last line must be DONE.`;
+Rules: SEARCH must copy the current file exactly (same spaces). Never write "rest of code" or "..." placeholders. Only src/ and public/ paths. The last line must be DONE. The new lines must clearly do what she asked — use her key words (for example a class name like shimmer) so the change is obviously about her request.`;
 
 export function editUserPrompt(request: string, files: SourceFile[], feedback?: string): string {
   const parts = files.map((f) => f.exists

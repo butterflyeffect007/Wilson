@@ -78,12 +78,22 @@ try {
   step("Terminal opens in Fix mode with the empty change card");
   await shot("simple-1-empty.png");
 
+  // Wrong-mode case: ask for an app change while in the Python room.
+  await page.click('[data-testid="mode-python"]');
+  await page.waitForSelector('[data-testid="run-btn"]', { timeout: 5000 });
+  step("Wrong-mode: switched to Python first");
   await page.fill('.wterm input[aria-label="Message Wilson"]', "Add a sparkle to the footer text");
   await page.click('.wterm button[aria-label="Send"]');
   await page.waitForSelector('[data-testid="sf-card"][data-state="review"]', { timeout: 20000 });
   const f = state.proposeBody.files[0];
   if (!f.content || !f.content.includes("✦") || f.content.split("\n").length !== FILE.split("\n").length || f.baseSha !== "blob-1") throw new Error("propose did not send full file content + baseSha");
-  step("Wilson builds the change and sends it automatically (full file + base sha)");
+  const asked = await page.locator('[data-testid="sf-asked"]').innerText();
+  if (!asked.includes("Add a sparkle to the footer text")) throw new Error("card is missing her request: " + asked);
+  const title = await page.locator('[data-testid="sf-card"] h2').innerText();
+  if (title !== "Add a sparkle to the footer text") throw new Error("title should use her words, got: " + title);
+  const chat = await page.locator("#wterm-msgs").innerText();
+  if (!/real self-fix, not as Python/i.test(chat)) throw new Error("chat did not honestly say this was a self-fix, not Python: " + chat);
+  step("Asking from Python mode still runs the real self-fix, with her words on the card");
   await page.waitForSelector('[data-testid="sf-preview"][data-preview="building"]', { timeout: 15000 });
   const bodyText = await page.locator('[data-testid="sf-card"]').innerText();
   if (/\b(PR|pull request|diff|merge|deploy|build check)\b/i.test(bodyText)) throw new Error("jargon on card: " + bodyText);
