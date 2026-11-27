@@ -565,7 +565,12 @@ export function editPromptMessages(request: string, files: SourceFile[], feedbac
     const label = body === normalizeNewlines(f.content) ? "current contents" : "current contents, relevant parts";
     return { role: "user" as const, content: `FILE: ${f.path}\n----- ${label} -----\n${body}\n----- end of ${f.path} -----` };
   });
+  let hint = "";
+  if (/\b(shimmer|sparkle|glow|shine|glitter|title|header)\b/i.test(request)) {
+    hint = "\n\nHint: you can only edit src/ and public/ (never index.html or the repo root). For a title or header look, add @keyframes and a class in src/index.css, and put that class on the existing wl-title / wl-w markup in src/App.tsx.";
+  }
   const user = `Jenny's request:\n${request}\n\nUse the exact current file contents from the previous messages. SEARCH must copy those lines exactly.`
+    + hint
     + (feedback ? `\n\nYour last attempt could not be applied:\n${feedback}\nTry again with SEARCH parts copied exactly from the current contents above.` : "");
   return { history, user };
 }
