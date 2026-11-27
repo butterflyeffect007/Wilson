@@ -204,7 +204,13 @@ export function applyEdits(sources: SourceFile[], edits: EditBlock[]): ApplyResu
     }
     if (!search.trim()) { problems.push(`An edit to ${path} has an empty SEARCH part.`); continue; }
     const exact = countOccurrences(cur.content, search);
-    if (exact === 1) { cur.content = cur.content.replace(search, () => replace); continue; }
+    if (exact === 1) {
+      if (cur.content.length > 1000 && search.length > 200 && replace.length < search.length * 0.5) {
+        problems.push(`That edit would remove too much of ${path}. Add a small new block instead of replacing a large section.`);
+        continue;
+      }
+      cur.content = cur.content.replace(search, () => replace); continue;
+    }
     if (exact > 1) { problems.push(`A SEARCH part matches ${exact} places in ${path}. It needs a few more unique lines.`); continue; }
     const fuzzy = fuzzyLineMatch(cur.content, search);
     if (fuzzy.count === 1) {
@@ -246,8 +252,11 @@ function bracketBalance(s: string): [number, number, number] {
 export function validateChange(f: ChangedFile): string[] {
   const out: string[] = [];
   if (!f.content.trim()) { out.push(`The new ${f.path} would be empty.`); return out; }
-  if (f.status === "edited" && f.previous.length > 400 && f.content.length < f.previous.length * 0.5) {
-    out.push(`The new ${f.path} is less than half its old size, which looks cut off.`);
+  if (f.status === "edited" && f.previous.length > 200 && f.content.length < f.previous.length * 0.8) {
+    out.push(`The new ${f.path} is much smaller than the current file, which looks cut off.`);
+  }
+  if (/\.css$/i.test(f.path) && /@tailwind\s+base/.test(f.previous) && !/@tailwind\s+base/.test(f.content)) {
+    out.push(`The new ${f.path} would throw away the existing stylesheet instead of adding the effect.`);
   }
   const added = lineDiff(f.path, f.previous, f.content).filter((l) => l.kind === "add").map((l) => l.text).join("\n");
   if (PLACEHOLDER_RE.test(added)) out.push(`The change to ${f.path} has a "rest of the code" placeholder instead of real code.`);

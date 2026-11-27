@@ -105,7 +105,8 @@ test("creates new files only when they don't exist", () => {
 test("validation refuses empty, shrunken, placeholder, and unbalanced output", () => {
   const big = "const x = {\n" + "  a: 1,\n".repeat(200) + "};\n";
   assert.ok(validateChange({ path: "src/a.ts", status: "edited", previous: big, content: "  " }).length);
-  assert.match(validateChange({ path: "src/a.ts", status: "edited", previous: big, content: "const x = {\n};\n" }).join(" "), /half/);
+  assert.match(validateChange({ path: "src/a.ts", status: "edited", previous: big, content: "const x = {\n};\n" }).join(" "), /smaller|cut off|half/);
+  assert.match(validateChange({ path: "src/index.css", status: "edited", previous: "@tailwind base;\n".repeat(80) + "body { color: red; }\n", content: ".wl-shimmer { animation: titleShimmer 4s ease-in-out infinite; }\n" }).join(" "), /stylesheet|smaller|cut off/i);
   assert.match(validateChange({ path: "src/a.ts", status: "edited", previous: "f();\n", content: "f();\n// ... rest of the code\n" }).join(" "), /placeholder/);
   assert.match(validateChange({ path: "src/a.ts", status: "edited", previous: "if (a) { b(); }\n", content: "if (a) { b();\n" }).join(" "), /brackets/);
   assert.match(validateChange({ path: "public/m.json", status: "edited", previous: "{}", content: "{\"a\":" }).join(" "), /JSON|brackets/);
