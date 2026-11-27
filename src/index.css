@@ -885,6 +885,15 @@ html.dark button[aria-label="Send"] { box-shadow: 0 0 18px rgba(209,59,178,.45),
 button[aria-label="Talk to type"] { box-shadow: 0 0 0 1.5px rgba(56,178,218,.45), 0 0 0 3px rgba(110,33,176,.12) !important; color: #2E80E4 !important; }
 html.dark button[aria-label="Talk to type"] { color: #8FD3EE !important; box-shadow: 0 0 0 1px rgba(56,178,218,.55), 0 0 12px rgba(56,178,218,.3) !important; }
 
+@keyframes wl-gold-sparkle {
+  0%, 100% { opacity: 0.8; transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 3px rgba(251,191,36,0.6)); }
+  50% { opacity: 1; transform: scale(1.2) rotate(15deg); filter: drop-shadow(0 0 6px rgba(251,191,36,0.9)); }
+}
+.wl-gold-sparkle {
+  animation: wl-gold-sparkle 2s ease-in-out infinite;
+  color: #FBBF24 !important;
+}
+
 /* ---------- Readable buttons (WCAG AA 4.5:1) in both themes, keeping the W22 violet / magenta / gold look ---------- */
 /* Dark theme: light "frosted white" surfaces (bg-white/xx, bg-violet-100/xx) became pale boxes under the light dark-mode text. Give them a deep violet glass instead. */
 html.dark :is([class~="bg-white/45"], [class~="bg-white/50"], [class~="bg-white/55"], [class~="bg-white/60"], [class~="bg-violet-100/40"], [class~="bg-violet-100/50"], [class~="bg-violet-100/60"], [class~="bg-violet-100/80"]):not(input) {
