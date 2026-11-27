@@ -304,6 +304,13 @@ export function relevanceProblems(request: string, change: {
   if (/\b(add|put|give|include|create)\b/i.test(request) && hasDel && !hasAdd) {
     problems.push("You asked to add something, but this change only removes code.");
   }
+  if (/\b(shimmer|sparkle|glow|shine|glitter)\b/i.test(request)) {
+    const added = change.diff.filter((d) => d.kind === "add").map((d) => d.text).join("\n");
+    const hasStyle = /@keyframes|animation\s*:/.test(added);
+    if (!hasStyle) {
+      problems.push("You asked for a visible effect, but this only adds a class name and no CSS animation or style. Add the actual style (for example @keyframes) too.");
+    }
+  }
   return problems;
 }
 
@@ -396,7 +403,7 @@ full contents
 
 DONE
 
-Rules: SEARCH must copy the current file exactly (same spaces). Never write "rest of code" or "..." placeholders. Only src/ and public/ paths. The last line must be DONE. The new lines must clearly do what she asked — use her key words (for example a class name like shimmer) so the change is obviously about her request.`;
+Rules: SEARCH must copy the current file exactly (same spaces). Never write "rest of code" or "..." placeholders. Only src/ and public/ paths. The last line must be DONE. The new lines must clearly do what she asked — use her key words (for example a class name like shimmer) so the change is obviously about her request. If she asked for a visible effect (shimmer, sparkle, glow), you must also add the actual CSS (@keyframes and a rule that uses it). A class name with no style is not enough.`;
 
 /** The live worker rejects any single chat message over 8000 characters. Stay under that. */
 export const MAX_EDIT_PROMPT_CHARS = 7200;

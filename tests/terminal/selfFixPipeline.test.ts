@@ -151,9 +151,26 @@ test("relevance accepts a shimmer change for a shimmer request", () => {
       { kind: "file", text: "src/App.tsx" },
       { kind: "del", text: '      <span className="wl-title">' },
       { kind: "add", text: '      <span className="wl-title wl-title-shimmer">' },
+      { kind: "file", text: "src/index.css" },
+      { kind: "add", text: "@keyframes wl-title-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }" },
+      { kind: "add", text: ".wl-title-shimmer { background-size: 200% 100%; animation: wl-title-shimmer 4s linear infinite; }" },
     ],
   });
   assert.deepEqual(problems, []);
+});
+
+test("relevance rejects a shimmer class name without CSS", () => {
+  const problems = relevanceProblems("add a subtle shimmer effect to the chat title", {
+    title: "Add a subtle shimmer effect to the chat title",
+    summary: "Adds the CSS shimmer class to the Wilson title element in the header.",
+    files: [{ path: "src/App.tsx", status: "edited" }],
+    diff: [
+      { kind: "file", text: "src/App.tsx" },
+      { kind: "add", text: '                <span className="wl-w block text-[19px] tracking-[0.28em] shimmer">WILSON</span>' },
+    ],
+  });
+  assert.ok(problems.length, "should refuse a class with no style");
+  assert.match(problems.join(" "), /css|style|animation|keyframes/i);
 });
 
 test("relevance rejects an unrelated cleanup when she asked for a shimmer", () => {
