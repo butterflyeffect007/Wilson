@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   applyEdits, diffForFiles, isWritablePath, lineDiff, parseEditReply, parseFilePick, simpleStatus, stepperFor, validateChange,
+  relevanceProblems, editPromptMessages, sliceSourceForPrompt, MAX_EDIT_PROMPT_CHARS,
 } from "../../src/terminal/selfFixPipeline.ts";
 
 const APP = [
@@ -139,7 +141,6 @@ test("simple status uses plain words: no PR / diff / merge / deploy / build chec
   assert.equal(simpleStatus("review").step, 1);
 });
 
-import { relevanceProblems } from "../../src/terminal/selfFixPipeline.ts";
 
 test("relevance accepts a shimmer change for a shimmer request", () => {
   const problems = relevanceProblems("add a subtle shimmer effect to the chat title", {
@@ -169,4 +170,44 @@ test("relevance rejects an unrelated cleanup when she asked for a shimmer", () =
   });
   assert.ok(problems.length, "should refuse an unrelated deletion");
   assert.match(problems.join(" "), /shimmer|match|only removes/i);
+});
+
+
+test("edit prompt stays under the live worker message cap and keeps the chat title", () => {
+  const app = readFileSync(new URL("../../src/App.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../src/index.css", import.meta.url), "utf8");
+  assert.ok(app.length > 8000 && css.length > 8000);
+  const ask = "add a subtle shimmer effect to the chat title";
+  const prompt = editPromptMessages(ask, [
+    { path: "src/App.tsx", content: app, exists: true },
+    { path: "src/index.css", content: css, exists: true },
+  ]);
+  assert.ok(prompt.user.length <= MAX_EDIT_PROMPT_CHARS);
+  for (const m of prompt.history) {
+    assert.ok(m.content.length <= 8000, `${m.content.slice(0, 40)} is ${m.content.length} chars`);
+  }
+  const joined = prompt.history.map((m) => m.content).join("\n");
+  assert.match(joined, /wl-title/);
+  assert.match(joined, /WILSON/);
+  assert.match(joined, /header \.wl-w/);
+  assert.match(joined, /\.wl-title/);
+  const sliced = sliceSourceForPrompt(app, ask, 7200);
+  assert.ok(sliced.length <= 7200);
+  assert.match(sliced, /wl-title/);
+  assert.match(sliced, /className="wl-w block/);
+  const cssSlice = sliceSourceForPrompt(css, ask, 7200);
+  assert.match(cssSlice, /\.wl-title/);
+  assert.match(cssSlice, /header \.wl-w/);
+});
+
+test("a SEARCH copied from a sliced prompt still applies to the full file", () => {
+  const app = readFileSync(new URL("../../src/App.tsx", import.meta.url), "utf8");
+  const search = '                <span className="wl-title block leading-none text-violet-900/80 min-w-0"><span className="wl-w block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></span>';
+  assert.ok(app.includes(search));
+  const applied = applyEdits(
+    [{ path: "src/App.tsx", content: app, exists: true }],
+    [{ path: "src/App.tsx", search, replace: search.replace('className="wl-title ', 'className="wl-title wl-title-shimmer ') }],
+  );
+  assert.deepEqual(applied.problems, []);
+  assert.ok(applied.files[0].content.includes("wl-title-shimmer"));
 });

@@ -10,7 +10,7 @@ import { makeTerminalAdapter } from "./agentLoop";
 import { fetchSourceFile, fetchSourceTree, type SelfFixProposal } from "./selfFix";
 import { titleFromRequest } from "./selfFixIntent";
 import {
-  EDIT_SYSTEM, PICK_SYSTEM, applyEdits, diffForFiles, editUserPrompt, parseEditReply, parseFilePick,
+  EDIT_SYSTEM, PICK_SYSTEM, applyEdits, diffForFiles, editPromptMessages, parseEditReply, parseFilePick,
   pickUserPrompt, relevanceProblems, validateChange, type SourceFile,
 } from "./selfFixPipeline";
 
@@ -22,10 +22,10 @@ export type BuildHooks = {
 
 const MAX_TOTAL_CHARS = 140_000;
 
-async function ask(adapter: OpenRouterAdapter, system: string, user: string, maxTokens: number, signal: AbortSignal) {
+async function ask(adapter: OpenRouterAdapter, system: string, user: string, maxTokens: number, signal: AbortSignal, history: ModelRequest["conversation"] = []) {
   const request: ModelRequest = {
     systemContext: system,
-    conversation: [],
+    conversation: history,
     userInput: user,
     generation: { temperature: 0.2, maxTokens },
     metadata: { task: "selffix" },
@@ -72,7 +72,17 @@ export async function buildSelfFixProposal(request: string, hooks: BuildHooks): 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (signal.aborted) throw Object.assign(new Error("Stopped."), { name: "AbortError" });
     onStep(attempt === 1 ? "Writing the change…" : "Fixing my first try…");
-    const res = await ask(adapter, EDIT_SYSTEM, editUserPrompt(request, sources, feedback || undefined), 4096, signal);
+    let res;
+    try {
+      const prompt = editPromptMessages(request, sources, feedback || undefined);
+      res = await ask(adapter, EDIT_SYSTEM, prompt.user, 4096, signal, prompt.history);
+    } catch (err) {
+      const msg = String((err as Error)?.message || err);
+      if (/\b413\b/.test(msg)) {
+        throw new Error("The files were too big to send in one go. Tell me the screen or file if you can. Nothing was sent anywhere.");
+      }
+      throw err;
+    }
     const parsed = parseEditReply(res.text);
     const problems = [...parsed.problems];
     if (res.finishReason === "length") problems.unshift("My reply hit the length limit and was cut off.");

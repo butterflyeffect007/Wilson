@@ -366,6 +366,7 @@ export function diffForFiles(files: ChangedFile[], maxLines = 400): PipelineDiff
 
 export const PICK_SYSTEM = `You are Wilson, looking at your own source code (a React + TypeScript + Vite app). Jenny, the Architect, wants you to change yourself.
 You can only change files under src/ and public/. Pick the files you need to READ to make the change (at most ${MAX_FILES_PER_FIX}, fewest possible).
+Prefer the smallest CSS or component that owns that UI (for a title or header look, that is often src/index.css plus the markup in src/App.tsx). Do not pick a huge file if a smaller one will do.
 You may also name one new file to create if the change truly needs it.
 Reply with ONLY JSON like {"files":["src/components/Example.tsx"]} and nothing else.`;
 
@@ -397,12 +398,171 @@ DONE
 
 Rules: SEARCH must copy the current file exactly (same spaces). Never write "rest of code" or "..." placeholders. Only src/ and public/ paths. The last line must be DONE. The new lines must clearly do what she asked — use her key words (for example a class name like shimmer) so the change is obviously about her request.`;
 
-export function editUserPrompt(request: string, files: SourceFile[], feedback?: string): string {
-  const parts = files.map((f) => f.exists
-    ? `FILE: ${f.path}\n----- current contents -----\n${f.content}\n----- end of ${f.path} -----`
-    : `FILE: ${f.path}\n(does not exist yet; create it with NEW FILE if needed)`);
-  return `Jenny's request:\n${request}\n\n${parts.join("\n\n")}${feedback ? `\n\nYour last attempt could not be applied:\n${feedback}\nTry again with SEARCH parts copied exactly from the current contents above.` : ""}`;
+/** The live worker rejects any single chat message over 8000 characters. Stay under that. */
+export const MAX_EDIT_PROMPT_CHARS = 7200;
+
+const EFFECT_WORD = /^(shimmer|sparkle|glow|shine|glitter|animat(?:e|ion|ed)?|iridescent|effect|subtle|tiny|gold)$/;
+
+/** The thing she wants changed (title, header, …) — not the effect word, which often is not in the file yet. */
+function subjectHints(request: string): string[] {
+  const s: string[] = [];
+  if (/\b(title|header|heading|wordmark|logo|brand)\b/i.test(request)) {
+    s.push("wl-title", "wl-w", "tracking-[0.28em]", "+ THE ONLY ONE");
+  }
+  if (/\bheader\b/i.test(request)) s.push("<header", "header ");
+  if (/\borb\b/i.test(request)) s.push("wilson-orb", "wl-orb");
+  if (/\b(wilson word|the word wilson|WILSON word)\b/i.test(request)) s.push("wl-w", ">WILSON<");
+  return s;
 }
+
+function lineHasTerm(line: string, term: string): boolean {
+  const t = term.toLowerCase();
+  if (!t) return false;
+  const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${escaped}(?![a-z0-9])`, "i").test(line);
+}
+
+function scoreLine(line: string, request: string): number {
+  let s = 0;
+  const subjects = subjectHints(request);
+  for (const h of subjects) if (lineHasTerm(line, h) || line.includes(h)) s += 8;
+  if (lineHasTerm(line, "wl-title") || lineHasTerm(line, "wl-w")) s += 6;
+  if (/>WILSON</.test(line) || /className="wl-w/.test(line) || /className="[^"]*wl-title/.test(line)) s += 12;
+  if (/\.wl-title\b/.test(line) || /header\s+\.wl-w/.test(line)) s += 12;
+  const hasSubject = subjects.length > 0;
+  for (const w of contentWords(request)) {
+    if (w.length < 4 || !lineHasTerm(line, w)) continue;
+    s += hasSubject && EFFECT_WORD.test(w) ? 1 : 4;
+  }
+  return s;
+}
+
+function promptHints(request: string): string[] {
+  return [...new Set([...subjectHints(request), ...contentWords(request)])];
+}
+
+/** Pack the most relevant exact lines of a (possibly huge) file into a budget, so SEARCH/REPLACE still has real text to copy. */
+export function sliceSourceForPrompt(content: string, request: string, budget: number): string {
+  const text = normalizeNewlines(content);
+  if (text.length <= budget) return text;
+  const lines = text.split("\n");
+  const scores = lines.map((line) => scoreLine(line, request));
+  if (!scores.some((s) => s > 0)) {
+    for (let i = 0; i < lines.length; i++) {
+      if (/(className|header|h1|wl-title|wl-w|WILSON)/i.test(lines[i])) scores[i] = 1;
+    }
+  }
+  const hits = scores.map((s, i) => ({ i, s })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
+  const take = new Array(lines.length).fill(false);
+  for (const h of hits) {
+    const pad = h.s >= 8 ? 14 : h.s >= 4 ? 3 : 1;
+    for (let i = Math.max(0, h.i - pad); i <= Math.min(lines.length - 1, h.i + pad); i++) take[i] = true;
+    const marked = take.reduce((n, v, i) => n + (v ? lines[i].length + 1 : 0), 0);
+    if (marked > budget * 3) break;
+  }
+  if (!take.some(Boolean)) {
+    const n = Math.min(lines.length, 80);
+    for (let i = 0; i < n; i++) take[i] = true;
+  }
+  const windows: { start: number; end: number; score: number }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!take[i]) continue;
+    const start = i;
+    while (i + 1 < lines.length && take[i + 1]) i++;
+    let best = start, score = 0;
+    for (let j = start; j <= i; j++) if (scores[j] > score) { score = scores[j]; best = j; }
+    const MAX_WIN = 28;
+    if (i - start + 1 > MAX_WIN) {
+      const half = Math.floor(MAX_WIN / 2);
+      windows.push({ start: Math.max(start, best - half), end: Math.min(i, best + half), score });
+    } else {
+      windows.push({ start, end: i, score });
+    }
+  }
+  // Pack the highest-scoring windows first so a later title/header is not dropped for earlier weak hits.
+  const ranked = [...windows].sort((a, b) => b.score - a.score);
+  const header = `(This file has ${lines.length} lines. Only the most relevant parts are shown. SEARCH must copy the code exactly, with no line numbers and no ellipsis.)`;
+  const chosen: { start: number; end: number }[] = [];
+  let used = header.length;
+  for (const w of ranked) {
+    const block = `----- lines ${w.start + 1}-${w.end + 1} -----\n` + lines.slice(w.start, w.end + 1).join("\n");
+    if (used + block.length + 2 <= budget) {
+      chosen.push({ start: w.start, end: w.end });
+      used += block.length + 2;
+      continue;
+    }
+    let best = w.start;
+    for (let i = w.start; i <= w.end; i++) if (scores[i] > scores[best]) best = i;
+    const label = (a: number, b: number) => `----- lines ${a + 1}-${b + 1} -----\n` + lines.slice(a, b + 1).join("\n");
+    let a = best, b = best;
+    const room = () => budget - used - label(a, b).length - 2;
+    if (room() < 0) continue; // even the best line cannot fit
+    while (true) {
+      const leftOk = a > w.start && room() >= lines[a - 1].length + 1;
+      const rightOk = b < w.end && room() >= lines[b + 1].length + 1;
+      if (!leftOk && !rightOk) break;
+      if (leftOk && (!rightOk || scores[a - 1] >= scores[b + 1])) a--;
+      else if (rightOk) b++;
+      else break;
+    }
+    const slim = label(a, b);
+    chosen.push({ start: a, end: b });
+    used += slim.length + 2;
+  }
+  chosen.sort((a, b) => a.start - b.start);
+  const chunks: string[] = [header];
+  if (!chosen.length) {
+    chunks.push(lines.slice(0, Math.min(lines.length, 40)).join("\n").slice(0, Math.max(0, budget - used - 10)));
+  } else {
+    for (const w of chosen) {
+      chunks.push(`----- lines ${w.start + 1}-${w.end + 1} -----\n` + lines.slice(w.start, w.end + 1).join("\n"));
+    }
+  }
+  return chunks.join("\n");
+}
+
+
+export function editUserPrompt(request: string, files: SourceFile[], feedback?: string): string {
+  const head = `Jenny's request:\n${request}\n\n`;
+  const tail = feedback
+    ? `\n\nYour last attempt could not be applied:\n${feedback}\nTry again with SEARCH parts copied exactly from the current contents above.`
+    : "";
+  const budget = Math.max(1500, MAX_EDIT_PROMPT_CHARS - head.length - tail.length);
+  const per = Math.max(900, Math.floor(budget / Math.max(1, files.length)));
+  const parts = files.map((f) => {
+    if (!f.exists) return `FILE: ${f.path}\n(does not exist yet; create it with NEW FILE if needed)`;
+    const body = sliceSourceForPrompt(f.content, request, Math.max(600, per - f.path.length - 80));
+    const label = body === normalizeNewlines(f.content) ? "current contents" : "current contents, relevant parts";
+    return `FILE: ${f.path}\n----- ${label} -----\n${body}\n----- end of ${f.path} -----`;
+  });
+  let out = head + parts.join("\n\n") + tail;
+  if (out.length > MAX_EDIT_PROMPT_CHARS) {
+    const tighter = Math.floor((MAX_EDIT_PROMPT_CHARS - head.length - tail.length) / Math.max(1, files.length)) - 80;
+    const slim = files.map((f) => {
+      if (!f.exists) return `FILE: ${f.path}\n(does not exist yet; create it with NEW FILE if needed)`;
+      const body = sliceSourceForPrompt(f.content, request, Math.max(400, tighter));
+      return `FILE: ${f.path}\n----- current contents, relevant parts -----\n${body}\n----- end of ${f.path} -----`;
+    });
+    out = head + slim.join("\n\n") + tail;
+  }
+  return out;
+}
+
+
+
+/** One user message per file, each under the live 8000-char cap, so large files can still be edited. */
+export function editPromptMessages(request: string, files: SourceFile[], feedback?: string): { history: { role: "user"; content: string }[]; user: string } {
+  const history = files.map((f) => {
+    if (!f.exists) return { role: "user" as const, content: `FILE: ${f.path}\n(does not exist yet; create it with NEW FILE if needed)` };
+    const body = sliceSourceForPrompt(f.content, request, MAX_EDIT_PROMPT_CHARS - f.path.length - 80);
+    const label = body === normalizeNewlines(f.content) ? "current contents" : "current contents, relevant parts";
+    return { role: "user" as const, content: `FILE: ${f.path}\n----- ${label} -----\n${body}\n----- end of ${f.path} -----` };
+  });
+  const user = `Jenny's request:\n${request}\n\nUse the exact current file contents from the previous messages. SEARCH must copy those lines exactly.`
+    + (feedback ? `\n\nYour last attempt could not be applied:\n${feedback}\nTry again with SEARCH parts copied exactly from the current contents above.` : "");
+  return { history, user };
+}
+
 
 /* ---------------- Status stepper ---------------- */
 
