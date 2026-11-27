@@ -495,6 +495,31 @@ html:not(.dark) .wl-bgimg::after { content: ""; position: absolute; inset: 0; ba
 @keyframes wl-orb-think { 0%,100% { transform: scale(1) rotate(calc(-1deg + var(--wl-spin, 0deg))); opacity: .96; } 50% { transform: scale(1.035) rotate(calc(1.5deg + var(--wl-spin, 0deg))); opacity: 1; } }
 .wilson-orb-shimmer { background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.35) 50%, transparent 80%) !important; border-radius: 9999px; mix-blend-mode: soft-light; }
 
+/* Orb floats free: no outline, border, glow-ring, or platform disc */
+.wl-orb-ring,
+.wilson-orb-ring,
+.wilson-orb-sonar,
+.wl-orb-platform { display: none !important; }
+
+.wl-neuro-city {
+  position: absolute;
+  inset: 6%;
+  width: auto;
+  height: auto;
+  pointer-events: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  mix-blend-mode: plus-lighter;
+  opacity: 0.72;
+  z-index: 3;
+  border-radius: 0;
+}
+html:not(.dark) .wl-neuro-city { mix-blend-mode: soft-light; opacity: 0.8; }
+@media (prefers-reduced-motion: reduce) {
+  .wl-neuro-city { opacity: 0.7; }
+}
+
 /* Echo audio requested, not playing yet: soft breathing halo ("getting ready to speak") */
 .wl-orb-preparing {
   position: absolute; inset: -6%; border-radius: 9999px; pointer-events: none;
@@ -966,3 +991,66 @@ html.dark .wl-call-hint { color: rgba(233,213,255,.7); }
   transition: transform .15s ease;
 }
 .wl-call-end:active { transform: scale(.97); }
+
+
+/* Tidy overflow menu — glass, never white */
+.wl-more-menu { display: flex; flex-direction: column; gap: 2px; }
+.wl-more-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  color: rgba(233, 213, 255, 0.92);
+  background: transparent;
+  border: 0;
+  touch-action: manipulation;
+}
+html:not(.dark) .wl-more-item { color: rgba(76, 29, 110, 0.9); }
+.wl-more-item:hover, .wl-more-item:focus-visible {
+  background: rgba(168, 85, 247, 0.16);
+}
+.wl-talk-icon {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9999px;
+  color: #e9b4ff;
+  background: linear-gradient(135deg, rgba(209, 59, 178, 0.22), rgba(110, 33, 176, 0.28));
+}
+.wl-talk-icon:hover, .wl-talk-icon:focus-visible {
+  background: linear-gradient(135deg, rgba(209, 59, 178, 0.35), rgba(110, 33, 176, 0.4));
+}
+.wl-think-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 4px;
+}
+.wl-think-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #e4b4ff;
+  box-shadow: 0 0 8px rgba(232, 195, 106, 0.7);
+  animation: wl-think-dot 1.15s ease-in-out infinite;
+  display: block;
+}
+.wl-think-dots i:nth-child(2) { animation-delay: 0.15s; background: #c4b5fd; }
+.wl-think-dots i:nth-child(3) { animation-delay: 0.3s; background: #fcbc7e; }
+@keyframes wl-think-dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-3px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wl-think-dots i { animation: none; opacity: 0.7; }
+}
+
+/* Smoother message flow */
+[data-chat-scroller] { scroll-behavior: smooth; }

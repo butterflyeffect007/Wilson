@@ -16,7 +16,7 @@ import { downloadChatExport } from "./lib/chatExport";
 import { loadQuietMemory, buildQuietMemoryContext, deleteQuietItem, clearQuietMemory, exportQuietMemory, pullArchitectMemory, type QuietMemory } from "./lib/quietMemory";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Settings as SettingsIcon, Sun, Moon, ChevronDown,
+  Settings as SettingsIcon, Sun, Moon, ChevronDown, MoreHorizontal,
   Send, Sparkles, Loader2, Mic, Check, Menu, Plus, Trash2, X,
   Square, Copy, Play, RotateCcw, Volume2, VolumeX, Share2, Send as SendIcon, StickyNote, Bell,
   Search as SearchIcon, Gift, ChevronUp, MessageSquareWarning, Download, AudioLines, Pencil,
@@ -236,6 +236,8 @@ export default function App() {
   const speakerProfile = speaker ? voiceProfiles.find((p) => p.id === speaker.id) ?? null : null;
   useEffect(() => { voiceCtxRef.current.name = speakerProfile?.name ?? ""; }, [speakerProfile?.name]);
   const [showSettings, setShowSettings] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
   const [exportNote, setExportNote] = useState<string | null>(null);
   /* Voice-recognition consent (voiceprints are computed + stored on this device only). */
   const [voiceConsent, setVoiceConsent] = useState<string | null>(() => { try { return localStorage.getItem("wilson_voiceprint_consent"); } catch { return null; } });
@@ -382,7 +384,7 @@ export default function App() {
 
   /* ---------- Accounts: session, chat sync, banner ---------- */
   const acctRoute = useAccountRoute();
-  const goHome = () => { setSidebarOpen(false); setShowSettings(false); location.hash = "#home"; };
+  const goHome = () => { setSidebarOpen(false); setShowSettings(false); setMoreOpen(false); location.hash = "#home"; };
   const [acctUser, setAcctUser] = useState<AcctUser | null>(() => getUser());
   const isArchitectUser = !!(isAdmin || acctUser?.architect);
   const personName = resolveCompanionName({
@@ -1242,67 +1244,83 @@ export default function App() {
             <h1 className="m-0 min-w-0 flex">
               <button type="button" onClick={goHome} className="rb wl-home-btn min-w-0 touch-manipulation" aria-label="Wilson home" title="Wilson home">
                 <Sparkles className="shrink-0 w-[18px] h-[18px] text-violet-400 wl-title" aria-hidden="true" />
-                <span className="wl-title block leading-none text-violet-900/80 min-w-0"><span className="wl-w block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></span>
+                <span className="wl-title block leading-none text-violet-900/80 min-w-0"><span className="wl-w block text-[19px] tracking-[0.28em]">WILSON</span></span>
               </button>
             </h1>
           </div>
-          <button type="button" onClick={() => setShowSettings((v) => !v)} className="shrink-0 min-w-11 h-11 px-1 flex flex-col items-center justify-center rounded-2xl text-violet-600/90 hover:bg-violet-50/80 touch-manipulation" aria-label="Settings" title="Settings">
-            <SettingsIcon className="w-[20px] h-[20px]" />
-            <span className="text-[9px] leading-none mt-0.5 tracking-wide">Settings</span>
+          <button
+            type="button"
+            onClick={() => { setMoreOpen((v) => !v); setShowSettings(false); }}
+            className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
+            aria-label="More"
+            aria-expanded={moreOpen}
+            title="More"
+          >
+            <MoreHorizontal className="w-[22px] h-[22px]" />
           </button>
         </div>
-        <div className="max-w-lg mx-auto mt-1 flex items-center justify-between gap-1 flex-wrap">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {stars > 0 && <span className="text-[12px] text-amber-500 tracking-wide" title={`${stars} friend${stars === 1 ? "" : "s"} joined from your link`} aria-label={`${stars} stars`}>✦{stars > 1 ? stars : ""}</span>}
-            {isAdmin && (
-              <button type="button" onClick={() => setShowAdmin(true)} className="text-[10px] px-2 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-500/20 via-violet-500/20 to-amber-400/25 text-violet-700/90 tracking-wide" title="Architect view">
-                ARCHITECT
+      </header>
+      <AnimatePresence>
+        {moreOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            className="relative z-20 px-4 pb-2"
+          >
+            <div className="max-w-lg mx-auto rounded-2xl glass-strong p-2 shadow-lg wl-more-menu">
+              <button type="button" onClick={() => { setMoreOpen(false); setShowSettings(true); }} className="wl-more-item">
+                <SettingsIcon className="w-4 h-4" /> Settings
               </button>
-            )}
-          </div>
-          <div className="flex items-center gap-0.5 ml-auto">
-            {activeThread && activeThread.messages.length > 1 && (
-              <button type="button" onClick={() => { setFindOpen((o) => !o); }} className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Search this chat" title="Search this chat">
-                <SearchIcon className="w-[18px] h-[18px]" />
+              {activeThread && activeThread.messages.length > 1 && (
+                <button type="button" onClick={() => { setMoreOpen(false); setFindOpen((o) => !o); }} className="wl-more-item">
+                  <SearchIcon className="w-4 h-4" /> Search this chat
+                </button>
+              )}
+              {activeThread && activeThread.messages.some((m) => m.role === "user") && (
+                <button
+                  type="button"
+                  onClick={() => { setMoreOpen(false); void shareChat(activeThread.title, activeThread.messages, displayName, document.documentElement.classList.contains("dark")).then((r) => { if (r === "downloaded") { setShareNote("Saved as a web page"); setTimeout(() => setShareNote(null), 2500); } }); }}
+                  className="wl-more-item"
+                >
+                  <Share2 className="w-4 h-4" /> Share this conversation
+                </button>
+              )}
+              <button type="button" onClick={() => { setMoreOpen(false); doShare(); }} className="wl-more-item">
+                <Gift className="w-4 h-4" /> Share Wilson with a friend{stars > 0 ? ` · ✦${stars}` : ""}
               </button>
-            )}
-            {activeThread && activeThread.messages.some((m) => m.role === "user") && (
               <button
                 type="button"
-                onClick={() => void shareChat(activeThread.title, activeThread.messages, displayName, document.documentElement.classList.contains("dark")).then((r) => { if (r === "downloaded") { setShareNote("Saved as a web page"); setTimeout(() => setShareNote(null), 2500); } })}
-                className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
-                aria-label="Share this conversation"
-                title={shareNote ?? "Share"}
+                onClick={() => { primePlayback(); if (settings.voiceEnabled) stopSpeaking(); setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled })); }}
+                className="wl-more-item"
               >
-                {shareNote ? <Check className="w-[18px] h-[18px]" /> : <Share2 className="w-[18px] h-[18px]" />}
+                {settings.voiceEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                {settings.voiceEnabled ? "Voice on" : "Voice off"}
               </button>
-            )}
-            <button type="button" onClick={doShare} className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation" aria-label="Share Wilson with a friend" title="Share Wilson with a friend">
-              <Gift className="w-[18px] h-[18px]" />
-            </button>
-            <button
-              type="button"
-              onClick={() => { primePlayback(); if (settings.voiceEnabled) stopSpeaking(); setSettings((s) => ({ ...s, voiceEnabled: !s.voiceEnabled })); }}
-              className="p-2 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
-              aria-label={settings.voiceEnabled ? "Mute Wilson's voice" : "Turn on Wilson's voice"}
-              title={settings.voiceEnabled ? "Voice on" : "Voice off"}
-            >
-              {settings.voiceEnabled ? <Volume2 className="w-[18px] h-[18px]" /> : <VolumeX className="w-[18px] h-[18px]" />}
-            </button>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="wl-theme-toggle relative w-9 h-9 rounded-full text-violet-500/80 hover:bg-violet-50/80 touch-manipulation"
-              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-              title={theme === "dark" ? "Light theme" : "Dark theme"}
-              data-theme={theme}
-            >
-              <Sun className="wl-tt-sun absolute inset-0 m-auto w-[18px] h-[18px]" />
-              <Moon className="wl-tt-moon absolute inset-0 m-auto w-[18px] h-[18px]" />
-            </button>
-          </div>
-        </div>
-      </header>
+              <button type="button" onClick={toggleTheme} className="wl-more-item">
+                {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                {theme === "dark" ? "Light theme" : "Dark theme"}
+              </button>
+              {isAdmin && (
+                <button type="button" onClick={() => { setMoreOpen(false); setShowAdmin(true); }} className="wl-more-item">
+                  <Sparkles className="w-4 h-4" /> Architect
+                </button>
+              )}
+              <button type="button" onClick={() => setFieldOpen((v) => !v)} className="wl-more-item" aria-expanded={fieldOpen}>
+                <Sparkles className="w-4 h-4" /> Wilson Field
+                <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${fieldOpen ? "rotate-180" : ""}`} />
+              </button>
+              {fieldOpen && (
+                <div className="px-3 pb-2 pt-0 text-[12px] text-violet-800/80 wl-thin space-y-0.5">
+                  <div>Mood: {vibe}{heard ? ` · I heard you sounding ${heard.tag}` : ""}</div>
+                  <div>Dream: {loadProfile().dream || "Still dreaming…"}</div>
+                  <div>Talking with: {speakerProfile?.name || personName || displayName || "a new person"}</div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showSettings && (
@@ -1553,15 +1571,15 @@ export default function App() {
                   Auto-speak replies (otherwise tap Play on a reply; saves the daily voice allowance)
                 </label>
                 <VoicePicker />
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => voiceTest()} className="rounded-full bg-violet-100 px-3 py-1 text-[12px] text-violet-800 touch-manipulation">Voice test</button>
-                  <span className="text-[10px] text-violet-500/80 break-all">{voiceDebug.lastEvent || "not tested yet"}</span>
-                </div>
-                {voiceDebug.lastError && <p className="text-[10px] text-rose-500/80 break-all">Last voice error: {voiceDebug.lastError}</p>}
-                <PuckStatus />
-                <p className="text-[11px] text-violet-500/70">
-                  Enter send · Shift+Enter new line · Esc stop · Ctrl/Cmd+Shift+O new thread
-                </p>
+                <details className="text-[12px] text-violet-800/80">
+                  <summary className="cursor-pointer select-none">Voice test</summary>
+                  <div className="flex items-center gap-2 mt-1">
+                    <button type="button" onClick={() => voiceTest()} className="rounded-full px-3 py-1 text-[12px] text-violet-100 bg-violet-700/70 touch-manipulation">Try voice</button>
+                    <span className="text-[10px] text-violet-500/80 break-all">{voiceDebug.lastEvent || "not tested yet"}</span>
+                  </div>
+                  {voiceDebug.lastError && <p className="text-[10px] text-rose-500/80 break-all">Last voice error: {voiceDebug.lastError}</p>}
+                  <PuckStatus />
+                </details>
               </div>
             </div>
           </motion.div>
@@ -1588,12 +1606,12 @@ export default function App() {
           className="flex-1 overflow-y-auto px-4"
         >
           {isHome ? (
-            <div className="min-h-full flex flex-col items-center justify-center pt-[clamp(2rem,8dvh,5rem)] pb-10 max-w-md mx-auto">
+            <div className="min-h-full flex flex-col items-center justify-center pt-[clamp(1.25rem,5dvh,3.5rem)] pb-6 max-w-md mx-auto">
               <motion.div
                 initial={{ scale: 0.85, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ type: "spring", stiffness: 120, damping: 18 }}
-                className="relative mb-[clamp(2.5rem,8dvh,5rem)]"
+                className="relative mb-[clamp(1.25rem,4dvh,2.75rem)]"
               >
                 <div className="relative">
                   <ErrorBoundary label="the orb" compact><WilsonOrb size="lg" vibe={vibe} isThinking={thinking} interactive onTap={() => { if (wilsonSpeaking || voiceActive) { stopSpeaking(); setPlayMsg(null); } primePlayback(); }} onLongPress={() => { if (!stt.listening && stt.supported && settings.voiceRecognition && voiceConsent === null) { setAskVoiceConsent(true); return; } if (!stt.listening && stt.supported) { primePlayback(); stopSpeaking(); if (voiceId || settings.emotionDetection) void startCapture().catch(() => {}); stt.toggle(); } }} /></ErrorBoundary>
@@ -1613,54 +1631,11 @@ export default function App() {
                 <p className="text-[13px] text-violet-700/55 wl-thin tracking-wide">
                   Imagination becomes intelligence.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setShowGematria(true)}
-                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-violet-200/80 bg-white/55 px-4 py-2 text-[12px] text-violet-700 shadow-sm transition hover:bg-white/85 touch-manipulation"
-                >
-                  <Sparkles className="h-3.5 w-3.5 text-fuchsia-400" />
-                  Gematria Observatory
-                </button>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25 }}
-                className="w-full"
-              >
-                <button
-                  type="button"
-                  onClick={() => inputRef.current?.focus()}
-                  className="w-full flex items-center gap-4 rounded-[1.4rem] px-4 py-5 glass text-left transition-all touch-manipulation"
-                >
-                  <span className="w-9 h-9 rounded-full glass flex items-center justify-center flex-shrink-0"><Sparkles className="w-4 h-4 text-violet-400" /></span>
-                  <span className="text-[16px] leading-snug text-violet-900/80 wl-thin max-w-[13rem]">
-                    What would you like to explore today?
-                  </span>
-                </button>
               </motion.div>
             </div>
           ) : (
             <div className="max-w-lg mx-auto w-full py-4 space-y-4">
-              <div className="flex justify-center pt-1 pb-3"><WilsonOrb size="mdx" vibe={vibe} isThinking={thinking} interactive /></div>
-              <div className="rounded-2xl glass px-4 py-2.5">
-                <button type="button" onClick={() => setFieldOpen((v) => !v)} className="w-full flex items-center gap-3 text-left" aria-expanded={fieldOpen}>
-                  <Sparkles className="w-4 h-4 text-violet-400" />
-                  <span className="flex-1">
-                    <span className="block text-[13px] text-violet-900/90">Wilson Field</span>
-                    <span className="block text-[10px] text-violet-600/60">Your memory · Your mood · Your dreams</span>
-                  </span>
-                  <ChevronDown className={`w-4 h-4 text-violet-400 transition-transform ${fieldOpen ? "rotate-180" : ""}`} />
-                </button>
-                {fieldOpen && (
-                  <div className="mt-2 pt-2 border-t border-violet-200/30 space-y-1 text-[12px] text-violet-800/80 wl-thin">
-                    <div>Mood: {vibe}{heard ? ` · I heard you sounding ${heard.tag}` : ""}</div>
-                    <div>Dream: {loadProfile().dream || "Still dreaming…"}</div>
-                    <div>Talking with: {speakerProfile?.name || personName || displayName || "a new person"}</div>
-                  </div>
-                )}
-              </div>
+              <div className="flex justify-center pt-1 pb-2"><WilsonOrb size="mdx" vibe={vibe} isThinking={thinking} interactive /></div>
               {messages.map((msg) => (
                 <motion.div
                   key={msg.id}
@@ -1670,15 +1645,14 @@ export default function App() {
                 >
                   {msg.role === "assistant" && <WilsonOrb size="sm" vibe={vibe} isThinking={streamingId === msg.id} />}
                   <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-[17px] leading-[1.6] ${
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedMsgId((id) => id === msg.id ? null : msg.id)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedMsgId((id) => id === msg.id ? null : msg.id); } }}
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-[17px] leading-[1.6] transition-opacity duration-300 ${
                       msg.role === "assistant" ? "msg-wilson" : "msg-user"
                     }`}
                   >
-                    {msg.role === "assistant" && (
-                      <span className="block text-[12px] tracking-[0.08em] text-violet-500 mb-1">
-                        Wilson
-                      </span>
-                    )}
                     <div className="text-violet-950/90 whitespace-pre-wrap break-words">
                       <ErrorBoundary label="this message" compact><Markdown text={msg.content} highlight={findTerm} /></ErrorBoundary>
                       {streamingId === msg.id && (
@@ -1688,40 +1662,39 @@ export default function App() {
                     {msg.role === "assistant" && msg.degraded && streamingId !== msg.id && (
                       <p className="msg-degraded">Backup brain for this reply — I may be a little less sharp than usual.</p>
                     )}
-                    <div className="flex items-center gap-3 mt-2 text-[10px] text-violet-400/60">
+                    <div className={`flex items-center gap-3 mt-1.5 text-[10px] text-violet-400/60 transition-opacity duration-200 ${selectedMsgId === msg.id ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"}`}>
                       <span>
                         {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
                       {streamingId !== msg.id && (
                         <button
                           type="button"
-                          onClick={() => copyMessage(msg)}
-                          className="flex items-center gap-1 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-violet-600"
+                          onClick={(e) => { e.stopPropagation(); copyMessage(msg); }}
+                          className="flex items-center justify-center p-1 hover:text-violet-600"
                           aria-label="Copy message"
                         >
                           {copiedId === msg.id ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                          {copiedId === msg.id ? "Copied" : "Copy"}
                         </button>
                       )}
                       {streamingId !== msg.id && msg.role === "assistant" && (
                         <button
                           type="button"
-                          onClick={() => toggleMessageVoice(msg)}
-                          className="flex items-center gap-1 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-violet-600 touch-manipulation"
+                          onClick={(e) => { e.stopPropagation(); toggleMessageVoice(msg); }}
+                          className="flex items-center justify-center p-1 hover:text-violet-600 touch-manipulation"
                           aria-label={playMsg?.id === msg.id ? "Stop Wilson speaking" : "Play this message"}
                         >
                           {playMsg?.id === msg.id
                             ? playMsg.phase === "loading"
-                              ? <><Loader2 className="w-3 h-3 animate-spin" />Loading</>
-                              : <><Square className="w-3 h-3" />Stop</>
-                            : <><Play className="w-3 h-3" />Play</>}
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Square className="w-3 h-3" />
+                            : <Play className="w-3 h-3" />}
                         </button>
                       )}
                       {streamingId !== msg.id && msg.role === "assistant" && (
                         <button
                           type="button"
-                          onClick={() => { const i = messages.findIndex((m) => m.id === msg.id); const prev = [...messages.slice(0, i)].reverse().find((m) => m.role === "user"); setFeedback({ type: "problem", reply: msg.content, context: prev?.content }); }}
-                          className="flex items-center gap-1 opacity-70 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-violet-600 touch-manipulation"
+                          onClick={(e) => { e.stopPropagation(); const i = messages.findIndex((m) => m.id === msg.id); const prev = [...messages.slice(0, i)].reverse().find((m) => m.role === "user"); setFeedback({ type: "problem", reply: msg.content, context: prev?.content }); }}
+                          className="flex items-center justify-center p-1 hover:text-violet-600 touch-manipulation"
                           aria-label="Send this reply to Jenny"
                           title="Send to Jenny"
                         >
@@ -1740,15 +1713,13 @@ export default function App() {
 
               {thinking && (
                 <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="flex gap-3 items-start"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex justify-start pl-1"
+                  aria-live="polite"
+                  aria-label="Wilson is thinking"
                 >
-                  <WilsonOrb size="sm" vibe={vibe} isThinking />
-                  <div className="rounded-2xl msg-wilson px-4 py-3 flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
-                    <span className="text-sm text-violet-700/60">Wilson is thinking...</span>
-                  </div>
+                  <span className="wl-think-dots" aria-hidden="true"><i /><i /><i /></span>
                 </motion.div>
               )}
 
@@ -1805,14 +1776,11 @@ export default function App() {
               </div>
             )}
             {stt.error && <p className="text-[12px] text-rose-600 mb-1.5 px-2">{stt.error}</p>}
-            <div className="flex justify-center mb-2">
-              <button type="button" onClick={openCall} className="wl-talk-btn touch-manipulation" aria-label="Talk with Wilson: start a hands-free voice call">
-                <AudioLines className="w-4 h-4" aria-hidden="true" />
-                Talk with Wilson
-              </button>
-            </div>
-            <div className={`relative flex items-end gap-2 rounded-[1.6rem] glass-strong px-2 py-1.5 ${saving || stt.listening ? "wl-telemetry" : ""}`} title={stt.listening ? "Listening…" : saving ? "Saving…" : undefined}>
+            <div className={`relative flex items-end gap-1.5 rounded-[1.6rem] glass-strong px-2 py-1.5 ${saving || stt.listening ? "wl-telemetry" : ""}`} title={stt.listening ? "Listening…" : saving ? "Saving…" : undefined}>
               {(saving || stt.listening) && <span className="sr-only" role="status">{stt.listening ? "Processing voice" : "Saving"}</span>}
+              <button type="button" onClick={openCall} className="wl-talk-icon shrink-0 touch-manipulation" aria-label="Talk with Wilson: start a hands-free voice call" title="Talk with Wilson">
+                <AudioLines className="w-[18px] h-[18px]" aria-hidden="true" />
+              </button>
               <textarea
                 ref={inputRef}
                 rows={1}
