@@ -54,6 +54,12 @@ export async function buildSelfFixProposal(request: string, hooks: BuildHooks): 
   if (!chosen.length) {
     throw new Error("I couldn't tell which of my files to change. Tell me the screen or file name and I'll try again. Nothing was sent anywhere.");
   }
+  // Visual title/header asks almost always need the markup and the stylesheet, even if the picker only named one.
+  if (/\b(shimmer|sparkle|glow|shine|glitter|title|header)\b/i.test(request)) {
+    for (const extra of ["src/App.tsx", "src/index.css"]) {
+      if (paths.includes(extra) && !chosen.includes(extra)) chosen.push(extra);
+    }
+  }
 
   const sources: SourceFile[] = [];
   let total = 0;
