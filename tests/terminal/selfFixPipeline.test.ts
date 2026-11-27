@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   applyEdits, diffForFiles, isWritablePath, lineDiff, parseEditReply, parseFilePick, simpleStatus, stepperFor, validateChange,
+  relevanceProblems, editPromptMessages, sliceSourceForPrompt, MAX_EDIT_PROMPT_CHARS,
 } from "../../src/terminal/selfFixPipeline.ts";
 
 const APP = [
@@ -103,7 +105,8 @@ test("creates new files only when they don't exist", () => {
 test("validation refuses empty, shrunken, placeholder, and unbalanced output", () => {
   const big = "const x = {\n" + "  a: 1,\n".repeat(200) + "};\n";
   assert.ok(validateChange({ path: "src/a.ts", status: "edited", previous: big, content: "  " }).length);
-  assert.match(validateChange({ path: "src/a.ts", status: "edited", previous: big, content: "const x = {\n};\n" }).join(" "), /half/);
+  assert.match(validateChange({ path: "src/a.ts", status: "edited", previous: big, content: "const x = {\n};\n" }).join(" "), /smaller|cut off|half/);
+  assert.match(validateChange({ path: "src/index.css", status: "edited", previous: "@tailwind base;\n".repeat(80) + "body { color: red; }\n", content: ".wl-shimmer { animation: titleShimmer 4s ease-in-out infinite; }\n" }).join(" "), /stylesheet|smaller|cut off/i);
   assert.match(validateChange({ path: "src/a.ts", status: "edited", previous: "f();\n", content: "f();\n// ... rest of the code\n" }).join(" "), /placeholder/);
   assert.match(validateChange({ path: "src/a.ts", status: "edited", previous: "if (a) { b(); }\n", content: "if (a) { b();\n" }).join(" "), /brackets/);
   assert.match(validateChange({ path: "public/m.json", status: "edited", previous: "{}", content: "{\"a\":" }).join(" "), /JSON|brackets/);
@@ -137,4 +140,92 @@ test("simple status uses plain words: no PR / diff / merge / deploy / build chec
   assert.equal(simpleStatus("live", "live").step, 3);
   assert.equal(simpleStatus("live", "building").settled, false);
   assert.equal(simpleStatus("review").step, 1);
+});
+
+
+test("relevance accepts a shimmer change for a shimmer request", () => {
+  const problems = relevanceProblems("add a subtle shimmer effect to the chat title", {
+    title: "Add a subtle shimmer effect to the chat title",
+    summary: "Adds a subtle shimmer animation to the chat title.",
+    files: [{ path: "src/App.tsx", status: "edited" }, { path: "src/styles.css", status: "edited" }],
+    diff: [
+      { kind: "file", text: "src/App.tsx" },
+      { kind: "del", text: '      <span className="wl-title">' },
+      { kind: "add", text: '      <span className="wl-title wl-title-shimmer">' },
+      { kind: "file", text: "src/index.css" },
+      { kind: "add", text: "@keyframes wl-title-shimmer { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }" },
+      { kind: "add", text: ".wl-title-shimmer { background-size: 200% 100%; animation: wl-title-shimmer 4s linear infinite; }" },
+    ],
+  });
+  assert.deepEqual(problems, []);
+});
+
+test("relevance rejects a shimmer class name without CSS", () => {
+  const problems = relevanceProblems("add a subtle shimmer effect to the chat title", {
+    title: "Add a subtle shimmer effect to the chat title",
+    summary: "Adds the CSS shimmer class to the Wilson title element in the header.",
+    files: [{ path: "src/App.tsx", status: "edited" }],
+    diff: [
+      { kind: "file", text: "src/App.tsx" },
+      { kind: "add", text: '                <span className="wl-w block text-[19px] tracking-[0.28em] shimmer">WILSON</span>' },
+    ],
+  });
+  assert.ok(problems.length, "should refuse a class with no style");
+  assert.match(problems.join(" "), /css|style|animation|keyframes/i);
+});
+
+test("relevance rejects an unrelated cleanup when she asked for a shimmer", () => {
+  const problems = relevanceProblems("add a subtle shimmer effect to the chat title", {
+    title: "What have you been wanting to change?",
+    summary: "Removes an unused helper in the terminal.",
+    files: [{ path: "src/terminal/WilsonTerminal.tsx", status: "edited" }],
+    diff: [
+      { kind: "file", text: "src/terminal/WilsonTerminal.tsx" },
+      { kind: "del", text: "  const collectOutput = (before: Line[]) => {" },
+      { kind: "del", text: "    void before;" },
+      { kind: "del", text: "  };" },
+    ],
+  });
+  assert.ok(problems.length, "should refuse an unrelated deletion");
+  assert.match(problems.join(" "), /shimmer|match|only removes/i);
+});
+
+
+test("edit prompt stays under the live worker message cap and keeps the chat title", () => {
+  const app = readFileSync(new URL("../../src/App.tsx", import.meta.url), "utf8");
+  const css = readFileSync(new URL("../../src/index.css", import.meta.url), "utf8");
+  assert.ok(app.length > 8000 && css.length > 8000);
+  const ask = "add a subtle shimmer effect to the chat title";
+  const prompt = editPromptMessages(ask, [
+    { path: "src/App.tsx", content: app, exists: true },
+    { path: "src/index.css", content: css, exists: true },
+  ]);
+  assert.ok(prompt.user.length <= MAX_EDIT_PROMPT_CHARS);
+  for (const m of prompt.history) {
+    assert.ok(m.content.length <= 8000, `${m.content.slice(0, 40)} is ${m.content.length} chars`);
+  }
+  const joined = prompt.history.map((m) => m.content).join("\n");
+  assert.match(joined, /wl-title/);
+  assert.match(joined, /WILSON/);
+  assert.match(joined, /header \.wl-w/);
+  assert.match(joined, /\.wl-title/);
+  const sliced = sliceSourceForPrompt(app, ask, 7200);
+  assert.ok(sliced.length <= 7200);
+  assert.match(sliced, /wl-title/);
+  assert.match(sliced, /className="wl-w block/);
+  const cssSlice = sliceSourceForPrompt(css, ask, 7200);
+  assert.match(cssSlice, /\.wl-title/);
+  assert.match(cssSlice, /header \.wl-w/);
+});
+
+test("a SEARCH copied from a sliced prompt still applies to the full file", () => {
+  const app = readFileSync(new URL("../../src/App.tsx", import.meta.url), "utf8");
+  const search = '                <span className="wl-title block leading-none text-violet-900/80 min-w-0"><span className="wl-w block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></span>';
+  assert.ok(app.includes(search));
+  const applied = applyEdits(
+    [{ path: "src/App.tsx", content: app, exists: true }],
+    [{ path: "src/App.tsx", search, replace: search.replace('className="wl-title ', 'className="wl-title wl-title-shimmer ') }],
+  );
+  assert.deepEqual(applied.problems, []);
+  assert.ok(applied.files[0].content.includes("wl-title-shimmer"));
 });

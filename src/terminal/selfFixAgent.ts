@@ -1,127 +1,130 @@
-import { fetchSourceFile, fetchSourceTree, type SelfFixFile, type SelfFixProposal } from "./selfFix";
-import { parseEditReply, applyEdits, validateChange, diffForFiles, EDIT_SYSTEM, editUserPrompt, PICK_SYSTEM, pickUserPrompt, parseFilePick, type SourceFile } from "./selfFixPipeline";
-import { makeTerminalAdapter, askWilson } from "./agentLoop";
+/**
+ * Wilson builds a REAL self-fix proposal: reads his own files from GitHub (through the worker),
+ * asks his brain for targeted edits, applies them to the full file contents, validates, diffs,
+ * and refuses a change that doesn't actually do what Jenny asked.
+ * Nothing is sent to GitHub here — submitForReview does that.
+ */
+import type { OpenRouterAdapter } from "../intelligence/OpenRouterAdapter";
+import type { ModelRequest } from "../intelligence/ModelRequest";
+import { makeTerminalAdapter } from "./agentLoop";
+import { fetchSourceFile, fetchSourceTree, type SelfFixProposal } from "./selfFix";
+import { titleFromRequest } from "./selfFixIntent";
+import {
+  EDIT_SYSTEM, PICK_SYSTEM, applyEdits, diffForFiles, editPromptMessages, parseEditReply, parseFilePick,
+  pickUserPrompt, relevanceProblems, validateChange, type SourceFile,
+} from "./selfFixPipeline";
 
-export async function buildSelfFixProposal(
-  request: string,
-  options?: { signal?: AbortSignal; onStep?: (step: string) => void },
-): Promise<SelfFixProposal> {
-  const onStep = options?.onStep || (() => {});
-  const signal = options?.signal;
-  const adapter = makeTerminalAdapter();
+export type BuildHooks = {
+  onStep: (text: string) => void;
+  signal: AbortSignal;
+  adapter?: OpenRouterAdapter;
+};
 
-  onStep("Reading project tree…");
+async function ask(adapter: OpenRouterAdapter, system: string, user: string, maxTokens: number, signal: AbortSignal, history: ModelRequest["conversation"] = []) {
+  const request: ModelRequest = {
+    systemContext: system,
+    conversation: history,
+    userInput: user,
+    generation: { temperature: 0.2, maxTokens },
+    metadata: { task: "selffix" },
+  };
+  const res = await adapter.generateStream(request, () => {}, signal);
+  if (res.finishReason === "aborted") throw Object.assign(new Error("Stopped."), { name: "AbortError" });
+  return res;
+}
+
+export async function buildSelfFixProposal(request: string, hooks: BuildHooks): Promise<SelfFixProposal> {
+  const adapter = hooks.adapter ?? makeTerminalAdapter();
+  const { onStep, signal } = hooks;
+
+  onStep("Looking through my own code…");
   const tree = await fetchSourceTree();
+  if (!tree.length) throw new Error("I couldn't list my own files just now. Nothing was sent anywhere.");
   const paths = tree.map((t) => t.path);
 
-  onStep("Choosing files to read…");
-  const pickPrompt = pickUserPrompt(request, paths);
-  let pickReply = "";
-  try {
-    pickReply = await askWilson(adapter, pickPrompt, [], (full) => { pickReply = full; }, signal || new AbortSignal());
-  } catch {
-    // fallback to sensible defaults if pick fails
+  // Paths she named directly always count.
+  const named = parseFilePick(request, paths).filter((p) => paths.includes(p));
+  let chosen = named;
+  if (!chosen.length) {
+    const pick = await ask(adapter, PICK_SYSTEM, pickUserPrompt(request, paths), 400, signal);
+    chosen = parseFilePick(pick.text, paths);
+  }
+  if (!chosen.length) {
+    throw new Error("I couldn't tell which of my files to change. Tell me the screen or file name and I'll try again. Nothing was sent anywhere.");
+  }
+  // Visual title/header asks almost always need the markup and the stylesheet, even if the picker only named one.
+  if (/\b(shimmer|sparkle|glow|shine|glitter|title|header)\b/i.test(request)) {
+    for (const extra of ["src/App.tsx", "src/index.css"]) {
+      if (paths.includes(extra) && !chosen.includes(extra)) chosen.push(extra);
+    }
   }
 
-  const pickedPaths = parseFilePick(pickReply, paths);
-  if (!pickedPaths.length) {
-    // fallback to main terminal or app files
-    pickedPaths.push("src/terminal/WilsonTerminal.tsx", "src/App.tsx");
-  }
-
-  onStep(`Reading ${pickedPaths.length} file(s)…`);
   const sources: SourceFile[] = [];
-  for (const p of pickedPaths) {
-    try {
-      const f = await fetchSourceFile(p);
-      sources.push({ path: f.path, content: f.content, exists: f.exists, sha: f.sha });
-    } catch {
-      sources.push({ path: p, content: "", exists: false });
-    }
+  for (const path of chosen) {
+    if (signal.aborted) throw Object.assign(new Error("Stopped."), { name: "AbortError" });
+    onStep(`Reading ${path}…`);
+    const f = await fetchSourceFile(path);
+    if (!f.exists && !f.path) throw new Error(`I couldn't read ${path}. Nothing was sent anywhere.`);
+    sources.push({ path: f.path || path, content: f.content || "", exists: f.exists, sha: f.sha });
   }
+  if (!sources.length) throw new Error("I couldn't read my own files just now. Nothing was sent anywhere.");
 
-  let feedback: string | undefined = undefined;
-  let lastReply = "";
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    if (signal?.aborted) throw new Error("Stopped.");
-    onStep(`Writing change (attempt ${attempt}/3)…`);
-
-    const userPrompt = editUserPrompt(request, sources, feedback);
-    let reply = "";
+  let feedback = "";
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (signal.aborted) throw Object.assign(new Error("Stopped."), { name: "AbortError" });
+    onStep(attempt === 1 ? "Writing the change…" : "Fixing my first try…");
+    let res;
     try {
-      reply = await askWilson(adapter, userPrompt, [{ role: "user", content: pickPrompt }, { role: "assistant", content: pickReply }], (full) => { reply = full; }, signal || new AbortSignal());
+      const prompt = editPromptMessages(request, sources, feedback || undefined);
+      res = await ask(adapter, EDIT_SYSTEM, prompt.user, 4096, signal, prompt.history);
     } catch (err) {
-      if (signal?.aborted) throw new Error("Stopped.");
-      throw new Error(err instanceof Error ? err.message : "AI generation failed.");
+      const msg = String((err as Error)?.message || err);
+      if (/\b413\b/.test(msg)) {
+        throw new Error("The files were too big to send in one go. Tell me the screen or file if you can. Nothing was sent anywhere.");
+      }
+      throw err;
     }
-
-    lastReply = reply;
-    const parsed = parseEditReply(reply);
-    if (!parsed.complete && attempt < 3) {
-      feedback = parsed.problems.join("\n") || "The reply was incomplete or cut off.";
-      continue;
+    const parsed = parseEditReply(res.text);
+    const problems = [...parsed.problems];
+    if (res.finishReason === "length") problems.unshift("My reply hit the length limit and was cut off.");
+    let files: ReturnType<typeof applyEdits>["files"] = [];
+    if (!problems.length) {
+      onStep("Checking it…");
+      const applied = applyEdits(sources, parsed.edits);
+      problems.push(...applied.problems);
+      files = applied.files;
+      if (!problems.length && !files.length) problems.push("The edits didn't actually change anything.");
+      for (const f of files) problems.push(...validateChange(f));
+      if (!problems.length) {
+        const diff = diffForFiles(files);
+        const title = titleFromRequest(request, parsed.title);
+        problems.push(...relevanceProblems(request, {
+          title,
+          summary: parsed.summary || title,
+          files,
+          diff,
+        }));
+        if (!problems.length) {
+          return {
+            id: `draft-${Date.now().toString(36)}`,
+            title,
+            summary: parsed.summary || title,
+            changelogTitle: title,
+            changelogBody: parsed.summary || title,
+            files: files.map((f) => ({ path: f.path, status: f.status, content: f.content, baseSha: f.baseSha ?? null })),
+            diff,
+            status: "draft",
+            request,
+            createdAt: new Date().toISOString(),
+          };
+        }
+      }
     }
-
-    const applied = applyEdits(sources, parsed.edits);
-    if (applied.problems.length && attempt < 3) {
-      feedback = applied.problems.join("\n");
-      continue;
+    feedback = problems.map((p) => `- ${p}`).join("\n");
+    if (attempt === maxAttempts) {
+      throw new Error(`I won't propose this because it doesn't actually do what you asked:\n${feedback}\nNothing was sent anywhere.`);
     }
-
-    if (!applied.files.length) {
-      feedback = "The edits didn't actually change anything. Make sure SEARCH parts match the file contents exactly.";
-      continue;
-    }
-
-    let validationErrors: string[] = [];
-    for (const file of applied.files) {
-      validationErrors = validationErrors.concat(validateChange(file));
-    }
-
-    if (validationErrors.length && attempt < 3) {
-      feedback = validationErrors.join("\n");
-      continue;
-    }
-
-    const diff = diffForFiles(applied.files);
-    const files: SelfFixFile[] = applied.files.map((f) => ({
-      path: f.path,
-      status: f.status,
-      content: f.content,
-      baseSha: f.baseSha,
-    }));
-
-    return {
-      title: parsed.title || request.slice(0, 40),
-      summary: parsed.summary || request,
-      changelogTitle: parsed.title || request.slice(0, 40),
-      changelogBody: parsed.summary || request,
-      files,
-      diff,
-      status: "draft",
-      request,
-    };
   }
-
-  const fallbackApplied = applyEdits(sources, parseEditReply(lastReply).edits);
-  if (fallbackApplied.files.length) {
-    const diff = diffForFiles(fallbackApplied.files);
-    const files: SelfFixFile[] = fallbackApplied.files.map((f) => ({
-      path: f.path,
-      status: f.status,
-      content: f.content,
-      baseSha: f.baseSha,
-    }));
-    return {
-      title: request.slice(0, 40),
-      summary: request,
-      files,
-      diff,
-      status: "draft",
-      request,
-    };
-  }
-
-  throw new Error("Could not apply edits cleanly after several attempts.");
+  throw new Error("I couldn't make a clean change that matches what you asked. Nothing was sent anywhere.");
 }

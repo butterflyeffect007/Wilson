@@ -88,6 +88,11 @@ export function ChangeCard({
     <section className="sf-card" data-testid="sf-card" data-state={pushStatus}>
       <p className="sf-kicker">Wilson's change</p>
       <h2>{proposal.title}</h2>
+      {proposal.request && (
+        <p className="sf-asked" data-testid="sf-asked">
+          <span className="sf-asked-k">You asked</span> “{proposal.request}”
+        </p>
+      )}
       <p className="sf-lead">{proposal.summary}</p>
       <Steps step={s.step} />
       <div className={`sf-status ${s.tone}`} aria-live="polite" data-testid="sf-status">
@@ -126,6 +131,12 @@ export function ChangeCard({
             )}
             <button type="button" className="sf-btn rose" data-testid="sf-decline" disabled={busy} onClick={onDecline}>Decline</button>
           </div>
+          {preview?.state === "ready" && preview.url && (
+            <a className="sf-link" data-testid="sf-preview-link" href={preview.url} target="_blank" rel="noopener">Open preview ↗</a>
+          )}
+          {preview && preview.state !== "ready" && preview.state !== "gone" && preview.state !== "failed" && (
+            <p className="sf-legend">The preview isn't ready yet. I'll say so in the chat when it is.</p>
+          )}
         </>
       )}
       {pushStatus === "draft" && (

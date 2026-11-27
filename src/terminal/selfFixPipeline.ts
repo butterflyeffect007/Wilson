@@ -191,20 +191,31 @@ export function applyEdits(sources: SourceFile[], edits: EditBlock[]): ApplyResu
       working.set(path, cur);
     }
     if (e.kind === "create") {
-      if (src && src.exists) { problems.push(`${path} already exists; it needs SEARCH/REPLACE edits, not a new file.`); continue; }
+      if (!src) { problems.push(`I didn't load ${path}, so I won't create or overwrite it.`); continue; }
+      if (src.exists) { problems.push(`${path} already exists; it needs SEARCH/REPLACE edits, not a new file.`); continue; }
       cur.content = normalizeNewlines(e.content);
       continue;
     }
     const search = normalizeNewlines(e.search);
     const replace = normalizeNewlines(e.replace);
-    if (!src || !src.exists) {
+    if (!src) {
+      problems.push(`I didn't load ${path}, so I won't change it.`);
+      continue;
+    }
+    if (!src.exists) {
       if (!search.trim() && cur.created) { cur.content = replace; continue; }
       problems.push(`${path} doesn't exist yet, so there's nothing to search in.`);
       continue;
     }
     if (!search.trim()) { problems.push(`An edit to ${path} has an empty SEARCH part.`); continue; }
     const exact = countOccurrences(cur.content, search);
-    if (exact === 1) { cur.content = cur.content.replace(search, () => replace); continue; }
+    if (exact === 1) {
+      if (cur.content.length > 1000 && search.length > 200 && replace.length < search.length * 0.5) {
+        problems.push(`That edit would remove too much of ${path}. Add a small new block instead of replacing a large section.`);
+        continue;
+      }
+      cur.content = cur.content.replace(search, () => replace); continue;
+    }
     if (exact > 1) { problems.push(`A SEARCH part matches ${exact} places in ${path}. It needs a few more unique lines.`); continue; }
     const fuzzy = fuzzyLineMatch(cur.content, search);
     if (fuzzy.count === 1) {
@@ -246,8 +257,11 @@ function bracketBalance(s: string): [number, number, number] {
 export function validateChange(f: ChangedFile): string[] {
   const out: string[] = [];
   if (!f.content.trim()) { out.push(`The new ${f.path} would be empty.`); return out; }
-  if (f.status === "edited" && f.previous.length > 400 && f.content.length < f.previous.length * 0.5) {
-    out.push(`The new ${f.path} is less than half its old size, which looks cut off.`);
+  if (f.status === "edited" && f.previous.length > 200 && f.content.length < f.previous.length * 0.8) {
+    out.push(`The new ${f.path} is much smaller than the current file, which looks cut off.`);
+  }
+  if (/\.css$/i.test(f.path) && /@tailwind\s+base/.test(f.previous) && !/@tailwind\s+base/.test(f.content)) {
+    out.push(`The new ${f.path} would throw away the existing stylesheet instead of adding the effect.`);
   }
   const added = lineDiff(f.path, f.previous, f.content).filter((l) => l.kind === "add").map((l) => l.text).join("\n");
   if (PLACEHOLDER_RE.test(added)) out.push(`The change to ${f.path} has a "rest of the code" placeholder instead of real code.`);
@@ -262,6 +276,56 @@ export function validateChange(f: ChangedFile): string[] {
     try { JSON.parse(f.content); } catch { out.push(`${f.path} would not be valid JSON.`); }
   }
   return out;
+}
+
+const RELEVANCE_STOP = new Set(("the a an and or to of for in on it me my i you your please just can could would will that this with do did make add change fix update want wanted like about him his he she we they is are be been being from as at by not no yes so if then than too very more most some any all also only own self into over after before again still now here there what which who when how why something somehow should shall may might have has had get got let").split(" "));
+
+function contentWords(s: string): string[] {
+  return s.toLowerCase().replace(/[^a-z0-9+]+/g, " ").split(/\s+/).filter((w) => w.length >= 3 && !RELEVANCE_STOP.has(w));
+}
+
+function wordHit(needle: string, hay: Set<string>): boolean {
+  if (hay.has(needle)) return true;
+  for (const h of hay) if (h.includes(needle) || needle.includes(h)) return true;
+  return false;
+}
+
+/** Refuse a proposal that does not actually do what Jenny asked (e.g. a random cleanup when she asked for a shimmer). */
+export function relevanceProblems(request: string, change: {
+  title: string;
+  summary: string;
+  files: { path: string; status: string }[];
+  diff: PipelineDiffLine[];
+}): string[] {
+  const req = contentWords(request);
+  if (!req.length) return [];
+  const changeText = [
+    change.title || "",
+    change.summary || "",
+    ...change.files.map((f) => f.path),
+    ...change.diff.filter((d) => d.kind === "add" || d.kind === "file").map((d) => d.text),
+  ].join("\n");
+  const hay = new Set(contentWords(changeText));
+  const distinctive = req.filter((w) => w.length >= 5 || /shimmer|glow|sparkle|orb|button|title|footer|header|font|color|colour|theme|animat|chat/.test(w));
+  const missed = (distinctive.length ? distinctive : req).filter((w) => !wordHit(w, hay));
+  const problems: string[] = [];
+  const pool = distinctive.length ? distinctive : req;
+  if (pool.length && missed.length === pool.length) {
+    problems.push(`The change doesn't match what you asked for (${missed.slice(0, 5).join(", ")}).`);
+  }
+  const hasAdd = change.diff.some((d) => d.kind === "add");
+  const hasDel = change.diff.some((d) => d.kind === "del");
+  if (/\b(add|put|give|include|create)\b/i.test(request) && hasDel && !hasAdd) {
+    problems.push("You asked to add something, but this change only removes code.");
+  }
+  if (/\b(shimmer|sparkle|glow|shine|glitter)\b/i.test(request)) {
+    const added = change.diff.filter((d) => d.kind === "add").map((d) => d.text).join("\n");
+    const hasStyle = /@keyframes|animation\s*:/.test(added);
+    if (!hasStyle) {
+      problems.push("You asked for a visible effect, but this only adds a class name and no CSS animation or style. Add the actual style (for example @keyframes) too.");
+    }
+  }
+  return problems;
 }
 
 /** Line diff with 3 lines of context; long unchanged stretches fold into "⋯". */
@@ -323,6 +387,7 @@ export function diffForFiles(files: ChangedFile[], maxLines = 400): PipelineDiff
 
 export const PICK_SYSTEM = `You are Wilson, looking at your own source code (a React + TypeScript + Vite app). Jenny, the Architect, wants you to change yourself.
 You can only change files under src/ and public/. Pick the files you need to READ to make the change (at most ${MAX_FILES_PER_FIX}, fewest possible).
+Prefer the smallest CSS or component that owns that UI (for a title or header look, that is often src/index.css plus the markup in src/App.tsx). Do not pick a huge file if a smaller one will do.
 You may also name one new file to create if the change truly needs it.
 Reply with ONLY JSON like {"files":["src/components/Example.tsx"]} and nothing else.`;
 
@@ -331,10 +396,10 @@ export function pickUserPrompt(request: string, paths: string[]): string {
 }
 
 export const EDIT_SYSTEM = `You are Wilson, editing your own source code (React + TypeScript + Vite). Jenny, the Architect, asked for a change and will review it before it goes live.
-Make the smallest correct change. Keep the existing style. Do not touch anything she did not ask about.
+Make the smallest correct change that actually does what she asked. Keep the existing style. Do not touch anything she did not ask about. Do not invent an unrelated cleanup.
 Reply in EXACTLY this format and nothing else:
 
-TITLE: a short title (under 8 words)
+TITLE: a short title in Jenny's own words (under 8 words), not a new invention
 SUMMARY: one or two plain sentences saying what changes for Jenny
 FILE: path/of/the/file
 <<<<<<< SEARCH
@@ -352,14 +417,180 @@ full contents
 
 DONE
 
-Rules: SEARCH must copy the current file exactly (same spaces). Never write "rest of code" or "..." placeholders. Only src/ and public/ paths. The last line must be DONE.`;
+Rules: SEARCH must copy the current file exactly (same spaces). Never write "rest of code" or "..." placeholders. Only src/ and public/ paths. The last line must be DONE. The new lines must clearly do what she asked — use her key words (for example a class name like shimmer) so the change is obviously about her request. If she asked for a visible effect (shimmer, sparkle, glow), you must also add the actual CSS (@keyframes and a rule that uses it). A class name with no style is not enough.`;
+
+/** The live worker rejects any single chat message over 8000 characters. Stay under that. */
+export const MAX_EDIT_PROMPT_CHARS = 7200;
+
+const EFFECT_WORD = /^(shimmer|sparkle|glow|shine|glitter|animat(?:e|ion|ed)?|iridescent|effect|subtle|tiny|gold)$/;
+
+/** The thing she wants changed (title, header, …) — not the effect word, which often is not in the file yet. */
+function subjectHints(request: string): string[] {
+  const s: string[] = [];
+  if (/\b(title|header|heading|wordmark|logo|brand)\b/i.test(request)) {
+    s.push("wl-title", "wl-w", "tracking-[0.28em]", "+ THE ONLY ONE");
+  }
+  if (/\bheader\b/i.test(request)) s.push("<header", "header ");
+  if (/\borb\b/i.test(request)) s.push("wilson-orb", "wl-orb");
+  if (/\b(wilson word|the word wilson|WILSON word)\b/i.test(request)) s.push("wl-w", ">WILSON<");
+  return s;
+}
+
+function lineHasTerm(line: string, term: string): boolean {
+  const t = term.toLowerCase();
+  if (!t) return false;
+  const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${escaped}(?![a-z0-9])`, "i").test(line);
+}
+
+function scoreLine(line: string, request: string): number {
+  let s = 0;
+  const subjects = subjectHints(request);
+  for (const h of subjects) if (lineHasTerm(line, h) || line.includes(h)) s += 8;
+  if (lineHasTerm(line, "wl-title") || lineHasTerm(line, "wl-w")) s += 6;
+  if (/>WILSON</.test(line) || /className="wl-w/.test(line) || /className="[^"]*wl-title/.test(line)) s += 12;
+  if (/\.wl-title\b/.test(line) || /header\s+\.wl-w/.test(line)) s += 12;
+  const hasSubject = subjects.length > 0;
+  for (const w of contentWords(request)) {
+    if (w.length < 4 || !lineHasTerm(line, w)) continue;
+    s += hasSubject && EFFECT_WORD.test(w) ? 1 : 4;
+  }
+  return s;
+}
+
+function promptHints(request: string): string[] {
+  return [...new Set([...subjectHints(request), ...contentWords(request)])];
+}
+
+/** Pack the most relevant exact lines of a (possibly huge) file into a budget, so SEARCH/REPLACE still has real text to copy. */
+export function sliceSourceForPrompt(content: string, request: string, budget: number): string {
+  const text = normalizeNewlines(content);
+  if (text.length <= budget) return text;
+  const lines = text.split("\n");
+  const scores = lines.map((line) => scoreLine(line, request));
+  if (!scores.some((s) => s > 0)) {
+    for (let i = 0; i < lines.length; i++) {
+      if (/(className|header|h1|wl-title|wl-w|WILSON)/i.test(lines[i])) scores[i] = 1;
+    }
+  }
+  const hits = scores.map((s, i) => ({ i, s })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
+  const take = new Array(lines.length).fill(false);
+  for (const h of hits) {
+    const pad = h.s >= 8 ? 14 : h.s >= 4 ? 3 : 1;
+    for (let i = Math.max(0, h.i - pad); i <= Math.min(lines.length - 1, h.i + pad); i++) take[i] = true;
+    const marked = take.reduce((n, v, i) => n + (v ? lines[i].length + 1 : 0), 0);
+    if (marked > budget * 3) break;
+  }
+  if (!take.some(Boolean)) {
+    const n = Math.min(lines.length, 80);
+    for (let i = 0; i < n; i++) take[i] = true;
+  }
+  const tail = Math.min(20, lines.length);
+  for (let i = lines.length - tail; i < lines.length; i++) take[i] = true;
+  const windows: { start: number; end: number; score: number }[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!take[i]) continue;
+    const start = i;
+    while (i + 1 < lines.length && take[i + 1]) i++;
+    let best = start, score = 0;
+    for (let j = start; j <= i; j++) if (scores[j] > score) { score = scores[j]; best = j; }
+    const MAX_WIN = 28;
+    if (i - start + 1 > MAX_WIN) {
+      const half = Math.floor(MAX_WIN / 2);
+      windows.push({ start: Math.max(start, best - half), end: Math.min(i, best + half), score });
+    } else {
+      windows.push({ start, end: i, score });
+    }
+  }
+  // Pack the highest-scoring windows first so a later title/header is not dropped for earlier weak hits.
+  const ranked = [...windows].sort((a, b) => b.score - a.score);
+  const header = `(This file has ${lines.length} lines. Only the most relevant parts are shown. SEARCH must copy the code exactly, with no line numbers and no ellipsis.)`;
+  const chosen: { start: number; end: number }[] = [];
+  let used = header.length;
+  for (const w of ranked) {
+    const block = `----- lines ${w.start + 1}-${w.end + 1} -----\n` + lines.slice(w.start, w.end + 1).join("\n");
+    if (used + block.length + 2 <= budget) {
+      chosen.push({ start: w.start, end: w.end });
+      used += block.length + 2;
+      continue;
+    }
+    let best = w.start;
+    for (let i = w.start; i <= w.end; i++) if (scores[i] > scores[best]) best = i;
+    const label = (a: number, b: number) => `----- lines ${a + 1}-${b + 1} -----\n` + lines.slice(a, b + 1).join("\n");
+    let a = best, b = best;
+    const room = () => budget - used - label(a, b).length - 2;
+    if (room() < 0) continue; // even the best line cannot fit
+    while (true) {
+      const leftOk = a > w.start && room() >= lines[a - 1].length + 1;
+      const rightOk = b < w.end && room() >= lines[b + 1].length + 1;
+      if (!leftOk && !rightOk) break;
+      if (leftOk && (!rightOk || scores[a - 1] >= scores[b + 1])) a--;
+      else if (rightOk) b++;
+      else break;
+    }
+    const slim = label(a, b);
+    chosen.push({ start: a, end: b });
+    used += slim.length + 2;
+  }
+  chosen.sort((a, b) => a.start - b.start);
+  const chunks: string[] = [header];
+  if (!chosen.length) {
+    chunks.push(lines.slice(0, Math.min(lines.length, 40)).join("\n").slice(0, Math.max(0, budget - used - 10)));
+  } else {
+    for (const w of chosen) {
+      chunks.push(`----- lines ${w.start + 1}-${w.end + 1} -----\n` + lines.slice(w.start, w.end + 1).join("\n"));
+    }
+  }
+  return chunks.join("\n");
+}
+
 
 export function editUserPrompt(request: string, files: SourceFile[], feedback?: string): string {
-  const parts = files.map((f) => f.exists
-    ? `FILE: ${f.path}\n----- current contents -----\n${f.content}\n----- end of ${f.path} -----`
-    : `FILE: ${f.path}\n(does not exist yet; create it with NEW FILE if needed)`);
-  return `Jenny's request:\n${request}\n\n${parts.join("\n\n")}${feedback ? `\n\nYour last attempt could not be applied:\n${feedback}\nTry again with SEARCH parts copied exactly from the current contents above.` : ""}`;
+  const head = `Jenny's request:\n${request}\n\n`;
+  const tail = feedback
+    ? `\n\nYour last attempt could not be applied:\n${feedback}\nTry again with SEARCH parts copied exactly from the current contents above.`
+    : "";
+  const budget = Math.max(1500, MAX_EDIT_PROMPT_CHARS - head.length - tail.length);
+  const per = Math.max(900, Math.floor(budget / Math.max(1, files.length)));
+  const parts = files.map((f) => {
+    if (!f.exists) return `FILE: ${f.path}\n(does not exist yet; create it with NEW FILE if needed)`;
+    const body = sliceSourceForPrompt(f.content, request, Math.max(600, per - f.path.length - 80));
+    const label = body === normalizeNewlines(f.content) ? "current contents" : "current contents, relevant parts";
+    return `FILE: ${f.path}\n----- ${label} -----\n${body}\n----- end of ${f.path} -----`;
+  });
+  let out = head + parts.join("\n\n") + tail;
+  if (out.length > MAX_EDIT_PROMPT_CHARS) {
+    const tighter = Math.floor((MAX_EDIT_PROMPT_CHARS - head.length - tail.length) / Math.max(1, files.length)) - 80;
+    const slim = files.map((f) => {
+      if (!f.exists) return `FILE: ${f.path}\n(does not exist yet; create it with NEW FILE if needed)`;
+      const body = sliceSourceForPrompt(f.content, request, Math.max(400, tighter));
+      return `FILE: ${f.path}\n----- current contents, relevant parts -----\n${body}\n----- end of ${f.path} -----`;
+    });
+    out = head + slim.join("\n\n") + tail;
+  }
+  return out;
 }
+
+
+
+/** One user message per file, each under the live 8000-char cap, so large files can still be edited. */
+export function editPromptMessages(request: string, files: SourceFile[], feedback?: string): { history: { role: "user"; content: string }[]; user: string } {
+  const history = files.map((f) => {
+    if (!f.exists) return { role: "user" as const, content: `FILE: ${f.path}\n(does not exist yet; create it with NEW FILE if needed)` };
+    const body = sliceSourceForPrompt(f.content, request, MAX_EDIT_PROMPT_CHARS - f.path.length - 80);
+    const label = body === normalizeNewlines(f.content) ? "current contents" : "current contents, relevant parts";
+    return { role: "user" as const, content: `FILE: ${f.path}\n----- ${label} -----\n${body}\n----- end of ${f.path} -----` };
+  });
+  let hint = "";
+  if (/\b(shimmer|sparkle|glow|shine|glitter|title|header)\b/i.test(request)) {
+    hint = "\n\nHint: you can only edit src/ and public/ (never index.html or the repo root). For a title or header look, append @keyframes and a class at the end of src/index.css (SEARCH the last lines of the file, REPLACE them plus the new CSS — never replace the whole stylesheet), and put that class on the existing wl-title / wl-w markup in src/App.tsx.";
+  }
+  const user = `Jenny's request:\n${request}\n\nUse the exact current file contents from the previous messages. SEARCH must copy those lines exactly.`
+    + hint
+    + (feedback ? `\n\nYour last attempt could not be applied:\n${feedback}\nTry again with SEARCH parts copied exactly from the current contents above.` : "");
+  return { history, user };
+}
+
 
 /* ---------------- Status stepper ---------------- */
 

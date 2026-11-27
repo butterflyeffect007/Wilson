@@ -27,6 +27,7 @@ import type { CallSend } from "./hooks/useTalkCall";
 import GematriaObservatory from "./components/GematriaObservatory";
 import WilsonTerminal from "./terminal/WilsonTerminal";
 import { canOpenTerminal, openTerminalHash, terminalHashOpen } from "./terminal/access";
+import { isSelfFixIntent, stashSelfFixRequest, SELF_FIX_HANDOFF } from "./terminal/selfFixIntent";
 import JobsRoom from "./jobs/JobsRoom";
 import { canOpenJobs, openJobsHash, jobsHashOpen } from "./jobs/access";
 import OmniLab from "./omni/OmniLab";
@@ -546,6 +547,15 @@ export default function App() {
 
       if (seriousHarmStop(content)) {
         pushAssistant(HARM_STOP_REPLY);
+        return;
+      }
+
+      // Architect asking to change Wilson's app/look/code: never fake it in this chat.
+      // Open the Terminal and start the real self-fix preview instead.
+      if ((isAdmin || cachedIsAdmin()) && isSelfFixIntent(content, { mode: "chat" })) {
+        stashSelfFixRequest(content);
+        openTerminalHash();
+        pushAssistant(SELF_FIX_HANDOFF);
         return;
       }
 

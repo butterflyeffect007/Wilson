@@ -574,6 +574,8 @@
 .wterm .sf-kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#FCBC7E;font-weight:500;margin:0 0 6px}
 .wterm .sf-kicker.muted{color:var(--soft)}
 .wterm .sf-card h2{margin:0 0 6px;font-size:21px;font-weight:500;letter-spacing:-.02em;line-height:1.25;color:var(--text)}
+.wterm .sf-asked{font-size:14px;line-height:1.5;margin:0 0 10px;color:#E7D2FF}
+.wterm .sf-asked-k{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#FCBC7E;font-weight:500;margin:0 0 2px}
 .wterm .sf-lead{font-size:15px;line-height:1.55;margin:0 0 16px;color:var(--text)}
 .wterm .sf-lead.soft{color:var(--soft)}
 .wterm .sf-steps{list-style:none;margin:0 0 14px;padding:0;display:flex}

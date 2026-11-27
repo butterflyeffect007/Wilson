@@ -1,21 +1,32 @@
 /** Architect (admin) access. The key lives only on Jenny's device after she enters it; the worker verifies it. */
 import { WILSON_PROXY_URL } from "../App";
-const KEY = "wilson_architect_key";
-const FLAG = "wilson_is_admin";
+import {
+  ADMIN_FLAG_STORE as FLAG, ADMIN_KEY_STORE as KEY, ADMIN_VERIFIED_AT_STORE as VERIFIED_AT,
+  hasServerVerifiedAdmin as hasVerified,
+} from "./adminAccess";
+export { ADMIN_VERIFY_MAX_AGE_MS, hasServerVerifiedAdmin } from "./adminAccess";
 export const storedAdminKey = () => { try { return localStorage.getItem(KEY) || ""; } catch { return ""; } };
-export const cachedIsAdmin = () => { try { return localStorage.getItem(FLAG) === "1" && !!storedAdminKey(); } catch { return false; } };
-export function forgetAdmin() { try { localStorage.removeItem(KEY); localStorage.removeItem(FLAG); } catch { /* ignore */ } }
+export const cachedIsAdmin = () => {
+  try { return hasVerified(localStorage) && !!storedAdminKey(); } catch { return false; }
+};
+export function forgetAdmin() {
+  try { localStorage.removeItem(KEY); localStorage.removeItem(FLAG); localStorage.removeItem(VERIFIED_AT); } catch { /* ignore */ }
+}
 
-/** Server check. Returns true/false, or null when offline (keep cached state). */
+/** Server check. Returns true/false, or null when offline after a prior successful check (keep that access). */
 export async function verifyAdmin(key = storedAdminKey()): Promise<boolean | null> {
   if (!key) return false;
   try {
     const r = await fetch(`${WILSON_PROXY_URL}/admin/check`, { headers: { Authorization: `Bearer ${key}` } });
     if (r.status === 401) { forgetAdmin(); return false; }
-    if (!r.ok) return null;
-    localStorage.setItem(KEY, key); localStorage.setItem(FLAG, "1");
+    if (!r.ok) return hasVerified(localStorage) ? null : false;
+    localStorage.setItem(KEY, key);
+    localStorage.setItem(FLAG, "1");
+    localStorage.setItem(VERIFIED_AT, String(Date.now()));
     return true;
-  } catch { return null; }
+  } catch {
+    return hasVerified(localStorage) ? null : false;
+  }
 }
 
 export type Telemetry = {
