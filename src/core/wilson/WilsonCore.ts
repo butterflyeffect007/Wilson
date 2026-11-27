@@ -24,6 +24,7 @@ import type {
 import { WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES, buildAddresseeContext } from "./WilsonIdentity";
 import type { ModelRequest } from "../../intelligence/ModelRequest";
 import { SPOKEN_CALL_NOTE } from "../../lib/callMode";
+import { REPLY_MAX_TOKENS } from "../../lib/continueReply";
 
 /** Per-turn context the Interface hands to the Core. */
 export interface TurnContext {
@@ -102,7 +103,7 @@ export function buildSystemContext(ctx: TurnContext = {}): string {
   return out;
 }
 
-/** Composes the normalized ModelRequest. No reply-length limit: 4096 tokens + auto-continue. */
+/** Composes the normalized ModelRequest. No short reply cap: high token budget + auto-continue. */
 export function composeRequest(
   userInput: string,
   conversation: ModelRequest["conversation"],
@@ -112,7 +113,7 @@ export function composeRequest(
     userInput,
     conversation,
     systemContext: buildSystemContext(ctx),
-    generation: { temperature: 0.8, maxTokens: 4096 },
+    generation: { temperature: 0.8, maxTokens: REPLY_MAX_TOKENS },
   };
 }
 

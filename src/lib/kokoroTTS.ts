@@ -31,6 +31,7 @@ import { attachAudio, detachAudio, getAudioContext, setSpeakingFlag, unlockAudio
 import { primeScreenAwake } from "./screenAwake";
 import { ensurePuck, getPuckProgress, getPuckState, puckBlockedReason, puckCancel, puckSupported, puckSynth, subscribePuck, waitForPuck } from "./puckVoice";
 import { createOrderedSpeaker, FatalVoiceError, firstSuccess, splitAtPauses, splitToLimit, takeChunks, withRetry } from "./voiceQueue";
+import { trimContinuationOverlap } from "./continueReply";
 
 /* ---- the locked voice (one per session; changed only from Settings) ---- */
 export type VoiceId = "edge-brian" | "edge-andrew" | "gemini" | "aura-orion" | "puck-device";
@@ -58,6 +59,8 @@ let lockedVoice: VoiceId = (() => {
   } catch { return DEFAULT_VOICE; }
 })();
 const lockListeners = new Set<(v: VoiceId) => void>();
+/** If Brian couldn't start a reply, stay on Andrew for the rest of this session (until Settings change). */
+let sessionVoice: VoiceId | null = null;
 export function getLockedVoice(): VoiceId { return lockedVoice; }
 export function voiceLabel(v: VoiceId = lockedVoice): string { return VOICE_OPTIONS.find((o) => o.id === v)?.label ?? v; }
 export function subscribeLockedVoice(l: (v: VoiceId) => void) { lockListeners.add(l); return () => { lockListeners.delete(l); }; }
@@ -68,6 +71,8 @@ export function subscribeLockedVoice(l: (v: VoiceId) => void) { lockListeners.ad
 export function setLockedVoice(v: VoiceId): void {
   if (!isVoiceId(v)) return;
   lockedVoice = v;
+  sessionVoice = null;
+  brianDownUntil = 0;
   try { localStorage.setItem(LOCK_KEY, v); } catch { /* private mode */ }
   dbg(`voice locked to ${voiceLabel(v)}`);
   if (status.state !== "idle") setStatus({ state: "ready", reason: undefined });
@@ -99,7 +104,7 @@ const EDGE_TTS_URL = PROXY + "/tts/edge";
 const EDGE_VOICES = { "edge-brian": "en-US-BrianMultilingualNeural", "edge-andrew": "en-US-AndrewMultilingualNeural" } as const;
 type EdgeVoiceId = keyof typeof EDGE_VOICES;
 const isEdge = (v: VoiceId): v is EdgeVoiceId => v === "edge-brian" || v === "edge-andrew";
-/** If Brian couldn't start a reply, go straight to Andrew for a few minutes instead of waiting on Brian again. */
+/** Legacy timestamp (no longer flips back mid-conversation; sessionVoice holds the backup). */
 let brianDownUntil = 0;
 const BRIAN_REST_MS = 10 * 60 * 1000;
 const SILENT_MP3 = "data:audio/mpeg;base64,SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYxLjcuMTAzAAAAAAAAAAAAAAD/84TAAAAAAAAAAAAASW5mbwAAAA8AAAAFAAACoABtbW1tbW1tbW1tbW1tbW1tbW1tkpKSkpKSkpKSkpKSkpKSkpKSkpK2tra2tra2tra2tra2tra2tra2ttvb29vb29vb29vb29vb29vb29vb//////////////////////////8AAAAATGF2YzYxLjE5AAAAAAAAAAAAAAAAJARQAAAAAAAAAqC9P8vrAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/80TEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEUwAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVMQU1FMy7/80TEpgAAA0gAAAAAMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/80TErAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=";
@@ -112,6 +117,20 @@ const els: HTMLAudioElement[] = [];
 const urlOf = new WeakMap<HTMLAudioElement, string>();
 let playTurn = 0;
 let finishCurrentClip: (() => void) | null = null;
+/** iOS Safari pauses clips when the screen sleeps or the app is backgrounded. Kick the current clip to resume. */
+let resumePlayback: (() => void) | null = null;
+function watchForeground(): void {
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+  const kick = () => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    void unlockAudioContext();
+    resumePlayback?.();
+  };
+  document.addEventListener("visibilitychange", kick);
+  window.addEventListener("pageshow", kick);
+  window.addEventListener("focus", kick);
+}
+watchForeground();
 /** In-flight voice requests of the current reply (aborted on stop so they don't hog connections). */
 const inflightCtrls = new Set<AbortController>();
 
@@ -260,7 +279,7 @@ export function stopSpeaking(): void {
 }
 
 /** Play one audio blob on a primed element; resolves true when it has actually finished, false if playback itself failed. */
-function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
+function playBlob(blob: Blob, my: number, attempt = 0, startAt = 0): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     if (my !== generation) return resolve(true);
     const a = audioEls()[playTurn % EL_COUNT];
@@ -282,10 +301,11 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       a.removeEventListener("playing", onPlaying);
       a.removeEventListener("timeupdate", onTime);
       a.removeEventListener("canplay", onCanPlay);
+      a.removeEventListener("loadedmetadata", onMetaSeek);
       a.removeEventListener("loadedmetadata", armStall);
       if (stall) clearTimeout(stall);
     };
-    const settle = (ok: boolean | "early") => {
+    const settle = (ok: boolean | "early", resumeFrom = 0) => {
       if (settled) return; settled = true;
       cleanup();
       if (finishCurrentClip === done) finishCurrentClip = null;
@@ -293,16 +313,23 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
         void (async () => {
           if (my !== generation) return resolve(true);
           // Headerless Edge MP3s often "end" after a fraction of a second on iOS. Decode to WAV
-          // (correct duration) and replay on the other primed element, same voice, same words.
+          // (correct duration). If she already heard a stretch, resume from there — never replay
+          // the same words from the top (that's the "he's repeating himself" voice bug).
           let next = blob;
-          if (attempt === 0 && !(blob.type || "").toLowerCase().includes("wav")) {
+          let nextStart = resumeFrom;
+          if (!(blob.type || "").toLowerCase().includes("wav")) {
             const wav = await decodeToWav(blob);
-            if (wav) { dbg(`replaying as wav (${(wav.size / 1024).toFixed(0)} KB)`); if (knownDur.has(blob)) knownDur.set(wav, knownDur.get(blob)!); next = wav; }
+            if (wav) { dbg(`continuing as wav (${(wav.size / 1024).toFixed(0)} KB) at ${nextStart.toFixed(2)}s`); if (knownDur.has(blob)) knownDur.set(wav, knownDur.get(blob)!); next = wav; }
+            else if (nextStart > 0.4) {
+              dbg("already heard this piece and could not remux; not replaying from the start");
+              return resolve(true);
+            }
           }
-          resolve(await playBlob(next, my, attempt + 1));
+          resolve(await playBlob(next, my, attempt + 1, nextStart));
         })();
         return;
       }
+      if (resumePlayback) resumePlayback = null;
       resolve(ok);
     };
     const done = () => settle(true);
@@ -312,15 +339,21 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
     const onPlaying = () => { started = true; ignorePause = false; };
     const onCanPlay = () => {
       if (settled || my !== generation || started) return;
+      if (startAt > 0.05 && !(isFinite(a.duration) && a.duration > startAt)) return;
+      seekIfNeeded();
       const p = a.play();
       if (p && typeof p.then === "function") p.catch((e) => dbg("canplay play() rejected", e));
     };
+    const screenHidden = () => typeof document !== "undefined" && document.hidden;
     const resumeAfterPause = () => {
       if (settled || my !== generation || a.ended || !a.paused || ignorePause) return;
-      if (resumeAttempts >= 6) { fail("kept getting interrupted (resume retries exhausted)"); return; }
-      const delay = Math.min(2000, 250 * (2 ** resumeAttempts++));
+      // Don't treat a screen-lock / background pause as a failed sentence.
+      if (resumeAttempts >= 20 && !screenHidden()) { fail("kept getting interrupted (resume retries exhausted)"); return; }
+      const delay = screenHidden() ? 800 : Math.min(2000, 250 * (2 ** Math.min(resumeAttempts, 5)));
+      resumeAttempts++;
       setTimeout(() => {
         if (settled || my !== generation || a.ended || !a.paused || ignorePause) return;
+        void unlockAudioContext();
         a.play().catch((e) => { dbg("resume play() rejected", e); resumeAfterPause(); });
       }, delay);
     };
@@ -328,11 +361,14 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
     const onEnded = () => {
       if (settled || my !== generation) return;
       const playedFor = Math.max(a.currentTime || 0, maxTime);
-      // iOS Safari + Edge MP3: "ended" often fires after only a fraction of the clip. Don't move
-      // on — retry the SAME words (optionally remuxed to WAV) so the rest of the script is spoken.
-      if (attempt < 2 && playedFor + 0.35 < est * (exact ? 0.9 : 0.8)) {
-        dbg(`clip ended early (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
-        settle("early");
+      // iOS Safari + Edge MP3: "ended" often fires after only a fraction of the clip. Remux/resume
+      // so the rest is spoken, but do not restart a clip she already heard.
+      const thresh = exact ? 0.9 : 0.8;
+      if (attempt < 3 && playedFor + 0.35 < est * thresh) {
+        const barely = playedFor < 0.45 || playedFor < est * 0.2;
+        const resume = barely ? startAt : Math.max(startAt, playedFor - 0.15);
+        dbg(`clip ended early (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), ${barely ? "retrying" : "resuming at " + resume.toFixed(2) + "s"}`);
+        settle("early", resume);
         return;
       }
       done();
@@ -344,16 +380,37 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
       const secs = exact ? est : reported && Math.abs(reported - est) / est < 0.5 ? Math.max(reported, est) : Math.max(est, reported);
       stall = setTimeout(() => {
         const playedFor = Math.max(a.currentTime || 0, maxTime);
-        if (playedFor + 0.35 < Math.max(est, secs) * 0.8 && attempt < 2) {
-          dbg(`clip stalled (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), retrying same piece`);
-          settle("early");
+        if (settled || my !== generation) return;
+        // iOS often pauses (screen lock, control center, call mode) without ending the clip.
+        // Wait and resume instead of cutting the sentence short.
+        if ((a.paused && !a.ended) || screenHidden()) {
+          dbg("clip paused or screen asleep, waiting to resume");
+          resumeAfterPause();
+          armStall();
+          return;
+        }
+        if (playedFor + 0.35 < Math.max(est, secs) * 0.8 && attempt < 3) {
+          const barely = playedFor < 0.45 || playedFor < est * 0.2;
+          const resume = barely ? startAt : Math.max(startAt, playedFor - 0.15);
+          dbg(`clip stalled (${playedFor.toFixed(2)}s of ~${est.toFixed(1)}s), ${barely ? "retrying" : "resuming at " + resume.toFixed(2) + "s"}`);
+          settle("early", resume);
         } else {
           dbg("clip never fired 'ended', moving on");
           done();
         }
-      }, secs * 1000 + (exact ? 4000 : 8000));
+      }, Math.max(0.5, secs - startAt) * 1000 + (exact ? 4000 : 8000));
     };
     finishCurrentClip = done;
+    resumePlayback = () => {
+      if (settled || my !== generation || a.ended || ignorePause) return;
+      if (a.paused) { void unlockAudioContext(); a.play().catch((e) => { dbg("foreground play() rejected", e); resumeAfterPause(); }); }
+    };
+    const seekIfNeeded = () => {
+      if (startAt > 0.05 && isFinite(a.duration) && a.duration > startAt) {
+        try { if (Math.abs((a.currentTime || 0) - startAt) > 0.05) a.currentTime = startAt; } catch { /* seek is best-effort */ }
+      }
+    };
+    const onMetaSeek = () => { seekIfNeeded(); if (startAt > 0.05 && !started && !settled) tryPlay(); };
     ignorePause = true;
     resetEl(a);
     assignSrc(a, blob);
@@ -363,12 +420,16 @@ function playBlob(blob: Blob, my: number, attempt = 0): Promise<boolean> {
     a.addEventListener("playing", onPlaying);
     a.addEventListener("timeupdate", onTime);
     a.addEventListener("canplay", onCanPlay);
+    a.addEventListener("loadedmetadata", onMetaSeek);
     a.addEventListener("loadedmetadata", armStall);
     attachAudio(a);
     armStall();
     const tryPlay = () => {
       if (settled || my !== generation) return;
+      // Don't start from 0 when we meant to resume mid-clip — wait for duration, then seek.
+      if (startAt > 0.05 && !(isFinite(a.duration) && a.duration > startAt)) return;
       playAttempts++;
+      seekIfNeeded();
       const p = a.play();
       if (p && typeof p.then === "function") p.then(() => { started = true; ignorePause = false; dbg(`playing ${(blob.size / 1024).toFixed(0)} KB`); }, (e) => {
         dbg("play() rejected", e);
@@ -478,7 +539,7 @@ async function post(url: string, body: unknown, signal: AbortSignal) {
  *  parallelizes), so a long piece needs a length-scaled timeout instead of a flat 14 s that killed it. */
 function edgeEngine(id: EdgeVoiceId, name: string): Engine {
   return {
-    id, type: "audio/mpeg", timeoutMs: 14000, timeoutFor: (t) => Math.min(60000, 15000 + t.length * 70),
+    id, type: "audio/mpeg", timeoutMs: 25000, timeoutFor: (t) => Math.min(120000, 25000 + t.length * 120),
     async once(text, signal) {
       const res = await post(EDGE_TTS_URL, { text, voice: EDGE_VOICES[id] }, signal);
       if (res.status === 404) throw new FatalVoiceError(`${name} isn't on the voice server (404)`, "missing");
@@ -554,9 +615,9 @@ async function requestOnce(e: Engine, text: string, my: number): Promise<Blob> {
 }
 
 /** Retry policy: same voice, short backoff, bounded overall so a dead voice is reported instead of hanging. */
-const RETRY = { attempts: 4, backoffMs: [350, 1000, 2200], deadlineMs: 75000 };
+const RETRY = { attempts: 6, backoffMs: [400, 1000, 2000, 3500, 5000], deadlineMs: 120000 };
 /** Brian's first piece gets a shorter budget so a Brian outage hands the reply to Andrew quickly. */
-const BRIAN_FIRST_TRY = { attempts: 2, backoffMs: [400], deadlineMs: 20000 };
+const BRIAN_FIRST_TRY = { attempts: 2, backoffMs: [500], deadlineMs: 25000 };
 
 /** Voice one piece with the locked voice. Throws only after the same voice failed every retry. */
 async function synthPiece(voice: VoiceId, text: string, index: number, my: number, speed: number, gaveUp: () => boolean, retry: typeof RETRY = RETRY): Promise<Blob> {
@@ -628,9 +689,10 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
   stopSpeaking();
   const my = generation;
   const picked = lockedVoice;
-  // One voice for this whole reply. Brian starts it; if Brian can't voice the first piece, the whole reply
-  // switches to Andrew BEFORE any audio plays (later pieces wait for that decision), so voices never mix.
-  let voice: VoiceId = picked === "edge-brian" && Date.now() < brianDownUntil ? "edge-andrew" : picked;
+  // One voice for this whole reply, and for the rest of the conversation if we had to use Andrew.
+  // If Brian can't voice the first piece, Andrew speaks the WHOLE reply (decided before any audio
+  // plays) and stays locked for later replies until she changes Settings.
+  let voice: VoiceId = sessionVoice ?? (picked === "edge-brian" && Date.now() < brianDownUntil ? "edge-andrew" : picked);
   let label = voiceLabel(voice);
   let decide: (v: VoiceId) => void = () => {};
   const decided: Promise<VoiceId> = voice === "edge-brian" ? new Promise((r) => { decide = r; }) : Promise.resolve(voice);
@@ -643,8 +705,9 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       return b;
     } catch (err) {
       if (my !== generation || String((err as Error)?.message) === "stopped") { decide("edge-brian"); throw err; }
+      sessionVoice = "edge-andrew";
       brianDownUntil = Date.now() + BRIAN_REST_MS;
-      dbg("Brian couldn't start this reply; Andrew speaks the whole reply instead", err);
+      dbg("Brian couldn't start this reply; Andrew speaks this reply and the rest of the conversation", err);
       voice = "edge-andrew"; label = voiceLabel(voice);
       decide("edge-andrew");
       return synthPiece("edge-andrew", t, 0, my, speed, () => gaveUp);
@@ -670,8 +733,11 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
       if (status.state !== "preparing" || voice !== "puck-device") setStatus({ state: "ready", reason: undefined });
     },
     onPlay: () => { setPlayingVoice(label); maybeFlush(); },
+    onSkip: (i, err) => {
+      dbg(`${label} skipped piece ${i + 1} of ${speaker.queued} and will keep going`, err);
+    },
     onDown: (i, err) => {
-      gaveUp = true; // stop retrying the pieces after this one; they won't be played
+      gaveUp = true; // daily limit / missing endpoint: stop the rest of this reply
       const msg = String((err as Error)?.message || err);
       const resting = err instanceof FatalVoiceError && err.kind === "limit";
       dbg(`${label} is down at piece ${i + 1} of ${speaker.queued}; rest of this reply stays text`, err);
@@ -680,13 +746,18 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     onEnd: () => end(),
   });
 
+  let spoken = "";
   const dispatch = (text: string) => {
     const t = toSpeakable(text);
     if (!t) return;
     // On-device Puck is faster on short pieces; cloud voices get whole sentences (fewer requests, natural prosody)
     // but are capped (~480 chars) so one slow request can't hold up the rest of the reply.
     const pieces = voice === "puck-device" ? splitAtPauses(t, dispatched === 0) : splitToLimit(t);
-    for (const p of pieces) { speaker.push(p); dispatched++; }
+    for (const p of pieces) {
+      speaker.push(p);
+      dispatched++;
+      spoken = spoken ? spoken + " " + p : p;
+    }
   };
   /* Gather sentences into bigger pieces, but never let the speaker run dry: when nothing is queued behind
      the piece now playing, send what we have (at least ~40 chars). */
@@ -715,10 +786,20 @@ export function startSpeechStream(speed: number = SPEED, hooks: StreamHooks = {}
     push: (t) => { fullText = t; feed(t, false); },
     finish: (t) => {
       if (my !== generation || done) return;
-      // Final text may differ from streamed text (tags stripped). If what we've already consumed isn't a prefix
-      // of the final text, resume from the longest common prefix so nothing is skipped.
-      if (!t.startsWith(fullText.slice(0, offset))) { let k = 0; while (k < offset && k < t.length && t[k] === fullText[k]) k++; offset = k; }
-      fullText = t; done = true; feed(t, true);
+      done = true;
+      // Final text may differ from streamed text (tags stripped). Never rewind into words already
+      // handed to the speaker — that made him say the same sentences twice. Speak only the new tail.
+      const consumed = fullText.slice(0, offset);
+      if (t.startsWith(consumed)) {
+        fullText = t;
+        feed(t, true);
+      } else {
+        const already = [spoken, buffer].filter(Boolean).join(" ");
+        buffer = "";
+        const rest = trimContinuationOverlap(already, toSpeakable(t));
+        if (rest) dispatch(rest);
+        fullText = t;
+      }
       speaker.finish();
     },
   };

@@ -40,6 +40,7 @@ import { generateWithActiveBrain, loadedPack } from "./omni/engine";
 import { linksIn } from "./intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
+import { shouldContinue, trimContinuationOverlap, continueAddedNothing, MAX_CONTINUES, CONTINUE_HOLD_CHARS } from "./lib/continueReply";
 import { isArchitectReservedName, resolveCompanionName } from "./core/wilson/WilsonIdentity";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
 import { shareChat } from "./lib/shareChat";
@@ -682,12 +683,13 @@ export default function App() {
             systemContext: request.systemContext,
             preferLocal: true,
             allowEscalate: false,
-            maxTokens: 400,
+            maxTokens: request.generation?.maxTokens,
           });
           // A vibe-only or <thought>-only local reply is empty — escalate to the rented stream.
+          // A mid-sentence local cut also escalates so the live stream can finish the thought.
           if (gen.reply) {
             const { clean, vibe: newVibe, dream } = parseAndStripTags(gen.reply);
-            if (clean) {
+            if (clean && !shouldContinue(undefined, clean)) {
               usedLocal = true;
               raw = gen.reply;
               setThinking(false);
@@ -731,28 +733,38 @@ export default function App() {
             abort.signal,
           );
           if (result.degraded) usedBackup = true;
-          // Auto-continue once if the model hit its length cap mid-thought
-          if (result.finishReason === "length" && raw && !abort.signal.aborted) {
+          // Auto-continue when the model hit a token cap, or the stream died mid-sentence
+          // (Gemini often closes with UNAVAILABLE and no finish_reason).
+          for (let cont = 0; cont < MAX_CONTINUES && shouldContinue(result.finishReason, raw) && !abort.signal.aborted; cont++) {
             const contReq: ModelRequest = {
               ...request,
               conversation: [...(request.conversation ?? []), { role: "user", content: request.userInput }, { role: "assistant", content: raw }],
               userInput: "Continue exactly where you left off. Do not repeat anything or add a preamble.",
             };
-            const needsSpace = !/\s$/.test(raw);
-            let first = true;
+            const before = raw;
+            let incoming = "";
+            let released = false;
+            const applyCont = (force: boolean) => {
+              if (!incoming) return;
+              if (!released && !force && incoming.length < CONTINUE_HOLD_CHARS && !/[.!?]\s/.test(incoming)) return;
+              const trimmed = trimContinuationOverlap(before, incoming);
+              released = true;
+              if (continueAddedNothing(incoming, trimmed)) return;
+              const gap = trimmed && !/\s$/.test(before) && !/^\s/.test(trimmed) ? " " : "";
+              raw = before + gap + trimmed;
+              const shown = stripTagsForDisplay(raw);
+              writeAssistant(shown);
+              if (inCall) callReplyRef.current = shown;
+              speech?.push(stripSourcesForSpeech(shown));
+            };
             result = await adapter.generateStream(
               contReq,
-              (chunk) => {
-                if (first && needsSpace && !/^\s/.test(chunk)) chunk = " " + chunk;
-                first = false;
-                raw += chunk;
-                const shown = stripTagsForDisplay(raw);
-                writeAssistant(shown);
-                if (inCall) callReplyRef.current = shown;
-                speech?.push(stripSourcesForSpeech(shown));
-              },
+              (chunk) => { incoming += chunk; applyCont(false); },
               abort.signal,
             );
+            applyCont(true);
+            if (result.degraded) usedBackup = true;
+            if (continueAddedNothing(incoming, trimContinuationOverlap(before, incoming))) break;
           }
 
           const { clean, vibe: newVibe, dream } = parseAndStripTags(raw);
@@ -770,8 +782,8 @@ export default function App() {
             }
             finalText = EMPTY_REPLY_FALLBACK;
             if (speech) speech.finish(finalText);
-          } else if (result.finishReason === "length") {
-            finalText += "\n\n*...whew, hit my length ceiling. Ask me to continue and I'll pick up where I left off.*";
+          } else if (shouldContinue(result.finishReason, clean)) {
+            finalText += "\n\n*...I still got cut off. Ask me to continue and I'll pick up where I left off.*";
           } else if (result.finishReason === "content_filter" || result.finishReason === "SAFETY") {
             finalText += "\n\n*...okay okay, the safety net just yanked me back. Try rephrasing, or ask me something adjacent and I'll get you what you need.*";
           }
