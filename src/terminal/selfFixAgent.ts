@@ -20,8 +20,6 @@ export type BuildHooks = {
   adapter?: OpenRouterAdapter;
 };
 
-const MAX_TOTAL_CHARS = 140_000;
-
 async function ask(adapter: OpenRouterAdapter, system: string, user: string, maxTokens: number, signal: AbortSignal, history: ModelRequest["conversation"] = []) {
   const request: ModelRequest = {
     systemContext: system,
@@ -62,16 +60,14 @@ export async function buildSelfFixProposal(request: string, hooks: BuildHooks): 
   }
 
   const sources: SourceFile[] = [];
-  let total = 0;
   for (const path of chosen) {
     if (signal.aborted) throw Object.assign(new Error("Stopped."), { name: "AbortError" });
     onStep(`Reading ${path}…`);
     const f = await fetchSourceFile(path);
-    total += f.content.length;
-    if (total > MAX_TOTAL_CHARS) break;
-    sources.push({ path: f.path, content: f.content, exists: f.exists, sha: f.sha });
+    if (!f.exists && !f.path) throw new Error(`I couldn't read ${path}. Nothing was sent anywhere.`);
+    sources.push({ path: f.path || path, content: f.content || "", exists: f.exists, sha: f.sha });
   }
-  if (!sources.length) throw new Error("Those files are too big for one change. Ask for something smaller. Nothing was sent anywhere.");
+  if (!sources.length) throw new Error("I couldn't read my own files just now. Nothing was sent anywhere.");
 
   let feedback = "";
   const maxAttempts = 3;

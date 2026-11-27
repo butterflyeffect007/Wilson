@@ -191,13 +191,18 @@ export function applyEdits(sources: SourceFile[], edits: EditBlock[]): ApplyResu
       working.set(path, cur);
     }
     if (e.kind === "create") {
-      if (src && src.exists) { problems.push(`${path} already exists; it needs SEARCH/REPLACE edits, not a new file.`); continue; }
+      if (!src) { problems.push(`I didn't load ${path}, so I won't create or overwrite it.`); continue; }
+      if (src.exists) { problems.push(`${path} already exists; it needs SEARCH/REPLACE edits, not a new file.`); continue; }
       cur.content = normalizeNewlines(e.content);
       continue;
     }
     const search = normalizeNewlines(e.search);
     const replace = normalizeNewlines(e.replace);
-    if (!src || !src.exists) {
+    if (!src) {
+      problems.push(`I didn't load ${path}, so I won't change it.`);
+      continue;
+    }
+    if (!src.exists) {
       if (!search.trim() && cur.created) { cur.content = replace; continue; }
       problems.push(`${path} doesn't exist yet, so there's nothing to search in.`);
       continue;
@@ -480,6 +485,8 @@ export function sliceSourceForPrompt(content: string, request: string, budget: n
     const n = Math.min(lines.length, 80);
     for (let i = 0; i < n; i++) take[i] = true;
   }
+  const tail = Math.min(20, lines.length);
+  for (let i = lines.length - tail; i < lines.length; i++) take[i] = true;
   const windows: { start: number; end: number; score: number }[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (!take[i]) continue;
@@ -576,7 +583,7 @@ export function editPromptMessages(request: string, files: SourceFile[], feedbac
   });
   let hint = "";
   if (/\b(shimmer|sparkle|glow|shine|glitter|title|header)\b/i.test(request)) {
-    hint = "\n\nHint: you can only edit src/ and public/ (never index.html or the repo root). For a title or header look, add @keyframes and a class in src/index.css, and put that class on the existing wl-title / wl-w markup in src/App.tsx.";
+    hint = "\n\nHint: you can only edit src/ and public/ (never index.html or the repo root). For a title or header look, append @keyframes and a class at the end of src/index.css (SEARCH the last lines of the file, REPLACE them plus the new CSS — never replace the whole stylesheet), and put that class on the existing wl-title / wl-w markup in src/App.tsx.";
   }
   const user = `Jenny's request:\n${request}\n\nUse the exact current file contents from the previous messages. SEARCH must copy those lines exactly.`
     + hint
