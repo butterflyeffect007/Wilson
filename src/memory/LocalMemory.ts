@@ -269,7 +269,7 @@ export function buildMemoryContext(threads: StoredThread[] = loadThreads()): str
   const titles = threads
     .map((t) => t.title)
     .filter((t) => t && t !== "New Thread")
-    .slice(0, 15)
+    .slice(0, 8)
     .map((t) => `"${t}"`);
   if (titles.length) {
     lines.push(

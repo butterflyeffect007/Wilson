@@ -1,11 +1,14 @@
 /**
  * Quiet memory — what Wilson carries between sessions: a short intent, pacing/preferences,
  * ongoing threads and short session recaps. Filled by the EXISTING "state of you" summary call
- * (no extra model calls). Stored on this device (localStorage); for the Architect it also
- * syncs to the worker (KV architect:memory) so it follows her across devices.
+ * (no extra model calls). Stored on this device (localStorage). When the person is signed in it also
+ * syncs with their account memory pack so it can follow them to another phone.
+ * Architect devices also keep the older /admin/memory copy as a fallback.
  * Never shown in chat; only a small list in Settings.
  */
 import { WILSON_PROXY_URL } from "../App";
+import { isPersonalThread, isPersonalRecap } from "./quietFilter";
+export { isPersonalThread, isPersonalRecap } from "./quietFilter";
 import { cachedIsAdmin, storedAdminKey } from "./admin";
 
 const KEY = "wilson_quiet_memory_v1";
@@ -24,7 +27,14 @@ function persist(m: QuietMemory, sync = true) {
   m.pacing = m.pacing.slice(0, 6); m.threads = m.threads.slice(0, 8); m.recaps = m.recaps.slice(0, 5);
   try { localStorage.setItem(KEY, JSON.stringify(m)); } catch { /* full */ }
   window.dispatchEvent(new Event("wilson-quiet-memory"));
+  try { window.dispatchEvent(new Event("wilson-memory-pack-dirty")); } catch { /* ignore */ }
   if (sync) void pushArchitectMemory(m);
+}
+
+/** Write a pack's quiet memory onto this device without a server push. */
+export function applyQuietMemory(m: QuietMemory, emit = true): void {
+  persist({ ...empty(), ...m }, false);
+  if (!emit) return;
 }
 export function clearQuietMemory() {
   try { localStorage.removeItem(KEY); } catch { /* ignore */ }
@@ -89,18 +99,20 @@ export function absorbSummaryReply(text: string): string {
   return note;
 }
 
-/** Compact system-context block (~≤550 tokens). newChat adds a light "where we left off". */
-export function buildQuietMemoryContext(newChat: boolean): string {
+/** Compact, filtered system-context block. newChat adds a light "where we left off". */
+export function buildQuietMemoryContext(newChat: boolean, opts: { name?: string | null; isArchitect?: boolean } = {}): string {
   const m = loadQuietMemory();
-  if (!m.intent && !m.threads.length && !m.pacing.length && !m.recaps.length) return "";
-  const lines: string[] = ["[What you carry between sessions — quiet background. Let it shape you; you may recall or share any of it whenever it helps or she asks]"];
+  const open = m.threads.filter(isPersonalThread).slice(0, 5);
+  const recaps = m.recaps.filter((r) => isPersonalRecap(r.text)).slice(0, 2);
+  if (!m.intent && !open.length && !m.pacing.length && !recaps.length) return "";
+  const who = opts.isArchitect ? "her" : (opts.name?.trim() || "them");
+  const lines: string[] = [`[What you carry between sessions — quiet personal background only. Let it shape you; you may recall or share any of it whenever it helps or ${who} asks. Skip anything about builds, deploys, or dashboards.]`];
   if (m.intent) lines.push(`Intent: ${m.intent}`);
-  if (m.pacing.length) lines.push(`How she likes it: ${m.pacing.join("; ")}`);
-  const open = m.threads.filter((t) => t.status !== "done").slice(0, 5);
+  if (m.pacing.length) lines.push(`How ${who} likes it: ${m.pacing.join("; ")}`);
   if (open.length) lines.push("Threads:", ...open.map((t) => `- ${t.title} (${t.status}, ${t.date})${t.decision ? ` · decided: ${t.decision}` : ""}${t.next ? ` · next: ${t.next}` : ""}`));
-  if (m.recaps.length) lines.push(`Recent sessions: ${m.recaps.slice(0, 2).map((r) => `${r.date}: ${r.text}`).join(" | ")}`);
-  if (newChat) lines.push("This is a fresh chat. You know where you left off: if it fits her opener, you may pick it up in a light line (e.g. a nod to the last thread). Never summarize the past unprompted, and follow her lead if she starts something new.");
-  return lines.join("\n").slice(0, 2200);
+  if (recaps.length) lines.push(`Recent sessions: ${recaps.map((r) => `${r.date}: ${r.text}`).join(" | ")}`);
+  if (newChat) lines.push(`This is a fresh chat. You know where you left off: if it fits the opener, you may pick it up in a light line (e.g. a nod to the last thread). Never summarize the past unprompted, and follow ${who === "her" ? "her" : "their"} lead if they start something new.`);
+  return lines.join("\n").slice(0, 1000);
 }
 
 /* ---------- Architect sync (KV architect:memory via authenticated worker endpoints) ---------- */

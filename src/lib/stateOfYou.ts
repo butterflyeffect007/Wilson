@@ -1,6 +1,6 @@
 /**
  * "State of you" — a rolling, on-device shared-history profile that shapes Wilson's tone & pacing.
- * localStorage only (this device). Gated by the "Remember things" setting. Refreshed by ONE
+ * Stored on this device and, when signed in, synced with the account memory pack. Gated by the "Remember things" setting. Refreshed by ONE
  * lightweight summary call every REFRESH_EVERY user messages, or at session end (tab hidden) if ≥ MIN_PENDING.
  */
 import type { OpenRouterAdapter } from "../intelligence/OpenRouterAdapter";
@@ -25,14 +25,19 @@ const empty = (): StateOfYou => ({ summary: "", vibes: [], turns: [], pending: 0
 export function loadStateOfYou(): StateOfYou {
   try { return { ...empty(), ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { return empty(); }
 }
-function save(s: StateOfYou) {
+function save(s: StateOfYou, emitPack = true) {
   const cut = Date.now() - 7 * DAY;
   s.vibes = s.vibes.filter((x) => x.ts > cut).slice(-200);
   s.turns = s.turns.filter((x) => x.ts > cut).slice(-400);
   try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* full */ }
   window.dispatchEvent(new Event("wilson-state-of-you"));
+  if (emitPack) { try { window.dispatchEvent(new Event("wilson-memory-pack-dirty")); } catch { /* ignore */ } }
 }
-export function clearStateOfYou() { try { localStorage.removeItem(KEY); } catch { /* ignore */ } window.dispatchEvent(new Event("wilson-state-of-you")); }
+/** Write a pack's state-of-you onto this device. */
+export function applyStateOfYou(s: StateOfYou, emit = true): void {
+  save({ ...empty(), ...s }, emit);
+}
+export function clearStateOfYou() { try { localStorage.removeItem(KEY); } catch { /* ignore */ } window.dispatchEvent(new Event("wilson-state-of-you")); try { window.dispatchEvent(new Event("wilson-memory-pack-dirty")); } catch { /* ignore */ } }
 export function editStateSummary(text: string) { const s = loadStateOfYou(); s.summary = text.trim().slice(0, 2000); s.editedByUser = true; save(s); }
 
 export function recordUserTurn(text: string) { const s = loadStateOfYou(); s.turns.push({ ts: Date.now(), len: text.length }); s.pending++; save(s); }

@@ -18,7 +18,73 @@ import { getPuckState } from "./puckVoice";
 
 const MODEL = "Xenova/all-MiniLM-L6-v2";
 const DB = "wilson_memory", STORE = "items";
+const FACTS_KEY = "wilson_facts_v1";
 let extractor: Promise<any> | null = null;
+
+/** Text-only facts that sync with a signed-in account (no vectors). */
+export type TextFact = { id: string; text: string; speakerId: string; emotion: string | null; ts: string };
+
+export function loadTextFacts(): TextFact[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FACTS_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((f) => f && typeof f.text === "string") : [];
+  } catch { return []; }
+}
+export function saveTextFacts(facts: TextFact[]): void {
+  try { localStorage.setItem(FACTS_KEY, JSON.stringify(facts.slice(-200))); } catch { /* quota */ }
+}
+export function replaceTextFacts(facts: TextFact[]): void {
+  saveTextFacts(facts);
+}
+export function recordTextFact(fact: TextFact): void {
+  const cur = loadTextFacts().filter((f) => f.id !== fact.id && f.text.toLowerCase() !== fact.text.toLowerCase());
+  saveTextFacts([...cur, fact]);
+}
+export function forgetTextFact(id: string): void {
+  saveTextFacts(loadTextFacts().filter((f) => f.id !== id));
+}
+export function clearTextFacts(): void {
+  try { localStorage.removeItem(FACTS_KEY); } catch { /* ignore */ }
+}
+
+/** Same speaker, or the default typed-memory bucket (voice ids don't travel across devices). */
+export function speakerMatch(itemSpeaker: string, querySpeaker: string): boolean {
+  const a = itemSpeaker || "default";
+  const b = querySpeaker || "default";
+  return a === b || a === "default" || b === "default";
+}
+
+const STOP = new Set(["the", "a", "an", "and", "or", "to", "of", "in", "on", "for", "is", "it", "that", "this", "with", "you", "we", "i", "me", "my", "was", "be"]);
+function tokens(s: string): string[] {
+  return s.toLowerCase().split(/[^a-z0-9']+/i).filter((w) => w.length > 2 && !STOP.has(w));
+}
+
+/** Keyword + recency rank — works on iPhone without loading the embedding model. */
+export function rankMemoriesText(items: { id: string; text: string; speakerId: string; emotion: string | null; ts: string }[], q: string, speakerId: string, k = 4): typeof items {
+  const qt = tokens(q);
+  if (!qt.length) {
+    return items.filter((m) => speakerMatch(m.speakerId, speakerId)).sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, k);
+  }
+  const scored = items
+    .filter((m) => speakerMatch(m.speakerId, speakerId))
+    .map((m) => {
+      const mt = new Set(tokens(m.text));
+      const hits = qt.filter((w) => mt.has(w)).length;
+      const days = Math.max(0, (Date.now() - Date.parse(m.ts)) / 86400000);
+      const recency = Math.pow(0.5, days / 30);
+      const feeling = m.emotion && m.emotion !== "neutral" ? 0.03 : 0;
+      return { m, s: hits + 0.08 * recency + feeling };
+    })
+    .filter((x) => x.s > 0)
+    .sort((a, b) => b.s - a.s)
+    .slice(0, k)
+    .map((x) => x.m);
+  return scored;
+}
+
+function extractorReady(): boolean {
+  return !!extractor;
+}
 
 function loadExtractor() {
   // iPhone: one page gets one memory budget. Don't load the memory-search model while Puck's voice is still loading
@@ -56,14 +122,33 @@ async function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBReq
   });
 }
 
-export const listMemories = () => tx<MemoryItem[]>("readonly", (s) => s.getAll() as IDBRequest<MemoryItem[]>);
-export const deleteMemory = (id: string) => tx("readwrite", (s) => s.delete(id));
-export const clearMemories = () => tx("readwrite", (s) => s.clear());
+export const listMemories = async (): Promise<MemoryItem[]> => {
+  let idb: MemoryItem[] = [];
+  try { idb = await tx<MemoryItem[]>("readonly", (s) => s.getAll() as IDBRequest<MemoryItem[]>); } catch { /* ignore */ }
+  const byId = new Map<string, MemoryItem>();
+  for (const f of loadTextFacts()) byId.set(f.id, { ...f, vec: [] });
+  for (const m of idb) byId.set(m.id, { ...byId.get(m.id), ...m });
+  return [...byId.values()];
+};
+export const deleteMemory = async (id: string) => {
+  forgetTextFact(id);
+  try { window.dispatchEvent(new Event("wilson-memory-pack-dirty")); } catch { /* ignore */ }
+  await tx("readwrite", (s) => s.delete(id));
+};
+export const clearMemories = async () => {
+  clearTextFacts();
+  try { window.dispatchEvent(new Event("wilson-memory-pack-dirty")); } catch { /* ignore */ }
+  await tx("readwrite", (s) => s.clear());
+};
 
 export async function upsertMemory(text: string, speakerId: string, emotion: string | null): Promise<void> {
-  const vec = await embedText(text);
-  const item: MemoryItem = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), text, speakerId, emotion, ts: new Date().toISOString(), vec };
-  await tx("readwrite", (s) => s.put(item));
+  const item: MemoryItem = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), text, speakerId, emotion, ts: new Date().toISOString(), vec: [] };
+  recordTextFact(item);
+  try { window.dispatchEvent(new Event("wilson-memory-pack-dirty")); } catch { /* ignore */ }
+  try {
+    item.vec = await embedText(text);
+    await tx("readwrite", (s) => s.put(item));
+  } catch { /* text fact is enough; vectors can catch up later */ }
 }
 
 const dot = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * (b[i] ?? 0), 0);
@@ -71,7 +156,7 @@ const dot = (a: number[], b: number[]) => a.reduce((s, x, i) => s + x * (b[i] ??
 /** Top-k for this speaker (vectors are normalized, so dot = cosine). */
 export function rankMemories(items: MemoryItem[], q: number[], speakerId: string, k = 4, min = 0.3): MemoryItem[] {
   return items
-    .filter((m) => m.speakerId === speakerId)
+    .filter((m) => speakerMatch(m.speakerId, speakerId))
     .map((m) => ({ m, sim: dot(m.vec, q) }))
     .filter((x) => x.sim >= min)
     // ranked: relevance first, gently boosted by recency (30-day half-life) and emotional weight
@@ -87,8 +172,25 @@ export function rankMemories(items: MemoryItem[], q: number[], speakerId: string
 }
 
 export async function queryMemories(text: string, speakerId: string, k = 4): Promise<MemoryItem[]> {
-  const [q, items] = await Promise.all([embedText(text), listMemories()]);
-  return rankMemories(items, q, speakerId, k);
+  const facts = loadTextFacts();
+  let idb: MemoryItem[] = [];
+  try { idb = await listMemories(); } catch { /* private mode / idb blocked */ }
+  const byId = new Map<string, MemoryItem>();
+  for (const f of facts) byId.set(f.id, { ...f, vec: [] });
+  for (const m of idb) byId.set(m.id, { ...byId.get(m.id), ...m, text: m.text || byId.get(m.id)?.text || "" });
+  const items = [...byId.values()];
+  const textHits = rankMemoriesText(items, text, speakerId, k) as MemoryItem[];
+  // On iPhone, don't start the embedding model mid-send (it fights Puck). Use it only if already loaded.
+  if (!extractorReady()) return textHits;
+  try {
+    const q = await embedText(text);
+    const withVec = items.filter((m) => Array.isArray(m.vec) && m.vec.length);
+    if (withVec.length) {
+      const ranked = rankMemories(withVec, q, speakerId, k);
+      if (ranked.length) return ranked;
+    }
+  } catch { /* keep text hits */ }
+  return textHits;
 }
 
 export function summarizeExchange(user: string, reply: string, who: string): string {

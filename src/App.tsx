@@ -14,6 +14,8 @@ import { loadStateOfYou, recordUserTurn, recordVibe, buildStateOfYouContext, may
 import { subscribeSaving } from "./lib/saveBus";
 import { downloadChatExport } from "./lib/chatExport";
 import { loadQuietMemory, buildQuietMemoryContext, deleteQuietItem, clearQuietMemory, exportQuietMemory, pullArchitectMemory, type QuietMemory } from "./lib/quietMemory";
+import { CONTEXT_WINDOW, buildThreadRecap, needsVoiceDiagnostics } from "./lib/threadRecap";
+import { startMemoryPackSync, pullMemoryPack, pushMemoryPack } from "./accounts/memorySync";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Settings as SettingsIcon, Sun, Moon, ChevronDown,
@@ -80,7 +82,6 @@ const SKIP_HOME = (() => { try { if (/[?&](beta|open)(=|&|$)/.test(INITIAL_SEARC
 export const WILSON_PROXY_URL: string =
   ((import.meta.env.VITE_WILSON_PROXY_URL as string | undefined)?.trim()) ||
   "https://wilson-proxy.butterflyeffect007.workers.dev";
-const CONTEXT_WINDOW = 10; // last 10 messages (20 kept old spec talk in view)
 
 /** Remove trailing Sources/Source lines and bare URLs so they are never spoken. */
 function stripSourcesForSpeech(text: string): string {
@@ -201,6 +202,7 @@ export default function App() {
   const [qmem, setQmem] = useState<QuietMemory>(() => loadQuietMemory());
   const [qmemOpen, setQmemOpen] = useState(false);
   useEffect(() => { const f = () => setQmem(loadQuietMemory()); window.addEventListener("wilson-quiet-memory", f); return () => window.removeEventListener("wilson-quiet-memory", f); }, []);
+  useEffect(() => { startMemoryPackSync(); }, []);
   useEffect(() => { if (isAdmin) void pullArchitectMemory(); }, [isAdmin]);
   useEffect(() => { const f = () => setSoy(loadStateOfYou()); window.addEventListener("wilson-state-of-you", f); return () => window.removeEventListener("wilson-state-of-you", f); }, []);
   const [playMsg, setPlayMsg] = useState<{ id: string; phase: "loading" | "playing" } | null>(null);
@@ -429,7 +431,13 @@ export default function App() {
       const changes = await pullRemote();
       if (changes.length) setThreads((prev) => { const next = applyRemote(prev, changes); threadsRef.current = next; return next; });
       const r = await pushChanges(threadsRef.current);
-      setSyncNote(r === null ? "Sync paused, will retry." : "Chats saved to your account.");
+      const mem = await pullMemoryPack();
+      if (mem === "ok") {
+        setLessons(loadLessons());
+        setSoy(loadStateOfYou());
+        setQmem(loadQuietMemory());
+      }
+      setSyncNote(r === null ? "Sync paused, will retry." : (mem === "ok" ? "Chats and memory saved to your account." : "Chats saved to your account."));
     } catch { setSyncNote("Sync paused, will retry."); }
   }, []);
   useEffect(() => {
@@ -452,7 +460,10 @@ export default function App() {
       try { sent = (JSON.parse(localStorage.getItem("wilson_sync_meta") || "null")?.sent) || {}; } catch { /* ignore */ }
       setThreads((prev) => prev.filter((t) => !sent[t.id]));
       setActiveId(null);
-    } else await pushChanges(threadsRef.current).catch(() => null);
+    } else {
+      await pushChanges(threadsRef.current).catch(() => null);
+      await pushMemoryPack().catch(() => null);
+    }
     const tok = getToken();
     if (tok) await api("/acct/logout", { body: {}, token: tok }).catch(() => null);
     clearSession(); closeLayer();
@@ -601,7 +612,8 @@ export default function App() {
       if (inCall) callReplyRef.current = "";
       const request: ModelRequest = composeRequest(content, windowed.slice(0, -1), {
         spokenCall: inCall,
-        runtimeStatus: (() => {
+        threadRecap: buildThreadRecap([...history, { role: "user", content }], CONTEXT_WINDOW),
+        runtimeStatus: needsVoiceDiagnostics(content) ? (() => {
           const voice = getVoiceStatus();
           const debug = getVoiceDebug();
           const puckState = getPuckState();
@@ -622,7 +634,7 @@ export default function App() {
             "lastOnDeviceFailure=" + (fail ? fail.stage + ": " + fail.plain + " (technical: " + fail.error.slice(0, 140) + "; build " + fail.build + ")" : "none recorded"),
             "voiceTelemetry=anonymous technical diagnostics only; no conversation text or account identifiers"
           ].join("\n");
-        })(),
+        })() : "",
         memory: buildMemoryContext(threadsRef.current),
         recalled,
         speakerName: voiceCtxRef.current.name,
@@ -639,7 +651,15 @@ export default function App() {
         newLesson: learned,
         suggest: settings.suggestions && !learned && shouldSuggest(),
         stateOfYou: settings.longMemory ? buildStateOfYouContext() : "",
-        quietMemory: settings.longMemory ? buildQuietMemoryContext(!history.some((m) => m.role === "user")) : "",
+        quietMemory: settings.longMemory ? buildQuietMemoryContext(!history.some((m) => m.role === "user"), {
+          isArchitect: isAdmin || !!getUser()?.architect,
+          name: resolveCompanionName({
+            isArchitect: isAdmin || !!getUser()?.architect,
+            displayName,
+            accountUsername: getUser()?.username,
+            spokenName: voiceCtxRef.current.name,
+          }),
+        }) : "",
         anchor: isAdmin ? { vision: TACHO_VISION, weave: ++anchorTurnRef.current % 5 === 0 } : null,
       });
 
@@ -1437,7 +1457,7 @@ export default function App() {
                   <button type="button" className="underline text-[12px] text-violet-700/80" onClick={() => setSoyOpen((o) => !o)}>{soyOpen ? "Hide" : "What Wilson knows about how you're doing"}</button>
                   {soyOpen && (
                     <div className="mt-2 rounded-xl bg-violet-100/50 p-3 text-[14px] leading-[1.7] text-violet-950/90 space-y-2">
-                      <p className="text-[12px] text-violet-700/70">Kept only on this device. Wilson uses it to match your energy, not to repeat it back. Updates about every 12 messages and when you leave.</p>
+                      <p className="text-[12px] text-violet-700/70">Kept on this device, and saved to your account when you are signed in so it can follow you to another phone. Wilson uses it to match your energy, not to repeat it back. Updates about every 12 messages and when you leave.</p>
                       {soyDraft === null ? (
                         <div className="whitespace-pre-wrap">{soy.summary || "Nothing yet — it fills in as you talk."}</div>
                       ) : (
@@ -1465,7 +1485,7 @@ export default function App() {
                     ];
                     return (
                       <div className="mt-1 rounded-xl bg-violet-100/50 p-3 text-[12px] text-violet-900/90 space-y-1.5">
-                        <p className="text-[11px] text-violet-700/70">{isAdmin ? "Kept on this device and synced privately to your Wilson server." : "Kept only on this device."} Wilson uses it to pick up where you left off; he won't read it back to you.</p>
+                        <p className="text-[11px] text-violet-700/70">Kept on this device, and saved to your account when you are signed in so it can follow you to another phone. Wilson uses it to pick up where you left off; he won't read it back to you.</p>
                         {rows.length === 0 && <div className="text-violet-500/70">Nothing yet. It fills in quietly as you talk.</div>}
                         <div className="max-h-40 overflow-y-auto space-y-1">
                           {rows.map((r) => (

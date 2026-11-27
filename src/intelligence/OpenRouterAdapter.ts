@@ -48,6 +48,10 @@ function rememberWilsonHeaders(response: Response): string | null {
   return degraded;
 }
 
+
+import { splitSystemContext } from "../lib/systemSplit";
+export { splitSystemContext } from "../lib/systemSplit";
+
 export class OpenRouterAdapter implements ModelAdapter {
   private readonly apiKey: string;
   private readonly defaultModel: string;
@@ -64,7 +68,7 @@ export class OpenRouterAdapter implements ModelAdapter {
   private buildBody(request: ModelRequest, stream: boolean): Record<string, unknown> {
     const model = (request.metadata?.model as string | undefined) ?? this.defaultModel;
     const messages: ChatMsg[] = [];
-    if (request.systemContext) messages.push({ role: "system", content: request.systemContext });
+    for (const chunk of splitSystemContext(request.systemContext)) messages.push({ role: "system", content: chunk });
     for (const m of request.conversation ?? []) {
       if (m.role === "system" || m.role === "user" || m.role === "assistant") {
         messages.push({ role: m.role, content: m.content });

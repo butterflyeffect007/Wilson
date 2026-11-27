@@ -11,6 +11,7 @@ export function loadLessons(): Lesson[] {
 }
 export function saveLessons(l: Lesson[]): void {
   try { localStorage.setItem(LESSONS_KEY, JSON.stringify(l.slice(-60))); } catch { /* ignore */ }
+  try { window.dispatchEvent(new Event("wilson-memory-pack-dirty")); } catch { /* ignore */ }
 }
 export function addLesson(text: string): Lesson {
   const l: Lesson = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), text, ts: new Date().toISOString() };
