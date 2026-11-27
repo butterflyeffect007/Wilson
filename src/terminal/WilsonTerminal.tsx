@@ -213,12 +213,6 @@ export default function WilsonTerminal({ allowed, onClose }: { allowed: boolean;
     requestAnimationFrame(() => { termRef.current?.scrollTo({ top: termRef.current.scrollHeight, behavior: "smooth" }); });
   };
 
-  const collectOutput = (before: Line[]) => {
-    // used after a run from current lines — we'll gather in run() itself
-    void before;
-  };
-  void collectOutput;
-
   const runCode = useCallback(async (src: string, pass?: number) => {
     const c = clientRef.current;
     if (!c) return { ok: false, output: "", figures: [] as Figure[], error: "Python is not ready." };
