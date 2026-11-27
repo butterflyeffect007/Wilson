@@ -1231,8 +1231,8 @@ export default function App() {
           <div className="flex-1 min-w-0 flex items-center justify-center">
             <h1 className="m-0 min-w-0 flex">
               <button type="button" onClick={goHome} className="rb wl-home-btn min-w-0 touch-manipulation" aria-label="Wilson home" title="Wilson home">
-                <Sparkles className="shrink-0 w-[18px] h-[18px] text-violet-400 wl-title" aria-hidden="true" />
-                <span className="wl-title block leading-none text-violet-900/80 min-w-0"><span className="wl-w block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></span>
+                <Sparkles className="shrink-0 w-[18px] h-[18px] text-violet-400 wl-title wl-shimmer" aria-hidden="true" />
+                <span className="wl-title wl-shimmer block leading-none text-violet-900/80 min-w-0"><span className="wl-w block text-[19px] tracking-[0.28em]">WILSON</span><span className="block text-[8px] tracking-[0.32em] mt-0.5 opacity-75 whitespace-nowrap">+ THE ONLY ONE</span></span>
               </button>
             </h1>
           </div>
