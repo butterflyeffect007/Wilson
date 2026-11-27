@@ -870,6 +870,17 @@ html.dark .glass, html.dark .glass-strong, html.dark .msg-wilson { box-shadow: 0
 
 /* Title: WILSON in a restrained spectrum (azure -> violet -> magenta -> coral) */
 header .wl-w { background: linear-gradient(90deg, #2E80E4 0%, #6E21B0 35%, #A92FB8 65%, #DB5669 100%);
+}
+.wl-shimmer {
+  background-size: 200% auto !important;
+  color: transparent !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  animation: wl-shimmer-anim 6s linear infinite;
+}
+@keyframes wl-shimmer-anim {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
   -webkit-background-clip: text; background-clip: text; color: transparent; }
 html.dark header .wl-w { background: linear-gradient(90deg, #8FD3EE 0%, #CDB4FF 35%, #F2A6E2 65%, #FCBC7E 100%); -webkit-background-clip: text; background-clip: text; }
 header svg.lucide-sparkles { color: #EB7B59 !important; }
