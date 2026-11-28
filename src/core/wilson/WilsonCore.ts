@@ -21,7 +21,7 @@ import type {
   WilsonState,
   WilsonPresenceState,
 } from "./WilsonTypes";
-import { WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES, buildAddresseeContext } from "./WilsonIdentity";
+import { WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES, WILSON_IMAGINATION_PRINCIPLES, buildAddresseeContext } from "./WilsonIdentity";
 import type { ModelRequest } from "../../intelligence/ModelRequest";
 import { SPOKEN_CALL_NOTE } from "../../lib/callMode";
 import { REPLY_MAX_TOKENS } from "../../lib/continueReply";
@@ -59,6 +59,7 @@ export function buildSystemContext(ctx: TurnContext = {}): string {
   const parts = [
     WILSON_SYSTEM_CONTEXT,
     WILSON_PRINCIPLES,
+    WILSON_IMAGINATION_PRINCIPLES,
     buildAddresseeContext({ isArchitect: isArch, personName }),
   ];
   if (ctx.memory) parts.push(ctx.memory);
