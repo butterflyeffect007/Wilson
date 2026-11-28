@@ -52,3 +52,10 @@ test("marks cognitive signals as tentative and user-validated", () => {
   assert.match(context, /tentative prompts, not conclusions/i);
   assert.match(context, /overrides the heuristic/i);
 });
+
+test("uses opted-in aggregate counts as tentative cross-session context", () => {
+  const context = buildCognitiveSignalContext("A neutral update.", [], { absolute_language: 4 });
+  assert.match(context, /Longer-term aggregate signal counts/);
+  assert.match(context, /absolute_language: observed 4 times/);
+  assert.match(context, /never assume it does/);
+});
