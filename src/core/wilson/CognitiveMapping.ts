@@ -137,11 +137,51 @@ export function summarizeRepeatedSignals(messages: string[]): Array<{ signal: Co
     .sort((a, b) => b.count - a.count || a.signal.localeCompare(b.signal));
 }
 
+const COGNITIVE_PROFILE_KEY = "wilson_cognitive_signal_counts_v1";
+export type CognitiveSignalCounts = Partial<Record<CognitiveSignal, number>>;
+
+/** Aggregate counts only; raw messages and map contents are never persisted. */
+export function loadCognitiveSignalCounts(): CognitiveSignalCounts {
+  try {
+    const raw = localStorage.getItem(COGNITIVE_PROFILE_KEY);
+    const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+    const allowed = new Set<CognitiveSignal>(RULES.map((rule) => rule.signal));
+    const clean: CognitiveSignalCounts = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (allowed.has(key as CognitiveSignal) && typeof value === "number" && Number.isFinite(value) && value > 0) {
+        clean[key as CognitiveSignal] = Math.min(1000, Math.floor(value));
+      }
+    }
+    return clean;
+  } catch {
+    return {};
+  }
+}
+
+/** Recording is impossible unless the user has explicitly enabled cognitive learning. */
+export function recordCognitiveSignals(text: string, enabled: boolean): CognitiveSignalCounts {
+  if (!enabled || typeof localStorage === "undefined") return loadCognitiveSignalCounts();
+  const counts = loadCognitiveSignalCounts();
+  for (const { signal } of detectCognitiveSignals(text)) {
+    counts[signal] = Math.min(1000, (counts[signal] ?? 0) + 1);
+  }
+  try { localStorage.setItem(COGNITIVE_PROFILE_KEY, JSON.stringify(counts)); } catch { /* storage may be unavailable */ }
+  return counts;
+}
+
+export function clearCognitiveSignalCounts(): void {
+  try { localStorage.removeItem(COGNITIVE_PROFILE_KEY); } catch { /* storage may be unavailable */ }
+}
+
 /** Compact, private-to-this-request guidance. No raw user text is duplicated. */
-export function buildCognitiveSignalContext(userInput: string, recentUserMessages: string[] = []): string {
+export function buildCognitiveSignalContext(userInput: string, recentUserMessages: string[] = [], persistedCounts: CognitiveSignalCounts = {}): string {
   const current = detectCognitiveSignals(userInput);
   const repeated = summarizeRepeatedSignals([...recentUserMessages, userInput]);
-  if (!current.length && !repeated.length) return "";
+  const learned = Object.entries(persistedCounts)
+    .filter((entry): entry is [CognitiveSignal, number] => typeof entry[1] === "number" && entry[1] > 1)
+    .map(([signal, count]) => ({ signal, count }))
+    .sort((a, b) => b.count - a.count);
+  if (!current.length && !repeated.length && !learned.length) return "";
   const lines = [
     "[COGNITIVE SIGNALS — tentative prompts, not conclusions]",
     "The following are language-pattern observations only. Do not diagnose, label the person, or assume these patterns explain their circumstances. Validate gently and ask at most one useful question.",
