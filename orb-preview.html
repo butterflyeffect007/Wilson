@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0d1030">
+<meta name="robots" content="noindex">
+<link rel="icon" href="favicon-32.png">
+<title>Wilson · Orb preview</title>
+<script>
+/* Same theme as the app (same site, same saved setting). */
+(function () {
+  var t = null; try { t = localStorage.getItem("wilson_theme"); } catch (e) {}
+  if (t !== "light" && t !== "dark") t = (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  if (t === "dark") document.documentElement.classList.add("dark");
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", t === "dark" ? "#0d1030" : "#efe4ff");
+})();
+</script>
+<!-- Wilson's own live stylesheet: the orb below uses his exact classes, image, glow and animations. -->
+<link id="wilson-css" rel="stylesheet" href="assets/index-DWD9h1Iq.css">
+<script>
+/* If Wilson has been redeployed since this page was written, follow his current stylesheet. */
+fetch("./", { cache: "no-store" }).then(function (r) { return r.text(); }).then(function (html) {
+  var m = html.match(/href="([^"]*assets\/index-[^"]+\.css)"/);
+  if (!m) return;
+  var l = document.getElementById("wilson-css");
+  if (l.getAttribute("href").split("/").pop() !== m[1].split("/").pop()) l.href = m[1];
+}).catch(function () {});
+</script>
+<style>
+  .pv-stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  .pv-tilt { position: relative; pointer-events: auto; transform-style: flat; will-change: transform; }
+  .pv-spin { position: absolute; inset: 0; will-change: transform; }
+  .pv-sheen { position: absolute; inset: -6%; border-radius: 9999px; pointer-events: none; opacity: 0; mix-blend-mode: soft-light;
+    background: conic-gradient(from 0deg, rgba(56,178,218,.9), rgba(209,59,178,.9), rgba(252,188,126,.9), rgba(110,33,176,.9), rgba(56,178,218,.9)); }
+  .pv-caustic { position: absolute; inset: 4%; border-radius: 9999px; pointer-events: none; opacity: 0; mix-blend-mode: soft-light;
+    background: radial-gradient(40% 30% at 35% 30%, rgba(255,255,255,.9), transparent 70%); }
+  .pv-cap { position: fixed; left: 0; right: 0; bottom: max(18px, env(safe-area-inset-bottom)); text-align: center;
+    font: 400 13px/1.4 "Lexend", -apple-system, system-ui, sans-serif; letter-spacing: .03em; opacity: .55; pointer-events: none; color: #3b1d6e; }
+  html.dark .pv-cap { color: #efe9ff; }
+</style>
+</head>
+<body>
+<!-- Backdrop, same markup as Wilson's home screen -->
+<div class="fixed inset-0 -z-10 pointer-events-none overflow-hidden" aria-hidden="true">
+  <div class="wl-sky absolute inset-0"></div>
+  <div class="wl-bgimg"></div>
+  <div class="wilson-field-particles wl-sparkles"></div>
+</div>
+
+<div class="pv-stage">
+  <div class="pv-tilt" id="tilt">
+    <!-- Same DOM + classes WilsonOrb renders on home (size="lg", vibe neutral, idle) -->
+    <div id="shell" class="wilson-orb-shell wilson-orb-shell--idle wilson-orb-size-lg w-[clamp(9.5rem,min(44vw,24dvh),12.5rem)] h-[clamp(9.5rem,min(44vw,24dvh),12.5rem)] relative flex-shrink-0"
+         style="--wilson-vibe-hue:290; --wl-mood:rgba(196, 160, 255, 0.55); --wilson-parallax-x:0px; --wilson-parallax-y:0px; width:clamp(9.5rem,min(44vw,24dvh),12.5rem); height:clamp(9.5rem,min(44vw,24dvh),12.5rem)"
+         role="button" aria-label="Wilson orb" data-interactive="true">
+      <span class="wl-orb-platform"></span>
+      <div class="wl-orb-bflies" aria-hidden="true">
+        <span class="wl-ob wl-ob-0"></span><span class="wl-ob wl-ob-1"></span><span class="wl-ob wl-ob-2"></span><span class="wl-ob wl-ob-3"></span><span class="wl-ob wl-ob-4"></span>
+      </div>
+      <div class="wilson-orb-float absolute inset-0" id="float">
+        <span class="wilson-orb-ring wilson-orb-ring--1"></span>
+        <span class="wilson-orb-ring wilson-orb-ring--2"></span>
+        <span class="wilson-orb-ring wilson-orb-ring--3"></span>
+        <div class="pv-spin" id="spin">
+          <div id="img" class="wilson-fluid wl-orb-img wilson-fluid--idle absolute inset-0"
+               style="--wilson-amp-scale:1; --wilson-amp-glow:0.4; --wilson-amp-hue:0deg; --wilson-amp-aberration:0px"></div>
+          <span class="pv-caustic" id="caustic"></span>
+          <span class="pv-sheen" id="sheen"></span>
+        </div>
+        <span class="wl-orb-highlight" id="hl" style="transform: translate(0px, 0px)"></span>
+        <span class="wl-orb-ring"></span>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="pv-cap" id="cap">Preview · touch him</div>
+
+<script>
+(function () {
+  "use strict";
+  var shell = document.getElementById("shell"), tilt = document.getElementById("tilt"), spin = document.getElementById("spin");
+  var img = document.getElementById("img"), hl = document.getElementById("hl"), floatEl = document.getElementById("float");
+  var sheen = document.getElementById("sheen"), caustic = document.getElementById("caustic"), cap = document.getElementById("cap");
+  var reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+
+  // Spring state (all rest at 0 => identical to the app at rest)
+  var px = 0, py = 0, tx = 0, ty = 0, vx = 0, vy = 0;        // parallax / tilt (-1..1)
+  var ang = 0, omega = 0;                                    // flick spin (deg, deg/s)
+  var sq = 0, sqv = 0;                                       // tap squish
+  var amp = 0, lastPeak = 0;                                 // sound
+
+  // ---- touch ----
+  var down = false, id = null, sx = 0, sy = 0, lx = 0, lt = 0, vel = 0, moved = 0, t0 = 0;
+  function aim(cx, cy) {
+    var r = shell.getBoundingClientRect();
+    tx = clamp((cx - (r.left + r.width / 2)) / r.width, -1, 1);
+    ty = clamp((cy - (r.top + r.height / 2)) / r.height, -1, 1);
+  }
+  shell.addEventListener("pointerdown", function (e) {
+    down = true; id = e.pointerId; sx = lx = e.clientX; sy = e.clientY; lt = t0 = performance.now(); vel = 0; moved = 0;
+    try { shell.setPointerCapture(e.pointerId); } catch (_) {}
+    aim(e.clientX, e.clientY);
+    omega *= 0.3;
+  });
+  shell.addEventListener("pointermove", function (e) {
+    if (!down || e.pointerId !== id) return;
+    aim(e.clientX, e.clientY);
+    var now = performance.now(), dt = Math.max(1, now - lt) / 1000, d = e.clientX - lx;
+    moved = Math.max(moved, Math.hypot(e.clientX - sx, e.clientY - sy));
+    if (moved > 10 && !reduced) { ang += d * 0.35; vel = vel * 0.5 + (d * 0.35 / dt) * 0.5; }
+    lx = e.clientX; lt = now;
+  });
+  function up(e) {
+    if (!down || (e && e.pointerId !== id)) return;
+    down = false;
+    if (moved <= 10 && performance.now() - t0 < 600) tap();
+    else if (!reduced && performance.now() - lt < 90) omega = clamp(vel, -420, 420);
+    setTimeout(function () { if (!down) { tx = 0; ty = 0; } }, 400);
+  }
+  shell.addEventListener("pointerup", up);
+  shell.addEventListener("pointercancel", function (e) { down = false; tx = ty = 0; });
+  shell.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+
+  function tap() {
+    if (!reduced) sqv += 7;
+    // Same tap response as the app: rim pulse + butterflies scatter
+    var p = document.createElement("span"); p.className = "wl-orb-pulse";
+    p.addEventListener("animationend", function () { p.remove(); });
+    floatEl.appendChild(p);
+    document.body.classList.remove("wl-scatter"); void document.body.offsetWidth; document.body.classList.add("wl-scatter");
+    setTimeout(function () { document.body.classList.remove("wl-scatter"); }, 1600);
+    try { navigator.vibrate && navigator.vibrate(8); } catch (_) {}
+    if (!mic) startMic();
+  }
+
+  // ---- sound: mic starts on the first tap (iOS needs a tap) ----
+  var AC = null, an = null, buf = null, mic = null, src = null;
+  function startMic() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    var C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+    if (!AC) { AC = new C(); an = AC.createAnalyser(); an.fftSize = 512; an.smoothingTimeConstant = 0.7; buf = new Uint8Array(an.fftSize); }
+    if (AC.state === "suspended") AC.resume();
+    mic = "pending";
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).then(function (s) {
+      mic = s; src = AC.createMediaStreamSource(s); src.connect(an);   // listened to, never played back
+      cap.textContent = "Preview · he hears you";
+    }).catch(function () { mic = null; });
+  }
+  function stopMic() {
+    if (src) { try { src.disconnect(); } catch (_) {} src = null; }
+    if (mic && mic.getTracks) mic.getTracks().forEach(function (t) { t.stop(); });
+    mic = null; cap.textContent = "Preview · touch him";
+  }
+  document.addEventListener("visibilitychange", function () { if (document.hidden) stopMic(); });
+  window.addEventListener("pagehide", stopMic);
+
+  function level() {
+    if (!src) return 0;
+    an.getByteTimeDomainData(buf);
+    var s = 0; for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; s += v * v; }
+    var rms = Math.sqrt(s / buf.length);
+    return clamp((rms - 0.012) * 9, 0, 1);       // ignore room hiss
+  }
+
+  // ---- frame ----
+  var last = performance.now(), speakingCls = false, spinIdle = 0;
+  function frame(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    // parallax / tilt spring
+    var k = 90, c = 16;
+    vx += ((tx - px) * k - vx * c) * dt; px += vx * dt;
+    vy += ((ty - py) * k - vy * c) * dt; py += vy * dt;
+    // spin momentum, then drift home so at rest he is exactly himself
+    if (!down) {
+      ang += omega * dt; omega *= Math.exp(-dt * 1.8);
+      if (Math.abs(omega) < 4) { omega = 0; ang *= Math.exp(-dt * 1.6); if (Math.abs(ang) < 0.05) ang = 0; }
+    }
+    // squish spring
+    sqv += (-sq * 120 - sqv * 9) * dt; sq += sqv * dt;
+    // sound -> his own glow vars (exactly what the app does while he speaks)
+    var a = level();
+    amp += (a - amp) * (a > amp ? 0.5 : 0.12);
+    if (amp > 0.55 && now - lastPeak > 260) {
+      lastPeak = now;
+      var r = document.createElement("span"); r.className = "wilson-orb-sonar";
+      r.style.borderColor = "hsl(290 80% 65% / 0.7)";
+      r.addEventListener("animationend", function () { r.remove(); });
+      floatEl.insertBefore(r, spin);
+    }
+    var talking = amp > 0.08;
+    if (talking !== speakingCls) {
+      speakingCls = talking;
+      shell.classList.toggle("wilson-orb-shell--speaking", talking); shell.classList.toggle("wilson-orb-shell--idle", !talking);
+      img.classList.toggle("wilson-fluid--speaking", talking); img.classList.toggle("wilson-fluid--idle", !talking);
+    }
+    img.style.setProperty("--wilson-amp-scale", (1 + amp * 0.1).toFixed(4));
+    img.style.setProperty("--wilson-amp-glow", (0.4 + amp * 0.6).toFixed(4));
+
+    var P = reduced ? 0 : 12;
+    var gx = px * P, gy = py * P;
+    shell.style.setProperty("--wilson-parallax-x", gx.toFixed(2) + "px");
+    shell.style.setProperty("--wilson-parallax-y", gy.toFixed(2) + "px");
+    hl.style.transform = "translate(" + (gx * 1.6).toFixed(2) + "px, " + (gy * 1.6).toFixed(2) + "px)";
+    var still = Math.abs(px) < 1e-3 && Math.abs(py) < 1e-3 && Math.abs(sq) < 1e-3;
+    tilt.style.transform = still ? "" :
+      "perspective(700px) rotateX(" + (-py * 7).toFixed(2) + "deg) rotateY(" + (px * 7).toFixed(2) + "deg) scale(" + (1 + sq * 0.04).toFixed(4) + ", " + (1 - sq * 0.04).toFixed(4) + ")";
+    spin.style.transform = ang ? "rotate(" + ang.toFixed(2) + "deg)" : "";
+    var sp = clamp(Math.abs(omega) / 300, 0, 1);
+    sheen.style.opacity = (sp * 0.35).toFixed(3);
+    sheen.style.transform = "rotate(" + (ang * 1.5).toFixed(1) + "deg)";
+    var touch = Math.min(1, Math.hypot(px, py) * 1.6);
+    caustic.style.opacity = (touch * 0.25 + amp * 0.2).toFixed(3);
+    caustic.style.transform = "translate(" + (px * 22).toFixed(1) + "%, " + (py * 22).toFixed(1) + "%)";
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  window.__orb = { get amp() { return amp; }, get ang() { return ang; }, get sq() { return sq; }, setTestLevel: null };
+})();
+</script>
+</body>
+</html>
