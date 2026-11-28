@@ -23,6 +23,7 @@ import {
   tiltTransform,
   type OrbPhys,
 } from "@/lib/orbPhysics";
+import { attachNeuroCity, type NeuroMode } from "@/lib/neuroCity";
 
 export type WilsonVibe = "neutral" | "excited" | "calm" | "tired" | "dreaming";
 
@@ -64,17 +65,18 @@ type OrbDebug = { amp: number; ang: number; sq: number; px: number; py: number }
 
 const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
   ({ isThinking = false, speaking, size = "md", vibe = "neutral", interactive = false, onLongPress, onTap }, ref) => {
-    const { speaking: audioSpeaking, amplitude } = useWilsonAudio();
+    const { speaking: audioSpeaking } = useWilsonAudio();
     const [listening, setListening] = useState<boolean>(getListening());
     const [rippleKey, setRippleKey] = useState(0);
-    const [sonarKey, setSonarKey] = useState(0);
     const innerRef = useRef<HTMLDivElement | null>(null);
     const shellRef = useRef<HTMLDivElement | null>(null);
     const floatRef = useRef<HTMLDivElement | null>(null);
     const sheenRef = useRef<HTMLSpanElement | null>(null);
     const causticRef = useRef<HTMLSpanElement | null>(null);
     const hlRef = useRef<HTMLSpanElement | null>(null);
+    const cityRef = useRef<HTMLCanvasElement | null>(null);
     const phys = useRef<OrbPhys>(createOrbPhys());
+    const thinkingRef = useRef(isThinking);
     const pointer = useRef({
       down: false,
       id: null as number | null,
@@ -91,11 +93,11 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
     const reducedRef = useRef(false);
     const rafRef = useRef(0);
     const lastFrame = useRef(0);
-    const lastPeakAt = useRef(0);
 
     const isSpeaking = speaking ?? audioSpeaking;
     listeningRef.current = listening;
     speakingRef.current = isSpeaking;
+    thinkingRef.current = isThinking;
     const intensity = isSpeaking
       ? "speaking"
       : isThinking
@@ -109,20 +111,36 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
     useEffect(() => subscribeListening(() => setListening(getListening())), []);
     useEffect(() => subscribeRipple(() => setRippleKey((k) => k + 1)), []);
 
+    useEffect(() => {
+      const canvas = cityRef.current;
+      if (!canvas) return;
+      const handle = attachNeuroCity(canvas, {
+        getMode: (): NeuroMode => {
+          const forced = canvas.closest(".wilson-orb-shell")?.getAttribute("data-neuro");
+          if (forced === "thinking" || forced === "speaking" || forced === "listening" || forced === "idle") return forced;
+          if (speakingRef.current) return "speaking";
+          if (thinkingRef.current) return "thinking";
+          if (listeningRef.current) return "listening";
+          return "idle";
+        },
+        getAmp: () => {
+          const raw = canvas.closest(".wilson-orb-shell")?.getAttribute("data-neuro-amp");
+          if (raw != null && raw !== "") {
+            const n = Number(raw);
+            if (Number.isFinite(n)) return n;
+          }
+          return phys.current.amp;
+        },
+        reduced: () => reducedRef.current,
+      });
+      return () => handle.stop();
+    }, []);
+
     const setShellRef = (node: HTMLDivElement | null) => {
       shellRef.current = node;
       if (typeof ref === "function") ref(node);
       else if (ref) ref.current = node;
     };
-
-    // Live TTS analyser on desktop; on iOS/Safari audioBus leaves amplitude at 0 so we breathe visually instead.
-    useEffect(() => {
-      if (!isSpeaking) return;
-      if (amplitude > 0.55 && performance.now() - lastPeakAt.current > 220) {
-        lastPeakAt.current = performance.now();
-        setSonarKey((k) => k + 1);
-      }
-    }, [amplitude, isSpeaking]);
 
     useEffect(() => {
       if (!isSpeaking) return;
@@ -385,25 +403,12 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
         {...handlers}
         data-interactive={interactive ? "true" : undefined}
       >
-        {size === "lg" && <span className="wl-orb-platform" />}
         {size === "lg" && (
           <div className="wl-orb-bflies" aria-hidden="true">
             {[0, 1, 2, 3, 4].map((i) => <span key={i} className={`wl-ob wl-ob-${i}`} />)}
           </div>
         )}
         <div ref={floatRef} className="wilson-orb-float absolute inset-0">
-          {/* Soft orbital rings – always present for living presence */}
-          <span className="wilson-orb-ring wilson-orb-ring--1" />
-          <span className="wilson-orb-ring wilson-orb-ring--2" />
-          <span className="wilson-orb-ring wilson-orb-ring--3" />
-
-          {isSpeaking && (
-            <span
-              key={`sonar-${sonarKey}`}
-              className="wilson-orb-sonar"
-              style={{ borderColor: `hsl(${vibeHue[vibe]} 80% 65% / 0.7)` }}
-            />
-          )}
           {rippleKey > 0 && (
             <span
               key={`ripple-${rippleKey}`}
@@ -443,7 +448,7 @@ const WilsonOrb = React.forwardRef<HTMLDivElement, WilsonOrbProps>(
           <span ref={sheenRef} className="wl-orb-sheen" aria-hidden="true" />
 
           <span ref={hlRef} className="wl-orb-highlight" style={{ transform: `translate(0px, 0px)` }} />
-          {size !== "sm" && <span className="wl-orb-ring" />}
+          <canvas ref={cityRef} className="wl-neuro-city" aria-hidden="true" />
           {isThinking && <span className="wilson-orb-shimmer" />}
           {preparing && !isSpeaking && !isThinking && <span className="wl-orb-preparing" aria-hidden="true" />}
         </div>
