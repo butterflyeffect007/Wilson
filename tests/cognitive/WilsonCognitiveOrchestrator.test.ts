@@ -8,7 +8,7 @@ test("ordinary conversation stays natural instead of becoming a coaching session
 
 test("multiple relevant capabilities can coexist without becoming a fixed sequence", () => {
   const guidance = orchestrateCognition("I can't do this, but imagine if I already had the life I wanted.");
-  assert.match(guidance, /limiting certainty/i);
+  assert.match(guidance, /Explore whether the stated conclusion is a fact/i);
   assert.match(guidance, /imagination/i);
   assert.match(guidance, /not a checklist or sequence/i);
 });
