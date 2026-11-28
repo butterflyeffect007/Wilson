@@ -41,6 +41,7 @@ import { generateWithActiveBrain, loadedPack } from "./omni/engine";
 import { linksIn } from "./intelligence/tools";
 import { DEFAULT_WILSON_POLICY, getPreferredEngine } from "./core/wilson/WilsonPolicy";
 import { composeRequest } from "./core/wilson/WilsonCore";
+import { loadCognitiveSignalCounts, recordCognitiveSignals, clearCognitiveSignalCounts } from "./core/wilson/CognitiveMapping";
 import { shouldContinue, trimContinuationOverlap, continueAddedNothing, MAX_CONTINUES, CONTINUE_HOLD_CHARS } from "./lib/continueReply";
 import { isArchitectReservedName, resolveCompanionName } from "./core/wilson/WilsonIdentity";
 import { loadLessons, addLesson, deleteLesson, detectLesson, extractFacts, shouldSuggest, type Lesson } from "./core/wilson/WilsonLearning";
@@ -571,6 +572,9 @@ export default function App() {
         .map((m) => ({ role: m.role, content: m.content }));
       // last CONTEXT_WINDOW messages INCLUDING the new user message
       const windowed = [...convo, { role: "user" as const, content }].slice(-CONTEXT_WINDOW);
+      const cognitiveHistory = settings.cognitiveLearning
+        ? recordCognitiveSignals(content, true)
+        : {};
       let recalled: string[] = [];
       if (settings.longMemory) {
         try {
@@ -612,6 +616,7 @@ export default function App() {
       const request: ModelRequest = composeRequest(content, windowed.slice(0, -1), {
         userInput: content,
         recentUserMessages: windowed.filter((message) => message.role === "user").slice(-8).map((message) => message.content),
+        cognitiveHistory: settings.cognitiveLearning ? cognitiveHistory : {},
         spokenCall: inCall,
         runtimeStatus: (() => {
           const voice = getVoiceStatus();
@@ -1445,6 +1450,14 @@ export default function App() {
                   <input type="checkbox" checked={settings.longMemory} onChange={(e) => setSettings((s) => ({ ...s, longMemory: e.target.checked }))} />
                   Remember things
                 </label>
+                <label className="flex items-center gap-2 text-[12px] text-violet-800/80">
+                  <input type="checkbox" checked={!!settings.cognitiveLearning} onChange={(e) => setSettings((s) => ({ ...s, cognitiveLearning: e.target.checked }))} />
+                  Learn my thinking patterns
+                </label>
+                <p className="pl-5 text-[11px] leading-relaxed text-violet-700/70">
+                  Optional. When enabled, Wilson keeps aggregate counts of possible language patterns on this device, not the messages themselves. Turn it off to stop recording.
+                  <button type="button" className="ml-1 underline" onClick={clearCognitiveSignalCounts}>Clear saved pattern counts</button>
+                </p>
                 <div className="pt-2">
                   <button type="button" className="underline text-[12px] text-violet-700/80" onClick={() => setSoyOpen((o) => !o)}>{soyOpen ? "Hide" : "What Wilson knows about how you're doing"}</button>
                   {soyOpen && (
