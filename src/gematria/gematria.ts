@@ -1,6 +1,7 @@
 /**
  * Wilson Gematria Observatory — pure calculation core.
  * No UI, network, storage, or AI dependencies.
+ * Synthetic data mechanics checked.
  */
 
 export type CipherId =
