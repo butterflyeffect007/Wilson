@@ -610,6 +610,8 @@ export default function App() {
       const callHooks = inCall ? callHooksRef.current : null;
       if (inCall) callReplyRef.current = "";
       const request: ModelRequest = composeRequest(content, windowed.slice(0, -1), {
+        userInput: content,
+        recentUserMessages: windowed.filter((message) => message.role === "user").slice(-8).map((message) => message.content),
         spokenCall: inCall,
         runtimeStatus: (() => {
           const voice = getVoiceStatus();
