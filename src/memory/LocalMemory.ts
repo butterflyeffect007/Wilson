@@ -45,6 +45,8 @@ export interface WilsonSettings {
   voiceRecognition: boolean;
   emotionDetection: boolean;
   longMemory: boolean;
+  /** Explicit opt-in: retain aggregate cognitive signal counts on this device. */
+  cognitiveLearning?: boolean;
   showHeard: boolean;
   dyslexiaFont: boolean;
   suggestions: boolean;
@@ -79,6 +81,7 @@ export const DEFAULT_SETTINGS: WilsonSettings = {
   voiceRecognition: true,
   emotionDetection: true,
   longMemory: true,
+  cognitiveLearning: false,
   showHeard: false,
   dyslexiaFont: false,
   suggestions: true,
