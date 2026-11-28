@@ -22,6 +22,8 @@ import type {
   WilsonPresenceState,
 } from "./WilsonTypes";
 import { WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES, buildAddresseeContext } from "./WilsonIdentity";
+import { WILSON_BREAKTHROUGH_INTELLIGENCE } from "./WilsonBreakthroughIntelligence";
+import { orchestrateCognition } from "./WilsonCognitiveOrchestrator";
 import type { ModelRequest } from "../../intelligence/ModelRequest";
 import { SPOKEN_CALL_NOTE } from "../../lib/callMode";
 import { REPLY_MAX_TOKENS } from "../../lib/continueReply";
@@ -49,6 +51,8 @@ export interface TurnContext {
   runtimeStatus?: string;
   /** True during a "Talk with Wilson" voice call: replies are spoken, so keep them conversational and plain. */
   spokenCall?: boolean;
+  /** Turn-specific guidance selected by Wilson's fluid cognitive orchestrator. */
+  cognitiveGuidance?: string;
 }
 
 /** Builds Wilson's one system prompt: identity + principles + turn context. */
@@ -59,8 +63,10 @@ export function buildSystemContext(ctx: TurnContext = {}): string {
   const parts = [
     WILSON_SYSTEM_CONTEXT,
     WILSON_PRINCIPLES,
+    WILSON_BREAKTHROUGH_INTELLIGENCE,
     buildAddresseeContext({ isArchitect: isArch, personName }),
   ];
+  if (ctx.cognitiveGuidance) parts.push(ctx.cognitiveGuidance);
   if (ctx.memory) parts.push(ctx.memory);
   if (ctx.runtimeStatus) parts.push(`[LIVE WILSON INTERFACE DIAGNOSTICS — current session]\n${ctx.runtimeStatus}\nUse this snapshot to distinguish text generation, voice synthesis, playback, and microphone input. Do not claim a feature works unless the snapshot supports it.`);
   if (ctx.lessons?.length) parts.push(`[What Wilson has learned from ${who} — always follow these]\n${ctx.lessons.map((l) => `- ${l}`).join("\n")}`);
@@ -113,7 +119,7 @@ export function composeRequest(
   return {
     userInput,
     conversation,
-    systemContext: buildSystemContext(ctx),
+    systemContext: buildSystemContext({ ...ctx, cognitiveGuidance: orchestrateCognition(userInput, conversation) }),
     generation: { temperature: 0.8, maxTokens: REPLY_MAX_TOKENS },
   };
 }
