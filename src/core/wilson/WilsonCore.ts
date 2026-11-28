@@ -23,12 +23,17 @@ import type {
 } from "./WilsonTypes";
 import { WILSON_SYSTEM_CONTEXT, WILSON_PRINCIPLES, WILSON_IMAGINATION_PRINCIPLES, buildAddresseeContext } from "./WilsonIdentity";
 import { WILSON_COGNITIVE_INTELLIGENCE_LAYER } from "./WilsonCognitiveLayer";
+import { buildCognitiveSignalContext } from "./CognitiveMapping";
 import type { ModelRequest } from "../../intelligence/ModelRequest";
 import { SPOKEN_CALL_NOTE } from "../../lib/callMode";
 import { REPLY_MAX_TOKENS } from "../../lib/continueReply";
 
 /** Per-turn context the Interface hands to the Core. */
 export interface TurnContext {
+  /** Current user input, used for ephemeral cognitive signal hints only. */
+  userInput?: string;
+  /** Recent user messages from this active thread; never persisted by the mapper. */
+  recentUserMessages?: string[];
   memory?: string;
   recalled?: string[];
   speakerName?: string | null;
@@ -62,6 +67,10 @@ export function buildSystemContext(ctx: TurnContext = {}): string {
     WILSON_PRINCIPLES,
     WILSON_IMAGINATION_PRINCIPLES,
     WILSON_COGNITIVE_INTELLIGENCE_LAYER,
+    buildCognitiveSignalContext(
+      ctx.userInput ?? "",
+      ctx.recentUserMessages ?? [],
+    ),
     buildAddresseeContext({ isArchitect: isArch, personName }),
   ];
   if (ctx.memory) parts.push(ctx.memory);
